@@ -20,6 +20,7 @@ import type {
   ApiBotCommand,
   ApiBotMenuButton,
   ApiAttachMenuPeerType,
+  ApiPollAnswer,
 } from '../../../api/types';
 import {
   MAIN_THREAD_ID,
@@ -186,6 +187,7 @@ type StateProps =
     captionLimit: number;
     isCurrentUserPremium?: boolean;
     canSendVoiceByPrivacy?: boolean;
+    getMembersInfo?: () => (ApiUser | undefined)[];
   }
   & Pick<GlobalState, 'connectionState'>;
 
@@ -264,6 +266,7 @@ const Composer: FC<OwnProps & StateProps> = ({
   botMenuButton,
   attachBots,
   attachMenuPeerType,
+  getMembersInfo,
   theme,
 }) => {
   const {
@@ -929,6 +932,31 @@ const Composer: FC<OwnProps & StateProps> = ({
     }
   }, [closePollModal, handleMessageSchedule, requestCalendar, sendMessage, shouldSchedule]);
 
+  const handleRankingsPoll = useCallback(() => {
+    if (chat?.membersCount && chat?.membersCount >= 3 && chat?.membersCount <= 6 && getMembersInfo) {
+      const members = getMembersInfo();
+      const answers: ApiPollAnswer[] = members.map(
+        (m: ApiUser | undefined, index) => {
+          return { text: (m?.firstName) ? m.firstName : `User ${index}$`, option: String(index) };
+        },
+      );
+      const polls: ApiNewPoll[] = answers.map(
+        (p, index) => { return { summary: { question: `Level ${6 - index}`, answers } }; },
+      );
+      if (shouldSchedule) {
+        // TODO: test this
+        requestCalendar((scheduledAt) => {
+          polls.forEach((poll) => { handleMessageSchedule({ poll }, scheduledAt); });
+        });
+      } else {
+        polls.forEach((poll) => { sendMessage({ poll }); });
+      }
+    } else {
+    // eslint-disable-next-line no-console
+      console.log('Were not able to load full chat');
+    }
+  }, [handleMessageSchedule, requestCalendar, sendMessage, shouldSchedule, chat, getMembersInfo]);
+
   const handleSendSilent = useCallback(() => {
     if (shouldSchedule) {
       requestCalendar((scheduledAt) => {
@@ -1303,6 +1331,7 @@ const Composer: FC<OwnProps & StateProps> = ({
             canAttachPolls={canAttachPolls}
             onFileSelect={handleFileSelect}
             onPollCreate={openPollModal}
+            onRankingsPoll={handleRankingsPoll}
             isScheduled={shouldSchedule}
             attachBots={attachBots}
             peerType={attachMenuPeerType}
@@ -1440,6 +1469,13 @@ export default memo(withGlobal<OwnProps>(
       ? selectEditingScheduledDraft(global, chatId)
       : selectEditingDraft(global, chatId, threadId);
 
+    const groupChatMembers = chat?.fullInfo?.members;
+    const getMembersInfo = groupChatMembers ? () => {
+      return groupChatMembers?.map<ApiUser | undefined>(
+        (member: { userId: string }) => { return selectUser(global, member.userId); },
+      );
+    } : undefined;
+
     return {
       editingMessage: selectEditingMessage(global, chatId, threadId, messageListType),
       connectionState: global.connectionState,
@@ -1464,7 +1500,7 @@ export default memo(withGlobal<OwnProps>(
       pollModal: global.pollModal,
       stickersForEmoji: global.stickers.forEmoji.stickers,
       customEmojiForEmoji: global.customEmojis.forEmoji.stickers,
-      groupChatMembers: chat?.fullInfo?.members,
+      groupChatMembers,
       topInlineBotIds: global.topInlineBots?.userIds,
       currentUserId,
       lastSyncTime: global.lastSyncTime,
@@ -1487,6 +1523,7 @@ export default memo(withGlobal<OwnProps>(
       requestedDraftFiles,
       attachBots: global.attachMenu.bots,
       attachMenuPeerType: selectChatType(global, chatId),
+      getMembersInfo,
       theme: selectTheme(global),
       fileSizeLimit: selectCurrentLimit(global, 'uploadMaxFileparts') * MAX_UPLOAD_FILEPART_SIZE,
       captionLimit: selectCurrentLimit(global, 'captionLength'),

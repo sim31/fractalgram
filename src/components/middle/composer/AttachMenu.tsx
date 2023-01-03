@@ -32,6 +32,7 @@ export type OwnProps = {
   peerType?: ApiAttachMenuPeerType;
   onFileSelect: (files: File[], isQuick: boolean) => void;
   onPollCreate: () => void;
+  onRankingsPoll: () => void;
   theme: ISettings['theme'];
 };
 
@@ -45,6 +46,7 @@ const AttachMenu: FC<OwnProps> = ({
   isScheduled,
   onFileSelect,
   onPollCreate,
+  onRankingsPoll,
   theme,
 }) => {
   const [isAttachMenuOpen, openAttachMenu, closeAttachMenu] = useFlag();
@@ -83,6 +85,10 @@ const AttachMenu: FC<OwnProps> = ({
   const handleDocumentSelect = useCallback(() => {
     openSystemFilesDialog('*', (e) => handleFileSelect(e, false));
   }, [handleFileSelect]);
+
+  // const handleFractalPollSelect = useCallback(() => {
+  //   console.log('Fractal poll select button');
+  // }, []);
 
   const bots = useMemo(() => {
     return Object.values(attachBots).filter((bot) => {
@@ -154,6 +160,9 @@ const AttachMenu: FC<OwnProps> = ({
             onMenuClosed={unmarkAttachmentBotMenuOpen}
           />
         ))}
+
+        {/* TODO: check if can attach these kind of polls as well */}
+        <MenuItem icon="poll" onClick={onRankingsPoll}>{lang('Rankings poll (fractally)')}</MenuItem>
       </Menu>
     </div>
   );
