@@ -524,6 +524,10 @@ export type GlobalState = {
     error?: string;
   };
 
+  consensusProcess?: {
+    error?: string;
+  };
+
   profileEdit?: {
     progress: ProfileEditProgress;
     checkedUsername?: string;

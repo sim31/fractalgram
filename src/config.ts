@@ -256,3 +256,5 @@ export const DEFAULT_LIMITS: Record<ApiLimitType, readonly [number, number]> = {
   channelsPublic: [10, 20],
   aboutLength: [70, 140],
 };
+
+export const PREF_BREAKOUT_SIZE = 3;

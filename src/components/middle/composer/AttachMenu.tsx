@@ -32,7 +32,9 @@ export type OwnProps = {
   peerType?: ApiAttachMenuPeerType;
   onFileSelect: (files: File[], isQuick: boolean) => void;
   onPollCreate: () => void;
+  onBreakOut: () => void;
   onRankingsPoll: () => void;
+  onDelegatePoll: () => void;
   theme: ISettings['theme'];
 };
 
@@ -46,7 +48,9 @@ const AttachMenu: FC<OwnProps> = ({
   isScheduled,
   onFileSelect,
   onPollCreate,
+  onBreakOut,
   onRankingsPoll,
+  onDelegatePoll,
   theme,
 }) => {
   const [isAttachMenuOpen, openAttachMenu, closeAttachMenu] = useFlag();
@@ -161,8 +165,10 @@ const AttachMenu: FC<OwnProps> = ({
           />
         ))}
 
-        {/* TODO: check if can attach these kind of polls as well */}
-        <MenuItem icon="poll" onClick={onRankingsPoll}>{lang('Rankings poll (fractally)')}</MenuItem>
+        {/* TODO: don't show this if there aren't enough members (or if there are too many members) */}
+        <MenuItem icon="poll" onClick={onBreakOut}>{lang('Create break out groups')}</MenuItem>
+        <MenuItem icon="poll" onClick={onRankingsPoll}>{lang('Create rankings poll')}</MenuItem>
+        <MenuItem icon="poll" onClick={onDelegatePoll}>{lang('Create delegate poll')}</MenuItem>
       </Menu>
     </div>
   );

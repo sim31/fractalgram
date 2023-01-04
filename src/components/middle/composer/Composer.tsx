@@ -20,6 +20,7 @@ import type {
   ApiBotCommand,
   ApiBotMenuButton,
   ApiAttachMenuPeerType,
+  ApiError,
   ApiPollAnswer,
 } from '../../../api/types';
 import {
@@ -32,7 +33,7 @@ import {
   EDITABLE_INPUT_ID,
   REPLIES_USER_ID,
   SEND_MESSAGE_ACTION_INTERVAL,
-  EDITABLE_INPUT_CSS_SELECTOR, MAX_UPLOAD_FILEPART_SIZE,
+  EDITABLE_INPUT_CSS_SELECTOR, MAX_UPLOAD_FILEPART_SIZE, PREF_BREAKOUT_SIZE,
 } from '../../../config';
 import { IS_VOICE_RECORDING_SUPPORTED, IS_SINGLE_COLUMN_LAYOUT, IS_IOS } from '../../../util/environment';
 import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
@@ -127,6 +128,7 @@ import DropArea, { DropAreaState } from './DropArea.async';
 import WebPagePreview from './WebPagePreview';
 import SendAsMenu from './SendAsMenu.async';
 import BotMenuButton from './BotMenuButton';
+import { createGroupChatInBack, loadFullChat } from '../../../global/actions/api/chats';
 
 import './Composer.scss';
 
@@ -653,6 +655,8 @@ const Composer: FC<OwnProps & StateProps> = ({
       }
     }
 
+    // eslint-disable-next-line no-console
+    console.log('htmlRef: ', htmlRef.current!);
     const { text, entities } = parseMessageInput(htmlRef.current!);
 
     if (!currentAttachments.length && !text && !isForwarding) {
@@ -943,19 +947,88 @@ const Composer: FC<OwnProps & StateProps> = ({
       const polls: ApiNewPoll[] = answers.map(
         (p, index) => { return { summary: { question: `Level ${6 - index}`, answers } }; },
       );
-      if (shouldSchedule) {
-        // TODO: test this
-        requestCalendar((scheduledAt) => {
-          polls.forEach((poll) => { handleMessageSchedule({ poll }, scheduledAt); });
-        });
-      } else {
-        polls.forEach((poll) => { sendMessage({ poll }); });
+      polls.forEach((poll) => { sendMessage({ poll }); });
+    } else {
+    // eslint-disable-next-line no-console
+      console.log('Don\'t have enough info about chat members');
+    }
+  }, [sendMessage, chat, getMembersInfo]);
+
+  const handleDelegatePoll = useCallback(() => {
+    if (getMembersInfo) {
+      const members = getMembersInfo();
+      const answers: ApiPollAnswer[] = members.map(
+        (m: ApiUser | undefined, index) => {
+          return { text: (m?.firstName) ? m.firstName : `User ${index}$`, option: String(index) };
+        },
+      );
+      const poll: ApiNewPoll = {
+        summary: {
+          question: 'Who should be the delegate of this break-out group?',
+          answers,
+        },
+      };
+
+      sendMessage({ poll });
+    } else {
+      // eslint-disable-next-line no-console
+      console.log('Don\'t have enough info about chat members');
+    }
+  }, [getMembersInfo, sendMessage]);
+
+  const handleBreakout = useCallback(async () => {
+    let msg: string = '';
+    function addMemberStr(m: ApiUser, index: number) {
+      msg += '  ';
+      msg += m.firstName ? m.firstName : `Member ${index}`;
+      msg += '\n';
+    }
+
+    if (chat?.membersCount && chat?.membersCount >= PREF_BREAKOUT_SIZE && getMembersInfo) {
+      const members = getMembersInfo();
+
+      if (members.includes(undefined)) {
+        // eslint-disable-next-line no-console
+        console.log('One of the members is undefined');
+        return;
       }
+      const mbs = members as ApiUser[];
+
+      // TODO: shuffle members (to create random break-out groups)
+      // TODO: Fix for group sizes to be between 4 and 6
+      const groups = Math.floor(mbs.length / 3);
+      const rem = mbs.length % 3;
+      const date = new Date();
+      const dateStr = `${date.getUTCDate()}${date.getUTCMonth()}${date.getUTCFullYear().toString().substring(2)}`;
+
+      for (let g = 0; g < groups; g++) {
+        const chatName = `${chat.title ? chat.title : ''} ${dateStr} group ${g + 1}`;
+        // If last group
+        const m = (g === groups - 1) ? 3 + rem : 3;
+        const groupMembers = mbs.slice(g * 3, g * 3 + m);
+        const newChat = await createGroupChatInBack(chatName, groupMembers);
+        if (!('membersCount' in newChat && newChat.membersCount && newChat.membersCount > 2)) {
+          // eslint-disable-next-line no-console
+          console.log('Error creating chat for poll: ', (newChat as ApiError).message);
+          return;
+        } else {
+          const fullChat = await loadFullChat(newChat);
+          // eslint-disable-next-line no-console
+          console.log('newChat.fullInfo: ', fullChat?.fullInfo);
+          if (fullChat?.fullInfo) {
+            msg += `\n**Breakout group ${g + 1}** (${fullChat.fullInfo.inviteLink})\n`;
+            groupMembers.forEach(addMemberStr);
+          }
+        }
+      }
+      // eslint-disable-next-line no-console
+      const { text, entities } = parseMessageInput(msg);
+      sendMessage({ text, entities });
     } else {
     // eslint-disable-next-line no-console
       console.log('Were not able to load full chat');
     }
-  }, [handleMessageSchedule, requestCalendar, sendMessage, shouldSchedule, chat, getMembersInfo]);
+  }, [chat, getMembersInfo, sendMessage]);
 
   const handleSendSilent = useCallback(() => {
     if (shouldSchedule) {
@@ -1331,7 +1404,9 @@ const Composer: FC<OwnProps & StateProps> = ({
             canAttachPolls={canAttachPolls}
             onFileSelect={handleFileSelect}
             onPollCreate={openPollModal}
+            onBreakOut={handleBreakout}
             onRankingsPoll={handleRankingsPoll}
+            onDelegatePoll={handleDelegatePoll}
             isScheduled={shouldSchedule}
             attachBots={attachBots}
             peerType={attachMenuPeerType}
@@ -1470,11 +1545,17 @@ export default memo(withGlobal<OwnProps>(
       : selectEditingDraft(global, chatId, threadId);
 
     const groupChatMembers = chat?.fullInfo?.members;
-    const getMembersInfo = groupChatMembers ? () => {
-      return groupChatMembers?.map<ApiUser | undefined>(
-        (member: { userId: string }) => { return selectUser(global, member.userId); },
-      );
-    } : undefined;
+    const getMembersInfo = groupChatMembers
+      ? () => {
+        return groupChatMembers?.map<ApiUser | undefined>(
+          (member: { userId: string }) => { return selectUser(global, member.userId); },
+        );
+      }
+      : undefined;
+
+    // TODO: Only display button to start the process if there are enough members
+    // const canStartFractally = chat?.fullInfo?.members?.length
+    //   ? chat.fullInfo.members.length > PREF_BREAKOUT_SIZE : false;
 
     return {
       editingMessage: selectEditingMessage(global, chatId, threadId, messageListType),

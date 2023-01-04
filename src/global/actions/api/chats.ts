@@ -1528,6 +1528,67 @@ async function createGroupChat(title: string, users: ApiUser[], photo?: File) {
   }
 }
 
+// Creates group chat but does not open it
+export async function createGroupChatInBack(
+  title: string, users: ApiUser[], photo?: File,
+): Promise<ApiChat | ApiError> {
+  setGlobal({
+    ...getGlobal(),
+    chatCreation: {
+      progress: ChatCreationProgress.InProgress,
+    },
+  });
+
+  try {
+    const createdChat = await callApi('createGroupChat', {
+      title,
+      users,
+    });
+
+    if (!createdChat) {
+      return { message: 'createGroupChat api call returned null value' };
+    }
+
+    const { id: chatId } = createdChat;
+
+    let global = getGlobal();
+    global = updateChat(global, chatId, createdChat);
+    global = {
+      ...global,
+      chatCreation: {
+        ...global.chatCreation,
+        progress: createdChat ? ChatCreationProgress.Complete : ChatCreationProgress.Error,
+      },
+    };
+    setGlobal(global);
+
+    if (chatId && photo) {
+      await callApi('editChatPhoto', {
+        chatId,
+        photo,
+      });
+    }
+    return createdChat;
+  } catch (e: any) {
+    if (e.message === 'USERS_TOO_FEW') {
+      const global = getGlobal();
+      setGlobal({
+        ...global,
+        chatCreation: {
+          ...global.chatCreation,
+          progress: ChatCreationProgress.Error,
+          error: 'CreateGroupError',
+        },
+      });
+    }
+    if (e.message) {
+      return { message: e.message };
+    } else {
+      return { message: 'Unknown message' };
+    }
+  }
+}
+
 export async function migrateChat(chat: ApiChat): Promise<ApiChat | undefined> {
   try {
     const supergroup = await callApi('migrateChat', chat);
