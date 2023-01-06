@@ -1,3 +1,5 @@
+// @ts-ignore
+import { withUAL } from 'ual-reactjs-renderer';
 import type { FC } from './lib/teact/teact';
 import React, { useEffect } from './lib/teact/teact';
 import { getActions, withGlobal } from './global';
@@ -175,7 +177,7 @@ const App: FC<StateProps> = ({
   );
 };
 
-export default withGlobal(
+const appWithGlobal = withGlobal(
   (global): StateProps => {
     return {
       authState: global.authState,
@@ -185,3 +187,5 @@ export default withGlobal(
     };
   },
 )(App);
+
+export default withUAL(appWithGlobal);
