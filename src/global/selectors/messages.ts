@@ -1,4 +1,6 @@
-import type { GlobalState, MessageListType, Thread } from '../types';
+import type {
+  CustomListId, GlobalState, MessageListType, Thread,
+} from '../types';
 import type {
   ApiChat,
   ApiStickerSetInfo,
@@ -70,6 +72,10 @@ export function selectCurrentChat(global: GlobalState) {
 
 export function selectChatMessages(global: GlobalState, chatId: string) {
   return global.messages.byChatId[chatId]?.byId;
+}
+
+export function selectCustomList(global: GlobalState, listId: CustomListId) {
+  return global.messages.customListsById[listId];
 }
 
 export function selectScheduledMessages(global: GlobalState, chatId: string) {

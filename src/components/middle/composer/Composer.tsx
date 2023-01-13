@@ -103,6 +103,7 @@ import useInlineBotTooltip from './hooks/useInlineBotTooltip';
 import useBotCommandTooltip from './hooks/useBotCommandTooltip';
 import useSchedule from '../../../hooks/useSchedule';
 import useCustomEmojiTooltip from './hooks/useCustomEmojiTooltip';
+import useSendMessageThen from '../../../hooks/useSendMessageThen';
 
 import DeleteMessageModal from '../../common/DeleteMessageModal.async';
 import Button from '../../ui/Button';
@@ -291,6 +292,7 @@ const Composer: FC<OwnProps & StateProps> = ({
     openPremiumModal,
     addRecentCustomEmoji,
     showNotification,
+    pinMessage,
   } = getActions();
   const lang = useLang();
 
@@ -936,6 +938,8 @@ const Composer: FC<OwnProps & StateProps> = ({
     }
   }, [closePollModal, handleMessageSchedule, requestCalendar, sendMessage, shouldSchedule]);
 
+  const sendMessageThen = useSendMessageThen(chatId, sendAsId);
+
   const handleRankingsPoll = useCallback(() => {
     if (chat?.membersCount && chat?.membersCount >= 3 && chat?.membersCount <= 6 && getMembersInfo) {
       const members = getMembersInfo();
@@ -969,12 +973,16 @@ const Composer: FC<OwnProps & StateProps> = ({
         },
       };
 
-      sendMessage({ poll });
+      sendMessageThen({ poll }, (msg: ApiMessage) => {
+        pinMessage({
+          chatId, messageId: msg.id, isUnpin: false, isOneSide: true, isSilent: true,
+        });
+      });
     } else {
       // eslint-disable-next-line no-console
       console.log('Don\'t have enough info about chat members');
     }
-  }, [getMembersInfo, sendMessage]);
+  }, [getMembersInfo, sendMessageThen, pinMessage, chatId]);
 
   const handleBreakout = useCallback(async () => {
     let msg: string = '';
