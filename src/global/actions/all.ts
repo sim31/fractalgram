@@ -39,5 +39,3 @@ import './apiUpdaters/settings';
 import './apiUpdaters/twoFaSettings';
 import './apiUpdaters/calls';
 import './apiUpdaters/payments';
-
-import './extra/customMessageLists';

@@ -1,8 +1,5 @@
 import type {
-  CustomListId,
-  CustomMessageList,
-  FullMessageId,
-  GlobalState, MessageList, MessageListSize, MessageListType, MessageTestFn, Thread,
+  GlobalState, MessageList, MessageListType, Thread,
 } from '../types';
 import type { ApiMessage, ApiSponsoredMessage, ApiThreadInfo } from '../../api/types';
 import { MAIN_THREAD_ID } from '../../api/types';
@@ -25,13 +22,10 @@ import {
   selectCurrentMessageIds,
   selectChatMessage,
   selectCurrentMessageList,
-  selectCustomList,
 } from '../selectors';
 import {
   areSortedArraysEqual, omit, pickTruthy, unique,
 } from '../../util/iteratees';
-import { areDeepEqual } from '../../util/areDeepEqual';
-import { isMessageLocal } from '../helpers';
 
 type MessageStoreSections = {
   byId: Record<number, ApiMessage>;
@@ -138,109 +132,6 @@ export function addMessages(
   return global;
 }
 
-function updateCustomMessageLists(
-  global: GlobalState, listsToChange: Record<CustomListId, CustomMessageList>,
-): GlobalState {
-  return {
-    ...global,
-    messages: {
-      ...global.messages,
-      customListsById: {
-        ...global.messages.customListsById,
-        ...listsToChange,
-      },
-    },
-  };
-}
-
-function messageBelongsToList(list: CustomMessageList, message: ApiMessage) {
-  if (
-    list.active && (list.messageIds.length === 0 || list.expected === 'many')
-    && !(!list.allowLocal && isMessageLocal(message))
-  ) {
-    return list.testFn(message);
-  } else {
-    return false;
-  }
-}
-
-function getCustomListUpdatesForChat(
-  global: GlobalState,
-  chatId: string,
-  list: CustomMessageList,
-  byId: Record<number, ApiMessage>,
-): FullMessageId[] {
-  const msgIds = Object.values(byId).reduce((matchingMsgIds, message) => {
-    if (messageBelongsToList(list, message)) {
-      matchingMsgIds.push({ chatId, messageId: message.id });
-    }
-    return matchingMsgIds;
-  }, [] as FullMessageId[]);
-
-  return msgIds;
-}
-
-export function addCustomList(
-  global: GlobalState,
-  id: CustomListId,
-  testFn: MessageTestFn,
-  allowLocal: boolean = false,
-  initFromChatsById: string[] | 'all' = [],
-  expected: MessageListSize = 'many',
-  active: boolean = true,
-): GlobalState {
-  const existing = selectCustomList(global, id);
-  if (existing) {
-    return global;
-  }
-
-  const list: CustomMessageList = {
-    id, testFn, allowLocal, expected, active, messageIds: [],
-  };
-
-  const initFrom = initFromChatsById === 'all' ? Object.keys(global.messages.byChatId) : initFromChatsById;
-
-  for (const chatId of initFrom) {
-    const byId = selectChatMessages(global, chatId);
-    if (!byId) {
-      continue;
-    }
-    list.messageIds = getCustomListUpdatesForChat(global, chatId, list, byId);
-  }
-
-  return {
-    ...global,
-    messages: {
-      ...global.messages,
-      customListsById: {
-        ...global.messages.customListsById,
-        [id]: list,
-      },
-    },
-  };
-}
-
-export function removeCustomList(
-  global: GlobalState,
-  listId: CustomListId,
-): GlobalState {
-  const existing = selectCustomList(global, listId);
-  if (existing) {
-    return global;
-  }
-
-  const newLists = { ...global.messages.customListsById };
-  delete newLists[listId];
-
-  return {
-    ...global,
-    messages: {
-      ...global.messages,
-      customListsById: newLists,
-    },
-  };
-}
-
 export function addChatMessagesById(
   global: GlobalState, chatId: string, newById: Record<number, ApiMessage>,
 ): GlobalState {
@@ -248,18 +139,6 @@ export function addChatMessagesById(
 
   if (byId && Object.keys(newById).every((newId) => Boolean(byId[Number(newId)]))) {
     return global;
-  }
-
-  const listsToChange = Object.entries(global.messages.customListsById).reduce((changedLists, [listId, list]) => {
-    const msgIds = getCustomListUpdatesForChat(global, chatId, list, newById);
-    if (msgIds.length) {
-      changedLists[listId] = { ...list, messageIds: msgIds };
-    }
-    return changedLists;
-  }, {} as Record<string, CustomMessageList>);
-
-  if (Object.keys(listsToChange).length) {
-    global = updateCustomMessageLists(global, listsToChange);
   }
 
   return replaceChatMessages(global, chatId, {
@@ -280,20 +159,6 @@ export function updateChatMessage(
 
   if (!updatedMessage.id) {
     return global;
-  }
-
-  const listsToChange = Object.entries(global.messages.customListsById).reduce((changedLists, [listId, list]) => {
-    if (messageBelongsToList(list, updatedMessage)) {
-      const fullId = { chatId, messageId: updatedMessage.id };
-      if (!list.messageIds.find((id) => areDeepEqual(id, fullId))) {
-        changedLists[listId] = { ...list, messageIds: [...list.messageIds, fullId] };
-      }
-    }
-    return changedLists;
-  }, {} as Record<string, CustomMessageList>);
-
-  if (Object.keys(listsToChange).length) {
-    global = updateCustomMessageLists(global, listsToChange);
   }
 
   return replaceChatMessages(global, chatId, {
@@ -395,23 +260,6 @@ export function deleteChatMessages(
         global = updateChatMessage(global, fromChatId!, fromMessageId!, { threadInfo: undefined });
       }
     });
-  }
-
-  const listsToChange = Object.entries(global.messages.customListsById).reduce((changedLists, [listId, list]) => {
-    Object.values(messageIds).forEach((msgId) => {
-      const index = list.messageIds.findIndex((id) => areDeepEqual(id, { chatId, messageId: msgId }));
-      if (index === -1) {
-        if (!changedLists[listId]) {
-          changedLists[listId] = { ...list };
-        }
-        changedLists[listId].messageIds = changedLists[listId].messageIds.splice(index, 1);
-      }
-    });
-    return changedLists;
-  }, {} as Record<string, CustomMessageList>);
-
-  if (listsToChange.length) {
-    global = updateCustomMessageLists(global, listsToChange);
   }
 
   global = replaceChatMessages(global, chatId, newById);

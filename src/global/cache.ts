@@ -551,7 +551,6 @@ function reduceMessages(global: GlobalState): GlobalState['messages'] {
     byChatId,
     messageLists: currentChatId && threadId && type ? [{ chatId: currentChatId, threadId, type }] : [],
     sponsoredByChatId: {},
-    customListsById: {},
   };
 }
 

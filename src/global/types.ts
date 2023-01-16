@@ -89,26 +89,6 @@ export interface MessageList {
   type: MessageListType;
 }
 
-export type CustomListId = string;
-
-export type MessageTestFn = (msg: ApiMessage) => boolean;
-
-export type MessageListSize = 'single' | 'many';
-
-export type FullMessageId = {
-  chatId: string;
-  messageId: number;
-};
-
-export type CustomMessageList = {
-  id: CustomListId;
-  testFn: MessageTestFn;
-  allowLocal: boolean;
-  expected: MessageListSize;
-  active: boolean;
-  messageIds: FullMessageId[];
-};
-
 export interface ActiveEmojiInteraction {
   id: number;
   x: number;
@@ -242,7 +222,6 @@ export type GlobalState = {
       threadsById: Record<number, Thread>;
     }>;
     messageLists: MessageList[];
-    customListsById: Record<CustomListId, CustomMessageList>;
     contentToBeScheduled?: {
       gif?: ApiVideo;
       sticker?: ApiSticker;
@@ -840,19 +819,6 @@ export interface ActionPayloads {
     ids: number[];
   };
 
-  // Custom message lists
-  addCustomList: {
-    id: CustomListId;
-    testFn: MessageTestFn;
-    initFromChatsById?: string[] | 'all';
-    expected?: MessageListSize;
-    active?: boolean;
-  };
-
-  removeCustomList: {
-    id: CustomListId;
-  };
-
   // Reactions
   loadAvailableReactions: never;
 
@@ -1358,9 +1324,6 @@ export type NonTypedActionNames = (
   'stopActiveEmojiInteraction' | 'interactWithAnimatedEmoji' | 'loadReactors' |
   'sendEmojiInteraction' | 'sendWatchingEmojiInteraction' | 'copySelectedMessages' | 'copyMessagesByIds' |
   'setEditingId' |
-  // custom message lists
-  'addCustomList' |
-  'removeCustomList' |
   // scheduled messages
   'loadScheduledHistory' | 'sendScheduledMessages' | 'rescheduleMessage' | 'deleteScheduledMessages' |
   // poll result
