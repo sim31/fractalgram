@@ -291,6 +291,7 @@ const Composer: FC<OwnProps & StateProps> = ({
     openPremiumModal,
     addRecentCustomEmoji,
     showNotification,
+    sendPinnedMessage,
   } = getActions();
   const lang = useLang();
 
@@ -969,12 +970,12 @@ const Composer: FC<OwnProps & StateProps> = ({
         },
       };
 
-      sendMessage({ poll });
+      sendPinnedMessage({ poll });
     } else {
       // eslint-disable-next-line no-console
       console.log('Don\'t have enough info about chat members');
     }
-  }, [getMembersInfo, sendMessage]);
+  }, [getMembersInfo, sendPinnedMessage]);
 
   const handleBreakout = useCallback(async () => {
     let msg: string = '';

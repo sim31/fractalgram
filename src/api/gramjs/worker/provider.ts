@@ -86,6 +86,10 @@ export function callApi<T extends keyof Methods>(fnName: T, ...args: MethodArgs<
   return promise as MethodResponse<T>;
 }
 
+export function generateMessageId() {
+  return generateIdFor(requestStates);
+}
+
 export function cancelApiProgress(progressCallback: ApiOnProgress) {
   progressCallback.isCanceled = true;
 
@@ -122,7 +126,8 @@ function subscribeToWorker(onUpdate: OnApiUpdate) {
 }
 
 function makeRequest(message: OriginRequest) {
-  const messageId = generateIdFor(requestStates);
+  const messageId = message.type === 'callMethod' && message.providedId
+    ? message.providedId : generateMessageId();
   const payload: OriginRequest = {
     messageId,
     ...message,

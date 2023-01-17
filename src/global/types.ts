@@ -1324,6 +1324,7 @@ export type NonTypedActionNames = (
   'stopActiveEmojiInteraction' | 'interactWithAnimatedEmoji' | 'loadReactors' |
   'sendEmojiInteraction' | 'sendWatchingEmojiInteraction' | 'copySelectedMessages' | 'copyMessagesByIds' |
   'setEditingId' |
+  'sendPinnedMessage' |
   // scheduled messages
   'loadScheduledHistory' | 'sendScheduledMessages' | 'rescheduleMessage' | 'deleteScheduledMessages' |
   // poll result

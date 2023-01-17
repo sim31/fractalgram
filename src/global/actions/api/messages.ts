@@ -1,6 +1,7 @@
-import { addActionHandler, getGlobal, setGlobal } from '../../index';
-
-import type { GlobalActions } from '../../types';
+import {
+  addActionHandler, getGlobal, setGlobal, getActions,
+} from '../../index';
+import type { GlobalActions, GlobalState } from '../../types';
 import type {
   ApiAttachment,
   ApiChat,
@@ -27,7 +28,7 @@ import {
   SERVICE_NOTIFICATIONS_USER_ID,
 } from '../../../config';
 import { IS_IOS } from '../../../util/environment';
-import { callApi, cancelApiProgress } from '../../../api/gramjs';
+import { callApi, cancelApiProgress, generateMessageId } from '../../../api/gramjs';
 import {
   areSortedArraysIntersecting, buildCollectionByKey, split, unique,
 } from '../../../util/iteratees';
@@ -84,6 +85,10 @@ import { ensureProtocol } from '../../../util/ensureProtocol';
 const AUTOLOGIN_TOKEN_KEY = 'autologin_token';
 
 const uploadProgressCallbacks = new Map<number, ApiOnProgress>();
+
+type MessageSentCb = (newId: number, message: Partial<ApiMessage>) => void;
+const messageSentCallbacks = new Map<string, MessageSentCb>();
+const messageSentIds = new Map<number, string>();
 
 const runDebouncedForMarkRead = debounce((cb) => cb(), 500, false);
 
@@ -198,7 +203,10 @@ addActionHandler('loadMessage', async (global, actions, payload) => {
   }
 });
 
-addActionHandler('sendMessage', (global, actions, payload) => {
+function sendMessageImpl(
+  global: GlobalState, actions: any, payload: any,
+  sentCb?: MessageSentCb,
+) {
   const currentMessageList = selectCurrentMessageList(global);
   if (!currentMessageList) {
     return undefined;
@@ -237,7 +245,7 @@ addActionHandler('sendMessage', (global, actions, payload) => {
     sendMessage({
       ...restParams,
       attachment: attachments ? attachments[0] : undefined,
-    });
+    }, sentCb);
   } else if (isGrouped) {
     const {
       text, entities, attachments, ...commonParams
@@ -247,13 +255,14 @@ addActionHandler('sendMessage', (global, actions, payload) => {
       const [firstAttachment, ...restAttachments] = groupedAttachments[i];
       const groupedId = `${Date.now()}${i}`;
 
+      const cb = i === 0 ? sentCb : undefined;
       sendMessage({
         ...commonParams,
         text: i === 0 ? text : undefined,
         entities: i === 0 ? entities : undefined,
         attachment: firstAttachment,
         groupedId: restAttachments.length > 0 ? groupedId : undefined,
-      });
+      }, cb);
 
       restAttachments.forEach((attachment: ApiAttachment) => {
         sendMessage({
@@ -274,7 +283,7 @@ addActionHandler('sendMessage', (global, actions, payload) => {
         text,
         entities,
         replyingTo,
-      });
+      }, sentCb);
     }
 
     attachments.forEach((attachment: ApiAttachment) => {
@@ -286,6 +295,33 @@ addActionHandler('sendMessage', (global, actions, payload) => {
   }
 
   return undefined;
+}
+
+addActionHandler('sendMessage', (global, actions, payload) => {
+  return sendMessageImpl(global, actions, payload);
+});
+
+addActionHandler('pinMessage', (global, actions, payload) => {
+  const chat = selectCurrentChat(global);
+  if (!chat) {
+    return;
+  }
+
+  const {
+    messageId, isUnpin, isOneSide, isSilent,
+  } = payload!;
+
+  void callApi('pinMessage', {
+    chat, messageId, isUnpin, isOneSide, isSilent,
+  });
+});
+
+addActionHandler('sendPinnedMessage', (global, actions, payload) => {
+  return sendMessageImpl(global, actions, payload, (messageId) => {
+    getActions().pinMessage({
+      messageId, isUnpin: false, isSilent: true,
+    });
+  });
 });
 
 addActionHandler('editMessage', (global, actions, payload) => {
@@ -379,21 +415,6 @@ addActionHandler('toggleMessageWebPage', (global, actions, payload) => {
   const { chatId, threadId, noWebPage } = payload!;
 
   return replaceThreadParam(global, chatId, threadId, 'noWebPage', noWebPage);
-});
-
-addActionHandler('pinMessage', (global, actions, payload) => {
-  const chat = selectCurrentChat(global);
-  if (!chat) {
-    return;
-  }
-
-  const {
-    messageId, isUnpin, isOneSide, isSilent,
-  } = payload!;
-
-  void callApi('pinMessage', {
-    chat, messageId, isUnpin, isOneSide, isSilent,
-  });
 });
 
 addActionHandler('unpinAllMessages', (global, actions, payload) => {
@@ -782,6 +803,34 @@ addActionHandler('loadCustomEmojis', async (global, actions, payload) => {
   });
 });
 
+addActionHandler('apiUpdate', (global, actions, update) => {
+  switch (update['@type']) {
+    case 'newMessage': {
+      const { id, providedId } = update;
+      if (providedId) {
+        messageSentIds.set(id, providedId);
+      }
+      break;
+    }
+    case 'updateMessageSendSucceeded': {
+      const { localId, message } = update;
+      const providedId = messageSentIds.get(localId);
+      if (providedId) {
+        const cb = messageSentCallbacks.get(providedId);
+        if (cb) {
+          try {
+            cb(message.id, message);
+          } finally {
+            messageSentCallbacks.delete(providedId);
+            messageSentIds.delete(localId);
+          }
+        }
+      }
+      break;
+    }
+  }
+});
+
 async function loadWebPagePreview(message: string) {
   const webPagePreview = await callApi('fetchWebPagePreview', { message });
 
@@ -946,21 +995,24 @@ function getViewportSlice(
   return { newViewportIds, areSomeLocal, areAllLocal };
 }
 
-async function sendMessage(params: {
-  chat: ApiChat;
-  text?: string;
-  entities?: ApiMessageEntity[];
-  replyingTo?: number;
-  attachment?: ApiAttachment;
-  sticker?: ApiSticker;
-  gif?: ApiVideo;
-  poll?: ApiNewPoll;
-  serverTimeOffset?: number;
-  isSilent?: boolean;
-  scheduledAt?: number;
-  sendAs?: ApiChat | ApiUser;
-  replyingToTopId?: number;
-}) {
+async function sendMessage(
+  params: {
+    chat: ApiChat;
+    text?: string;
+    entities?: ApiMessageEntity[];
+    replyingTo?: number;
+    attachment?: ApiAttachment;
+    sticker?: ApiSticker;
+    gif?: ApiVideo;
+    poll?: ApiNewPoll;
+    serverTimeOffset?: number;
+    isSilent?: boolean;
+    scheduledAt?: number;
+    sendAs?: ApiChat | ApiUser;
+    replyingToTopId?: number;
+  },
+  messageSentCb?: MessageSentCb,
+) {
   let localId: number | undefined;
   const progressCallback = params.attachment ? (progress: number, messageLocalId: number) => {
     if (!uploadProgressCallbacks.has(messageLocalId)) {
@@ -1002,7 +1054,13 @@ async function sendMessage(params: {
     params.replyingToTopId = selectThreadTopMessageId(global, params.chat.id, threadId)!;
   }
 
-  await callApi('sendMessage', params, progressCallback);
+  let msgId: string | undefined;
+  if (messageSentCb) {
+    msgId = generateMessageId();
+    messageSentCallbacks.set(msgId, messageSentCb);
+  }
+
+  await callApi('sendMessage', params, progressCallback, msgId);
 
   if (progressCallback && localId) {
     uploadProgressCallbacks.delete(localId);

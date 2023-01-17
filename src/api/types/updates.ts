@@ -185,6 +185,7 @@ export type ApiUpdateNewScheduledMessage = {
   chatId: string;
   id: number;
   message: Partial<ApiMessage>;
+  providedId?: string;
 };
 
 export type ApiUpdateNewMessage = {
@@ -193,6 +194,7 @@ export type ApiUpdateNewMessage = {
   id: number;
   message: Partial<ApiMessage>;
   shouldForceReply?: boolean;
+  providedId?: string;
 };
 
 export type ApiUpdateMessage = {
