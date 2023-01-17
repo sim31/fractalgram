@@ -72,8 +72,8 @@ export function selectChatMessages(global: GlobalState, chatId: string) {
   return global.messages.byChatId[chatId]?.byId;
 }
 
-export function selectChatConsensusInfo(global: GlobalState, chatId: string) {
-  return global.messages.byChatId[chatId]?.consensusInfo;
+export function selectChatConsensusMsgs(global: GlobalState, chatId: string) {
+  return global.messages.byChatId[chatId]?.consensusMsgs;
 }
 
 export function selectAccountPromptStrs(global: GlobalState) {

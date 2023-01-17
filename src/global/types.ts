@@ -78,23 +78,28 @@ import type {
 import { typify } from '../lib/teact/teactn';
 import type { P2pMessage } from '../lib/secret-sauce';
 
-// Id on telegram -> [date, id on some other platform]
-export type AccountMapping = Record<string, [number, string]>;
 export type Rank = 6 | 5 | 4 | 3 | 2 | 1;
 // eslint-disable-next-line
 export const rankPollRe = '/^Who should be ranked level ([1-6])\?$/';
 // eslint-disable-next-line
 export const selectDelegateRe = '/^Who should be the delegate of this group\?$/';
 
-export type ChatConsensusInfo = {
+export type ChatConsensusMessages = {
   // id of prompt message -> platform
   extAccountPrompts: Record<number, string>;
-  // platform -> (tg account -> platform account)
-  extAccounts: Record<string, AccountMapping>;
-  // rank -> [date, msg id of the poll]
-  latestRankingPolls: Record<number, [number, number]>;
-  // [date, Id of the delegate poll message]
-  latestDelegatePoll: [number, number] | undefined;
+  // platform -> ids of replies to prompt messages for a platform
+  extAccountReplies: Record<string, Set<number>>;
+  // rank -> poll message ids
+  rankingPolls: Record<number, Set<number>>;
+  // delegate poll ids
+  delegatePolls: Set<number>;
+};
+
+export const initConsensusMsgs: ChatConsensusMessages = {
+  extAccountPrompts: {},
+  extAccountReplies: {},
+  rankingPolls: {},
+  delegatePolls: new Set([]),
 };
 
 export type MessageListType =
@@ -239,7 +244,7 @@ export type GlobalState = {
     byChatId: Record<string, {
       byId: Record<number, ApiMessage>;
       threadsById: Record<number, Thread>;
-      consensusInfo: ChatConsensusInfo;
+      consensusMsgs: ChatConsensusMessages;
     }>;
     messageLists: MessageList[];
     contentToBeScheduled?: {

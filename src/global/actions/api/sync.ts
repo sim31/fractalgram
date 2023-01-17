@@ -6,6 +6,7 @@ import { addCallback } from '../../../lib/teact/teactn';
 import type { ApiChat, ApiMessage } from '../../../api/types';
 import { MAIN_THREAD_ID } from '../../../api/types';
 import type { GlobalState, Thread } from '../../types';
+import { initConsensusMsgs } from '../../types';
 
 import {
   DEBUG, MESSAGE_LIST_SLICE, SERVICE_NOTIFICATIONS_USER_ID,
@@ -150,12 +151,7 @@ async function loadAndReplaceMessages() {
                       outlyingIds: undefined,
                     },
                   },
-                  consensusInfo: {
-                    extAccountPrompts: {},
-                    extAccounts: {},
-                    latestRankingPolls: {},
-                    latestDelegatePoll: undefined,
-                  },
+                  consensusMsgs: { ...initConsensusMsgs },
                 },
                 [currentChatId]: {
                   ...global.messages.byChatId[currentChatId],
