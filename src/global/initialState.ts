@@ -47,6 +47,10 @@ export const INITIAL_STATE: GlobalState = {
     sponsoredByChatId: {},
   },
 
+  accountPromptStrs: {
+    eos: 'Please enter your EOS account name as a reply to this message',
+  },
+
   groupCalls: {
     byId: {},
   },

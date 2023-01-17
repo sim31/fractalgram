@@ -78,6 +78,25 @@ import type {
 import { typify } from '../lib/teact/teactn';
 import type { P2pMessage } from '../lib/secret-sauce';
 
+// Id on telegram -> [date, id on some other platform]
+export type AccountMapping = Record<string, [number, string]>;
+export type Rank = 6 | 5 | 4 | 3 | 2 | 1;
+// eslint-disable-next-line
+export const rankPollRe = '/^Who should be ranked level ([1-6])\?$/';
+// eslint-disable-next-line
+export const selectDelegateRe = '/^Who should be the delegate of this group\?$/';
+
+export type ChatConsensusInfo = {
+  // id of prompt message -> platform
+  extAccountPrompts: Record<number, string>;
+  // platform -> (tg account -> platform account)
+  extAccounts: Record<string, AccountMapping>;
+  // rank -> [date, msg id of the poll]
+  latestRankingPolls: Record<number, [number, number]>;
+  // [date, Id of the delegate poll message]
+  latestDelegatePoll: [number, number] | undefined;
+};
+
 export type MessageListType =
   'thread'
   | 'pinned'
@@ -220,6 +239,7 @@ export type GlobalState = {
     byChatId: Record<string, {
       byId: Record<number, ApiMessage>;
       threadsById: Record<number, Thread>;
+      consensusInfo: ChatConsensusInfo;
     }>;
     messageLists: MessageList[];
     contentToBeScheduled?: {
@@ -230,6 +250,9 @@ export type GlobalState = {
     };
     sponsoredByChatId: Record<string, ApiSponsoredMessage>;
   };
+
+  // platform -> account prompt string for that platform
+  accountPromptStrs: Record<string, string>;
 
   groupCalls: {
     byId: Record<string, ApiGroupCall>;

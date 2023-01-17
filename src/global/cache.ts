@@ -544,6 +544,12 @@ function reduceMessages(global: GlobalState): GlobalState['messages'] {
       threadsById: {
         [MAIN_THREAD_ID]: mainThread,
       },
+      consensusInfo: {
+        extAccountPrompts: {},
+        extAccounts: {},
+        latestRankingPolls: {},
+        latestDelegatePoll: undefined,
+      },
     };
   });
 

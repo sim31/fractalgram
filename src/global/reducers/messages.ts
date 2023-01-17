@@ -1,6 +1,8 @@
 import type {
-  GlobalState, MessageList, MessageListType, Thread,
+  ChatConsensusInfo,
+  GlobalState, MessageList, MessageListType, Rank, Thread,
 } from '../types';
+import { rankPollRe, selectDelegateRe } from '../types';
 import type { ApiMessage, ApiSponsoredMessage, ApiThreadInfo } from '../../api/types';
 import { MAIN_THREAD_ID } from '../../api/types';
 import type { FocusDirection } from '../../types';
@@ -22,6 +24,9 @@ import {
   selectCurrentMessageIds,
   selectChatMessage,
   selectCurrentMessageList,
+  selectChatConsensusInfo,
+  selectAccountPromptStr,
+  selectAccountPromptStrs,
 } from '../selectors';
 import {
   areSortedArraysEqual, omit, pickTruthy, unique,
@@ -30,6 +35,7 @@ import {
 type MessageStoreSections = {
   byId: Record<number, ApiMessage>;
   threadsById: Record<number, Thread>;
+  consensusInfo: ChatConsensusInfo;
 };
 
 export function updateCurrentMessageList(
@@ -65,9 +71,15 @@ export function updateCurrentMessageList(
   };
 }
 
-function replaceChatMessages(global: GlobalState, chatId: string, newById: Record<number, ApiMessage>): GlobalState {
+function replaceChatMessages(
+  global: GlobalState,
+  chatId: string,
+  newById: Record<number, ApiMessage>,
+  newConsensusInfo: ChatConsensusInfo,
+): GlobalState {
   return updateMessageStore(global, chatId, {
     byId: newById,
+    consensusInfo: newConsensusInfo,
   });
 }
 
@@ -132,6 +144,87 @@ export function addMessages(
   return global;
 }
 
+function addNewMessageAsReplyToPrompt(
+  consensusInfo: ChatConsensusInfo,
+  msg: ApiMessage,
+): ChatConsensusInfo {
+  if (msg.replyToMessageId && msg.senderId && msg.content.text?.text) {
+    const platform = consensusInfo.extAccountPrompts[msg.replyToMessageId];
+    if (platform) {
+      const prevInfo = consensusInfo;
+      const [oldEntryDate] = prevInfo.extAccounts[platform][msg.senderId];
+      if (oldEntryDate && oldEntryDate <= msg.date) {
+        consensusInfo = {
+          ...prevInfo,
+          extAccounts: {
+            ...prevInfo.extAccounts,
+            [platform]: {
+              ...prevInfo.extAccounts[platform],
+              [msg.senderId]: [msg.date, msg.content.text.text],
+            },
+          },
+        };
+      }
+    }
+  }
+
+  return consensusInfo;
+}
+
+function addNewMessageForConsensus(
+  global: GlobalState,
+  currentById: Record<number, ApiMessage>,
+  consensusInfo: ChatConsensusInfo,
+  msg: ApiMessage,
+) {
+  const prevConsensusInfo = consensusInfo;
+  consensusInfo = addNewMessageAsReplyToPrompt(consensusInfo, msg);
+  if (prevConsensusInfo !== consensusInfo && msg.content.poll) {
+    // rankings poll
+    const regResult = rankPollRe.match(msg.content.poll.summary.question);
+    if (regResult) {
+      const rank = parseInt(regResult[1], 10) as Rank;
+      const [date] = consensusInfo.latestRankingPolls[rank];
+      if (date && date <= msg.date) {
+        consensusInfo = {
+          ...consensusInfo,
+          latestRankingPolls: {
+            ...consensusInfo.latestRankingPolls,
+            [rank]: [msg.date, msg.id],
+          },
+        };
+      }
+    } else if (selectDelegateRe.match(msg.content.poll.summary.question)) { // delegate poll
+      const date = consensusInfo.latestDelegatePoll && consensusInfo.latestDelegatePoll[0];
+      if (date && date <= msg.date) {
+        consensusInfo = {
+          ...consensusInfo,
+          latestDelegatePoll: [msg.date, msg.id],
+        };
+      }
+    }
+  } else {
+    // Check if it is account prompt message
+    Object.entries(selectAccountPromptStrs(global)).forEach(([platform, str]) => {
+      if (msg.content.text && msg.content.text.text === str) {
+        const prevInfo = consensusInfo;
+        consensusInfo = {
+          ...prevInfo,
+          extAccountPrompts: {
+            [msg.id]: platform,
+          },
+        };
+        // Check for existing replies to this prompt
+        Object.values(currentById).forEach((existingMsg) => {
+          consensusInfo = addNewMessageAsReplyToPrompt(consensusInfo, existingMsg);
+        });
+      }
+    });
+  }
+
+  return consensusInfo;
+}
+
 export function addChatMessagesById(
   global: GlobalState, chatId: string, newById: Record<number, ApiMessage>,
 ): GlobalState {
@@ -141,10 +234,17 @@ export function addChatMessagesById(
     return global;
   }
 
+  let consensusInfo: ChatConsensusInfo = selectChatConsensusInfo(global, chatId);
+  let currentById = { ...byId };
+  Object.values(newById).forEach((msg) => {
+    currentById = { ...currentById, [msg.id]: msg };
+    consensusInfo = addNewMessageForConsensus(global, currentById, consensusInfo, msg);
+  });
+
   return replaceChatMessages(global, chatId, {
     ...newById,
     ...byId,
-  });
+  }, consensusInfo);
 }
 
 export function updateChatMessage(
@@ -161,10 +261,63 @@ export function updateChatMessage(
     return global;
   }
 
-  return replaceChatMessages(global, chatId, {
+  const newById = {
     ...byId,
     [messageId]: updatedMessage,
-  });
+  };
+
+  // eslint-disable-next-line no-console
+  console.assert(updatedMessage.id === messageId);
+
+  let consensusInfo = selectChatConsensusInfo(global, chatId);
+  const promptPlatform = consensusInfo.extAccountPrompts[messageId];
+  if (promptPlatform) {
+    const promptStr = selectAccountPromptStr(global, promptPlatform);
+    if (updatedMessage.content.text?.text !== promptStr) {
+      // Ignoring this updated message (even if it is a valid consensus message) from now on
+      // because part of replies to it might be intended for another platform
+      delete consensusInfo.extAccountPrompts[messageId];
+    }
+  } else if (message.replyToMessageId && message.senderId && message.content.text?.text) {
+    const platform = consensusInfo.extAccountPrompts[message.replyToMessageId];
+    if (platform) {
+      const [date, acc] = consensusInfo.extAccounts[platform][message.senderId];
+      if (message.date === date && message.content.text.text === acc) {
+        delete consensusInfo.extAccounts[platform][message.senderId];
+        consensusInfo = addNewMessageForConsensus(global, byId, consensusInfo, updatedMessage);
+      }
+    }
+  } else if (message.content.poll) {
+    // handle when poll question changes
+    const oldQuestion = message.content.poll?.summary.question;
+    const newQuestion = updatedMessage.content.poll?.summary.question;
+    if (oldQuestion !== newQuestion) {
+      const regResult = rankPollRe.match(oldQuestion);
+      if (regResult) {
+        const rank = parseInt(regResult[1], 10) as Rank;
+        const id = consensusInfo.latestRankingPolls[rank][1];
+        if (id === messageId) {
+          delete consensusInfo.latestRankingPolls[rank];
+          consensusInfo = addNewMessageForConsensus(global, byId, consensusInfo, updatedMessage);
+        }
+      } else if (selectDelegateRe.match(oldQuestion)) {
+        const id = consensusInfo.latestDelegatePoll && consensusInfo.latestDelegatePoll[1];
+        if (id === messageId) {
+          consensusInfo.latestDelegatePoll = undefined;
+          // TODO:
+          // Object.values(newById).forEach((msg) => {
+          //   // Run only adding delegates...
+
+          // });
+        }
+      }
+    }
+  } else {
+    // handle when old message wasn't consensus message but updated is
+    consensusInfo = addNewMessageForConsensus(global, byId, consensusInfo, updatedMessage);
+  }
+
+  return replaceChatMessages(global, chatId, newById, consensusInfo);
 }
 
 export function updateScheduledMessage(
@@ -262,7 +415,7 @@ export function deleteChatMessages(
     });
   }
 
-  global = replaceChatMessages(global, chatId, newById);
+  global = replaceChatMessages(global, chatId, newById, selectChatConsensusInfo(global, chatId));
 
   return global;
 }

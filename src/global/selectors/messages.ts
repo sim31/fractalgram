@@ -72,6 +72,18 @@ export function selectChatMessages(global: GlobalState, chatId: string) {
   return global.messages.byChatId[chatId]?.byId;
 }
 
+export function selectChatConsensusInfo(global: GlobalState, chatId: string) {
+  return global.messages.byChatId[chatId]?.consensusInfo;
+}
+
+export function selectAccountPromptStrs(global: GlobalState) {
+  return global.accountPromptStrs;
+}
+
+export function selectAccountPromptStr(global: GlobalState, platform: string) {
+  return global.accountPromptStrs[platform];
+}
+
 export function selectScheduledMessages(global: GlobalState, chatId: string) {
   return global.scheduledMessages.byChatId[chatId]?.byId;
 }

@@ -150,6 +150,12 @@ async function loadAndReplaceMessages() {
                       outlyingIds: undefined,
                     },
                   },
+                  consensusInfo: {
+                    extAccountPrompts: {},
+                    extAccounts: {},
+                    latestRankingPolls: {},
+                    latestDelegatePoll: undefined,
+                  },
                 },
                 [currentChatId]: {
                   ...global.messages.byChatId[currentChatId],
@@ -167,6 +173,7 @@ async function loadAndReplaceMessages() {
         }
       }
 
+      // TODO: update consensus info
       global = updateChats(global, buildCollectionByKey(result.chats, 'id'));
       global = updateUsers(global, buildCollectionByKey(result.users, 'id'));
       global = updateThreadInfos(global, currentChatId, result.threadInfos);
