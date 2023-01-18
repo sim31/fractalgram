@@ -1,4 +1,6 @@
-import type { GlobalState, MessageListType, Thread } from '../types';
+import type {
+  ChatConsensusMessages, GlobalState, MessageListType, Thread,
+} from '../types';
 import type {
   ApiChat,
   ApiStickerSetInfo,
@@ -72,7 +74,7 @@ export function selectChatMessages(global: GlobalState, chatId: string) {
   return global.messages.byChatId[chatId]?.byId;
 }
 
-export function selectChatConsensusMsgs(global: GlobalState, chatId: string) {
+export function selectChatConsensusMsgs(global: GlobalState, chatId: string): ChatConsensusMessages | undefined {
   return global.messages.byChatId[chatId]?.consensusMsgs;
 }
 

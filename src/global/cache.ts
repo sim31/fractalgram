@@ -113,7 +113,16 @@ function readCache(initialState: GlobalState): GlobalState {
   }
 
   const json = localStorage.getItem(GLOBAL_STATE_CACHE_KEY);
-  const cached = json ? JSON.parse(json) as GlobalState : undefined;
+  function reviver(this: any, key: string, value: any) {
+    // eslint-disable-next-line
+    if(typeof value === 'object' && value !== null) {
+      if (value.dataType === 'Set') {
+        return new Set(value.value);
+      }
+    }
+    return value;
+  }
+  const cached = json ? JSON.parse(json, reviver) as GlobalState : undefined;
 
   if (DEBUG) {
     // eslint-disable-next-line no-console
@@ -453,8 +462,17 @@ export function serializeGlobal(global: GlobalState) {
       'invalidAttemptsCount',
     ]),
   };
-
-  return JSON.stringify(reducedGlobal);
+  function replacer(this: any, key: string, value: any) {
+    if (value instanceof Set) {
+      return {
+        dataType: 'Set',
+        value: [...value], // or with spread: value: [...value]
+      };
+    } else {
+      return value;
+    }
+  }
+  return JSON.stringify(reducedGlobal, replacer);
 }
 
 function reduceCustomEmojis(global: GlobalState): GlobalState['customEmojis'] {

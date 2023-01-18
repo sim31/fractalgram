@@ -79,10 +79,8 @@ import { typify } from '../lib/teact/teactn';
 import type { P2pMessage } from '../lib/secret-sauce';
 
 export type Rank = 6 | 5 | 4 | 3 | 2 | 1;
-// eslint-disable-next-line
-export const rankPollRe = '/^Who should be ranked level ([1-6])\?$/';
-// eslint-disable-next-line
-export const selectDelegateRe = '/^Who should be the delegate of this group\?$/';
+export const rankPollRe = /^Who should be ranked as level ([1-6])\?$/;
+export const selectDelegateRe = /^Who should be the delegate of this break-out group\?$/;
 
 export type ChatConsensusMessages = {
   // id of prompt message -> platform
@@ -93,13 +91,6 @@ export type ChatConsensusMessages = {
   rankingPolls: Record<number, Set<number>>;
   // delegate poll ids
   delegatePolls: Set<number>;
-};
-
-export const initConsensusMsgs: ChatConsensusMessages = {
-  extAccountPrompts: {},
-  extAccountReplies: {},
-  rankingPolls: {},
-  delegatePolls: new Set([]),
 };
 
 export type MessageListType =

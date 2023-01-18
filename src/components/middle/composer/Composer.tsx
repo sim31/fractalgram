@@ -58,6 +58,7 @@ import {
   selectIsCurrentUserPremium,
   selectChatType,
   selectRequestedDraftFiles,
+  selectChatConsensusMsgs,
 } from '../../../global/selectors';
 import {
   getAllowedAttachmentOptions,
@@ -1553,6 +1554,10 @@ export default memo(withGlobal<OwnProps>(
         );
       }
       : undefined;
+
+    const consensusMsgs = selectChatConsensusMsgs(global, chatId);
+    // eslint-disable-next-line no-console
+    console.log('consensusMsgs: ', consensusMsgs);
 
     // TODO: Only display button to start the process if there are enough members
     // const canStartFractally = chat?.fullInfo?.members?.length

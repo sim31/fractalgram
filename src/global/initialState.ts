@@ -1,4 +1,4 @@
-import type { GlobalState } from './types';
+import type { ChatConsensusMessages, GlobalState } from './types';
 import { NewChatMembersProgress } from '../types';
 
 import {
@@ -244,4 +244,11 @@ export const INITIAL_STATE: GlobalState = {
   },
 
   transcriptions: {},
+};
+
+export const INIT_CONSENSUS_MSGS: ChatConsensusMessages = {
+  extAccountPrompts: {},
+  extAccountReplies: {},
+  rankingPolls: {},
+  delegatePolls: new Set([]),
 };
