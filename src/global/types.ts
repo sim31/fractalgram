@@ -77,6 +77,7 @@ import type {
 } from '../types';
 import { typify } from '../lib/teact/teactn';
 import type { P2pMessage } from '../lib/secret-sauce';
+import type { Rank } from '../config';
 
 export type ChatConsensusMessages = {
   // id of prompt message -> platform
@@ -1212,7 +1213,7 @@ export interface ActionPayloads {
     type: 'delegatePoll';
   } | {
     type: 'rankingsPoll';
-    rank: number;
+    rank: Rank;
   } | {
     type: 'accountPrompt';
     platform: string;

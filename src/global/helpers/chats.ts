@@ -13,6 +13,7 @@ import type { NotifyException, NotifySettings } from '../../types';
 import type { LangFn } from '../../hooks/useLang';
 
 import { ARCHIVED_FOLDER_ID, REPLIES_USER_ID, TME_LINK_PREFIX } from '../../config';
+import type { Rank } from '../../config';
 import { orderBy } from '../../util/iteratees';
 import { getUserFirstOrLastName } from './users';
 import { formatDateToString, formatTime } from '../../util/dateFormat';
@@ -181,7 +182,10 @@ export interface IAllowedAttachmentOptions {
   canSendStickers: boolean;
   canSendGifs: boolean;
   canAttachEmbedLinks: boolean;
-  canAttachConsensusMsgs: boolean;
+  canAttachDelegatePolls: boolean;
+  canAttachRankingPolls: { [r in Rank]: boolean };
+  canAttachAccountPrompts: boolean;
+  canAttachResultReport: boolean;
 }
 
 export function getAllowedAttachmentOptions(chat?: ApiChat, isChatWithBot = false): IAllowedAttachmentOptions {
@@ -192,13 +196,24 @@ export function getAllowedAttachmentOptions(chat?: ApiChat, isChatWithBot = fals
       canSendStickers: false,
       canSendGifs: false,
       canAttachEmbedLinks: false,
-      canAttachConsensusMsgs: false,
+      canAttachDelegatePolls: false,
+      canAttachRankingPolls: {
+        1: false,
+        2: false,
+        3: false,
+        4: false,
+        5: false,
+        6: false,
+      },
+      canAttachAccountPrompts: false,
+      canAttachResultReport: false,
     };
   }
 
   const isAdmin = isChatAdmin(chat);
   // Need full info for creating polls as well
   const memberCount = chat.fullInfo?.members?.length;
+  const canDoConsensus = memberCount ? memberCount > 2 && memberCount < 7 : false;
 
   return {
     canAttachMedia: isAdmin || !isUserRightBanned(chat, 'sendMedia'),
@@ -206,7 +221,17 @@ export function getAllowedAttachmentOptions(chat?: ApiChat, isChatWithBot = fals
     canSendStickers: isAdmin || !isUserRightBanned(chat, 'sendStickers'),
     canSendGifs: isAdmin || !isUserRightBanned(chat, 'sendGifs'),
     canAttachEmbedLinks: isAdmin || !isUserRightBanned(chat, 'embedLinks'),
-    canAttachConsensusMsgs: memberCount ? memberCount > 2 && memberCount < 7 : false,
+    canAttachAccountPrompts: canDoConsensus,
+    canAttachDelegatePolls: canDoConsensus,
+    canAttachResultReport: canDoConsensus,
+    canAttachRankingPolls: {
+      1: canDoConsensus,
+      2: canDoConsensus,
+      3: canDoConsensus && memberCount ? memberCount >= 3 : false,
+      4: canDoConsensus && memberCount ? memberCount >= 4 : false,
+      5: canDoConsensus && memberCount ? memberCount >= 5 : false,
+      6: canDoConsensus && memberCount ? memberCount >= 6 : false,
+    },
   };
 }
 

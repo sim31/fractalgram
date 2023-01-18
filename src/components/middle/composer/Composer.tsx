@@ -448,7 +448,8 @@ const Composer: FC<OwnProps & StateProps> = ({
 
   const {
     canSendStickers, canSendGifs, canAttachMedia, canAttachPolls, canAttachEmbedLinks,
-    canAttachConsensusMsgs,
+    canAttachDelegatePolls, canAttachAccountPrompts, canAttachResultReport,
+    canAttachRankingPolls,
   } = useMemo(() => getAllowedAttachmentOptions(chat, isChatWithBot), [chat, isChatWithBot]);
 
   const isAdmin = chat && isChatAdmin(chat);
@@ -1309,7 +1310,10 @@ const Composer: FC<OwnProps & StateProps> = ({
             isButtonVisible={!activeVoiceRecording && !editingMessage}
             canAttachMedia={canAttachMedia}
             canAttachPolls={canAttachPolls}
-            canAttachConsensusMsgs={canAttachConsensusMsgs}
+            canAttachDelegatePolls={canAttachDelegatePolls}
+            canAttachAccountPrompts={canAttachAccountPrompts}
+            canAttachRankingPolls={canAttachRankingPolls}
+            canAttachResultReport={canAttachResultReport}
             onFileSelect={handleFileSelect}
             onPollCreate={openPollModal}
             onConsensusMsg={composeConsensusMessage}

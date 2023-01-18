@@ -7,7 +7,8 @@ import type { ActionPayloads, GlobalState } from '../../../global/types';
 import type { ApiAttachMenuPeerType } from '../../../api/types';
 import type { ISettings } from '../../../types';
 
-import { CONTENT_TYPES_WITH_PREVIEW } from '../../../config';
+import { CONTENT_TYPES_WITH_PREVIEW, DEFAULT_CONSENSUS_SUBMIT_URL } from '../../../config';
+import type { Rank } from '../../../config';
 import { IS_TOUCH_ENV } from '../../../util/environment';
 import { openSystemFilesDialog } from '../../../util/systemFilesDialog';
 
@@ -27,7 +28,10 @@ export type OwnProps = {
   isButtonVisible: boolean;
   canAttachMedia: boolean;
   canAttachPolls: boolean;
-  canAttachConsensusMsgs: boolean;
+  canAttachDelegatePolls: boolean;
+  canAttachRankingPolls: { [r in Rank]: boolean };
+  canAttachAccountPrompts: boolean;
+  canAttachResultReport: boolean;
   isScheduled?: boolean;
   attachBots: GlobalState['attachMenu']['bots'];
   peerType?: ApiAttachMenuPeerType;
@@ -42,7 +46,10 @@ const AttachMenu: FC<OwnProps> = ({
   isButtonVisible,
   canAttachMedia,
   canAttachPolls,
-  canAttachConsensusMsgs,
+  canAttachDelegatePolls,
+  canAttachRankingPolls,
+  canAttachResultReport,
+  canAttachAccountPrompts,
   attachBots,
   peerType,
   isScheduled,
@@ -92,6 +99,18 @@ const AttachMenu: FC<OwnProps> = ({
     onConsensusMsg({ type: 'delegatePoll' });
   }, [onConsensusMsg]);
 
+  const handleRankingPoll = useCallback((rank: Rank) => {
+    onConsensusMsg({ type: 'rankingsPoll', rank });
+  }, [onConsensusMsg]);
+
+  const handleAccountPrompt = useCallback(() => {
+    onConsensusMsg({ type: 'accountPrompt', platform: 'eos' });
+  }, [onConsensusMsg]);
+
+  const handleResultReport = useCallback(() => {
+    onConsensusMsg({ type: 'resultsReport', submissionUrl: DEFAULT_CONSENSUS_SUBMIT_URL });
+  }, [onConsensusMsg]);
+
   const bots = useMemo(() => {
     return Object.values(attachBots).filter((bot) => {
       if (!peerType) return false;
@@ -106,6 +125,15 @@ const AttachMenu: FC<OwnProps> = ({
 
   if (!isButtonVisible) {
     return undefined;
+  }
+
+  function renderRankingPoll(rank: Rank) {
+    return (
+      // eslint-disable-next-line react/jsx-no-bind
+      <MenuItem icon="poll" onClick={() => handleRankingPoll(rank)}>
+        {lang(`Level ${rank} poll`)}
+      </MenuItem>
+    );
   }
 
   return (
@@ -163,11 +191,31 @@ const AttachMenu: FC<OwnProps> = ({
           />
         ))}
 
-        {canAttachPolls && canAttachConsensusMsgs && (
-          <MenuItem icon="poll" onClick={handleDelegatePoll}>
-            {lang('Create delegate poll')}
+        {canAttachAccountPrompts && (
+          <MenuItem icon="poll" onClick={handleAccountPrompt}>
+            {lang('Account prompt for EOS')}
           </MenuItem>
         )}
+
+        {canAttachPolls && canAttachRankingPolls[6] && renderRankingPoll(6) }
+        {canAttachPolls && canAttachRankingPolls[5] && renderRankingPoll(5) }
+        {canAttachPolls && canAttachRankingPolls[4] && renderRankingPoll(4) }
+        {canAttachPolls && canAttachRankingPolls[3] && renderRankingPoll(3) }
+        {canAttachPolls && canAttachRankingPolls[2] && renderRankingPoll(2) }
+        {canAttachPolls && canAttachRankingPolls[1] && renderRankingPoll(1) }
+
+        {canAttachPolls && canAttachDelegatePolls && (
+          <MenuItem icon="poll" onClick={handleDelegatePoll}>
+            {lang('Delegate poll')}
+          </MenuItem>
+        )}
+
+        {canAttachResultReport && (
+          <MenuItem icon="poll" onClick={handleResultReport}>
+            {lang('Consensus results')}
+          </MenuItem>
+        )}
+
       </Menu>
     </div>
   );

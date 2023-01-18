@@ -1,6 +1,8 @@
-import { addActionHandler, getGlobal, setGlobal } from '../../index';
+import {
+  addActionHandler, getGlobal, setGlobal, getActions,
+} from '../../index';
 
-import type { ApiMessage } from '../../../api/types';
+import type { ApiMessage, ApiUser } from '../../../api/types';
 import { MAIN_THREAD_ID } from '../../../api/types';
 import { FocusDirection } from '../../../types';
 
@@ -11,6 +13,7 @@ import {
   FAST_SMOOTH_MAX_DURATION,
   SERVICE_NOTIFICATIONS_USER_ID,
   SELECT_DELEGATE_STR,
+  RANK_POLL_STRS,
 } from '../../../config';
 import { IS_TOUCH_ENV } from '../../../util/environment';
 import {
@@ -38,6 +41,8 @@ import {
   selectSender,
   selectScheduledMessages,
   selectChatUsers,
+  selectAccountPromptStr,
+  selectChatMemberAccountMap,
 } from '../../selectors';
 import { findLast } from '../../../util/iteratees';
 import { getServerTime } from '../../../util/serverTime';
@@ -628,32 +633,77 @@ addActionHandler('closePollModal', (global) => {
   };
 });
 
+function getMembers(global: GlobalState): ApiUser[] | undefined {
+  // NOTE: This should not be called if there are a lot of users in the chat
+  const currentChat = selectCurrentChat(global);
+  const users = currentChat && selectChatUsers(global, currentChat);
+  const allDef = users?.every((val) => val !== undefined);
+  return allDef ? users as ApiUser[] : undefined;
+}
+
+function getAccountOptions(global: GlobalState, platform: string): string[] | undefined {
+  const users = getMembers(global);
+
+  const chat = selectCurrentChat(global);
+  const accountMap = chat && selectChatMemberAccountMap(global, chat, platform);
+  if (!accountMap || !users) {
+    return undefined;
+  }
+
+  return users.map((user) => {
+    const extAccount = accountMap.get(user.id);
+    if (extAccount) {
+      return `${user.firstName ?? ' '} (${extAccount}@${platform})`;
+    } else if (user.firstName) {
+      return user.firstName;
+    } else if (user.usernames && user.usernames.length) {
+      return user.usernames[0].username;
+    } else {
+      return user.id;
+    }
+  });
+}
+
+function createPollWithAccounts(global: GlobalState, question: string, platform: string): GlobalState {
+  if (global.pollModal.isOpen) {
+    return global;
+  }
+
+  // NOTE: This should not be called if there are a lot of users in the chat
+  const opt = getAccountOptions(global, platform);
+  assert(opt, 'Chat member list not loaded');
+  const options = opt as string[];
+
+  const values: PollModalDefaults = {
+    isAnonymous: false,
+    pinned: true,
+    question,
+    options,
+  };
+
+  return openPollModal(global, false, values);
+}
+
 addActionHandler('composeConsensusMessage', (global, actions, payload) => {
+  const { sendPinnedMessage } = getActions();
   switch (payload.type) {
     case 'delegatePoll': {
-      if (global.pollModal.isOpen) {
-        return global;
-      }
-      // NOTE: This should not be called if there are a lot of users in the chat
-      const currentChat = selectCurrentChat(global);
-      const users = currentChat && selectChatUsers(global, currentChat);
-      const optOrUndef = users && users.map((user) => user && user.firstName);
-      assert(optOrUndef?.every((val) => val !== undefined),
-        'Chat member list not loaded');
-      const options = optOrUndef as string[];
-
-      const values: PollModalDefaults = {
-        isAnonymous: false,
-        pinned: true,
-        question: SELECT_DELEGATE_STR,
-        options,
-      };
-      return openPollModal(global, false, values);
+      return createPollWithAccounts(global, SELECT_DELEGATE_STR, 'eos');
     }
     case 'rankingsPoll': {
-      return global;
+      const { rank } = payload;
+      const question = RANK_POLL_STRS[rank as number - 1];
+      return createPollWithAccounts(global, question, 'eos');
     }
     case 'accountPrompt': {
+      const { platform } = payload;
+      const promptStr = selectAccountPromptStr(global, platform);
+      if (!promptStr) {
+        return global;
+      }
+
+      const { text, entities } = parseMessageInput(promptStr);
+      sendPinnedMessage({ text, entities });
       return global;
     }
     case 'resultsReport': {

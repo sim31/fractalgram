@@ -78,11 +78,52 @@ export function selectChatConsensusMsgs(global: GlobalState, chatId: string): Ch
   return global.messages.byChatId[chatId]?.consensusMsgs;
 }
 
+// Returns userId -> account id on platform
+export function selectChatMemberAccountMap(
+  global: GlobalState, chat: ApiChat, platform: string,
+): Map<string, string> | undefined {
+  const members = chat?.fullInfo?.members;
+  if (!members) {
+    return undefined;
+  }
+  const consensusMsgs = selectChatConsensusMsgs(global, chat.id);
+  if (!consensusMsgs) {
+    return undefined;
+  }
+  const accountMsgs = consensusMsgs.extAccountReplies[platform];
+  if (!accountMsgs) {
+    return undefined;
+  }
+  const byId = selectChatMessages(global, chat.id);
+  if (!byId) {
+    return undefined;
+  }
+
+  const accountMap = new Map<string, string>();
+  // userId -> date
+  const dateMap = new Map<string, number>();
+  for (const msgId of accountMsgs) {
+    const msg = byId[msgId];
+    const text = msg?.content.text?.text;
+    const senderId = msg?.senderId;
+    if (text && senderId) {
+      const existingDate = dateMap.get(senderId);
+
+      if (!existingDate || msg.date >= existingDate) {
+        accountMap.set(senderId, text);
+        dateMap.set(senderId, msg.date);
+      }
+    }
+  }
+
+  return accountMap;
+}
+
 export function selectAccountPromptStrs(global: GlobalState) {
   return global.accountPromptStrs;
 }
 
-export function selectAccountPromptStr(global: GlobalState, platform: string) {
+export function selectAccountPromptStr(global: GlobalState, platform: string): string | undefined {
   return global.accountPromptStrs[platform];
 }
 

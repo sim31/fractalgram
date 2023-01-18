@@ -2,7 +2,8 @@ import type { ChatConsensusMessages, GlobalState } from './types';
 import { NewChatMembersProgress } from '../types';
 
 import {
-  ANIMATION_LEVEL_DEFAULT, DARK_THEME_PATTERN_COLOR, DEFAULT_MESSAGE_TEXT_SIZE_PX, DEFAULT_PATTERN_COLOR,
+  ANIMATION_LEVEL_DEFAULT, DARK_THEME_PATTERN_COLOR,
+  DEFAULT_ACCOUNT_PROMPT_STRS, DEFAULT_MESSAGE_TEXT_SIZE_PX, DEFAULT_PATTERN_COLOR,
   DEFAULT_PLAYBACK_RATE,
   DEFAULT_VOLUME,
   IOS_DEFAULT_MESSAGE_TEXT_SIZE_PX, MACOS_DEFAULT_MESSAGE_TEXT_SIZE_PX,
@@ -47,9 +48,7 @@ export const INITIAL_STATE: GlobalState = {
     sponsoredByChatId: {},
   },
 
-  accountPromptStrs: {
-    eos: 'Please enter your EOS account name as a reply to this message',
-  },
+  accountPromptStrs: { ...DEFAULT_ACCOUNT_PROMPT_STRS },
 
   groupCalls: {
     byId: {},
