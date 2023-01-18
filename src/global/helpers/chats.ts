@@ -181,6 +181,7 @@ export interface IAllowedAttachmentOptions {
   canSendStickers: boolean;
   canSendGifs: boolean;
   canAttachEmbedLinks: boolean;
+  canAttachConsensusMsgs: boolean;
 }
 
 export function getAllowedAttachmentOptions(chat?: ApiChat, isChatWithBot = false): IAllowedAttachmentOptions {
@@ -191,10 +192,13 @@ export function getAllowedAttachmentOptions(chat?: ApiChat, isChatWithBot = fals
       canSendStickers: false,
       canSendGifs: false,
       canAttachEmbedLinks: false,
+      canAttachConsensusMsgs: false,
     };
   }
 
   const isAdmin = isChatAdmin(chat);
+  // Need full info for creating polls as well
+  const memberCount = chat.fullInfo?.members?.length;
 
   return {
     canAttachMedia: isAdmin || !isUserRightBanned(chat, 'sendMedia'),
@@ -202,6 +206,7 @@ export function getAllowedAttachmentOptions(chat?: ApiChat, isChatWithBot = fals
     canSendStickers: isAdmin || !isUserRightBanned(chat, 'sendStickers'),
     canSendGifs: isAdmin || !isUserRightBanned(chat, 'sendGifs'),
     canAttachEmbedLinks: isAdmin || !isUserRightBanned(chat, 'embedLinks'),
+    canAttachConsensusMsgs: memberCount ? memberCount > 2 && memberCount < 7 : false,
   };
 }
 

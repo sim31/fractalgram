@@ -1,8 +1,7 @@
 import type {
   ChatConsensusMessages,
-  GlobalState, MessageList, MessageListType, Rank, Thread,
+  GlobalState, MessageList, MessageListType, Thread,
 } from '../types';
-import { rankPollRe, selectDelegateRe } from '../types';
 import type { ApiMessage, ApiSponsoredMessage, ApiThreadInfo } from '../../api/types';
 import { MAIN_THREAD_ID } from '../../api/types';
 import type { FocusDirection } from '../../types';
@@ -10,6 +9,7 @@ import type { FocusDirection } from '../../types';
 import {
   IS_MOCKED_CLIENT,
   IS_TEST, MESSAGE_LIST_SLICE, MESSAGE_LIST_VIEWPORT_LIMIT, TMP_CHAT_ID,
+  RANK_POLL_REGEX, SELECT_DELEGATE_REGEX,
 } from '../../config';
 import {
   selectListedIds,
@@ -33,6 +33,9 @@ import {
 } from '../../util/iteratees';
 import { INIT_CONSENSUS_MSGS } from '../initialState';
 import assert from '../../util/assert';
+
+const rankPollRe = RANK_POLL_REGEX;
+const selectDelegateRe = SELECT_DELEGATE_REGEX;
 
 type MessageStoreSections = {
   byId: Record<number, ApiMessage>;
@@ -301,7 +304,7 @@ function updateConsensusMessage(
       if (oldQuestion !== newQuestion) {
         const regResult = oldQuestion.match(rankPollRe);
         if (regResult) {
-          const rank = parseInt(regResult[1], 10) as Rank;
+          const rank = parseInt(regResult[1], 10);
           let polls = consensusMsgs.rankingPolls[rank];
           if (polls) {
             polls = new Set(polls);

@@ -3,7 +3,7 @@ import React, {
 } from '../../../lib/teact/teact';
 
 import type { FC } from '../../../lib/teact/teact';
-import type { GlobalState } from '../../../global/types';
+import type { ActionPayloads, GlobalState } from '../../../global/types';
 import type { ApiAttachMenuPeerType } from '../../../api/types';
 import type { ISettings } from '../../../types';
 
@@ -27,14 +27,13 @@ export type OwnProps = {
   isButtonVisible: boolean;
   canAttachMedia: boolean;
   canAttachPolls: boolean;
+  canAttachConsensusMsgs: boolean;
   isScheduled?: boolean;
   attachBots: GlobalState['attachMenu']['bots'];
   peerType?: ApiAttachMenuPeerType;
   onFileSelect: (files: File[], isQuick: boolean) => void;
   onPollCreate: () => void;
-  onBreakOut: () => void;
-  onRankingsPoll: () => void;
-  onDelegatePoll: () => void;
+  onConsensusMsg: (payload: ActionPayloads['composeConsensusMessage']) => void;
   theme: ISettings['theme'];
 };
 
@@ -43,14 +42,13 @@ const AttachMenu: FC<OwnProps> = ({
   isButtonVisible,
   canAttachMedia,
   canAttachPolls,
+  canAttachConsensusMsgs,
   attachBots,
   peerType,
   isScheduled,
   onFileSelect,
   onPollCreate,
-  onBreakOut,
-  onRankingsPoll,
-  onDelegatePoll,
+  onConsensusMsg,
   theme,
 }) => {
   const [isAttachMenuOpen, openAttachMenu, closeAttachMenu] = useFlag();
@@ -90,9 +88,9 @@ const AttachMenu: FC<OwnProps> = ({
     openSystemFilesDialog('*', (e) => handleFileSelect(e, false));
   }, [handleFileSelect]);
 
-  // const handleFractalPollSelect = useCallback(() => {
-  //   console.log('Fractal poll select button');
-  // }, []);
+  const handleDelegatePoll = useCallback(() => {
+    onConsensusMsg({ type: 'delegatePoll' });
+  }, [onConsensusMsg]);
 
   const bots = useMemo(() => {
     return Object.values(attachBots).filter((bot) => {
@@ -165,10 +163,11 @@ const AttachMenu: FC<OwnProps> = ({
           />
         ))}
 
-        {/* TODO: don't show this if there aren't enough members (or if there are too many members) */}
-        <MenuItem icon="poll" onClick={onBreakOut}>{lang('Create break out groups')}</MenuItem>
-        <MenuItem icon="poll" onClick={onRankingsPoll}>{lang('Create rankings poll')}</MenuItem>
-        <MenuItem icon="poll" onClick={onDelegatePoll}>{lang('Create delegate poll')}</MenuItem>
+        {canAttachPolls && canAttachConsensusMsgs && (
+          <MenuItem icon="poll" onClick={handleDelegatePoll}>
+            {lang('Create delegate poll')}
+          </MenuItem>
+        )}
       </Menu>
     </div>
   );

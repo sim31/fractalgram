@@ -10,6 +10,7 @@ import {
   RELEASE_DATETIME,
   FAST_SMOOTH_MAX_DURATION,
   SERVICE_NOTIFICATIONS_USER_ID,
+  SELECT_DELEGATE_STR,
 } from '../../../config';
 import { IS_TOUCH_ENV } from '../../../util/environment';
 import {
@@ -36,6 +37,7 @@ import {
   selectReplyStack,
   selectSender,
   selectScheduledMessages,
+  selectChatUsers,
 } from '../../selectors';
 import { findLast } from '../../../util/iteratees';
 import { getServerTime } from '../../../util/serverTime';
@@ -45,8 +47,9 @@ import parseMessageInput from '../../../util/parseMessageInput';
 import { getMessageSummaryText, getSenderTitle } from '../../helpers';
 import * as langProvider from '../../../util/langProvider';
 import { copyHtmlToClipboard } from '../../../util/clipboard';
-import type { GlobalState } from '../../types';
+import type { GlobalState, PollModalDefaults } from '../../types';
 import { renderMessageSummaryHtml } from '../../helpers/renderMessageSummaryHtml';
+import assert from '../../../util/assert';
 
 const FOCUS_DURATION = 1500;
 const FOCUS_NO_HIGHLIGHT_DURATION = FAST_SMOOTH_MAX_DURATION + ANIMATION_END_DELAY;
@@ -599,15 +602,21 @@ addActionHandler('disableContextMenuHint', (global) => {
 
 addActionHandler('exitMessageSelectMode', exitMessageSelectMode);
 
-addActionHandler('openPollModal', (global, actions, payload) => {
-  const { isQuiz } = payload || {};
+function openPollModal(global: GlobalState, isQuiz?: boolean, defaultValues?: PollModalDefaults): GlobalState {
   return {
     ...global,
     pollModal: {
       isOpen: true,
       isQuiz,
+      defaultValues,
     },
   };
+}
+
+addActionHandler('openPollModal', (global, actions, payload) => {
+  const { isQuiz, defaultValues } = payload || {};
+
+  return openPollModal(global, isQuiz, defaultValues);
 });
 
 addActionHandler('closePollModal', (global) => {
@@ -617,6 +626,45 @@ addActionHandler('closePollModal', (global) => {
       isOpen: false,
     },
   };
+});
+
+addActionHandler('composeConsensusMessage', (global, actions, payload) => {
+  switch (payload.type) {
+    case 'delegatePoll': {
+      if (global.pollModal.isOpen) {
+        return global;
+      }
+      // NOTE: This should not be called if there are a lot of users in the chat
+      const currentChat = selectCurrentChat(global);
+      const users = currentChat && selectChatUsers(global, currentChat);
+      const optOrUndef = users && users.map((user) => user && user.firstName);
+      assert(optOrUndef?.every((val) => val !== undefined),
+        'Chat member list not loaded');
+      const options = optOrUndef as string[];
+
+      const values: PollModalDefaults = {
+        isAnonymous: false,
+        pinned: true,
+        question: SELECT_DELEGATE_STR,
+        options,
+      };
+      return openPollModal(global, false, values);
+    }
+    case 'rankingsPoll': {
+      return global;
+    }
+    case 'accountPrompt': {
+      return global;
+    }
+    case 'resultsReport': {
+      return global;
+    }
+    default: {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const p: never = payload;
+      return global;
+    }
+  }
 });
 
 addActionHandler('checkVersionNotification', (global, actions) => {

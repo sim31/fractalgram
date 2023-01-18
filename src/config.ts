@@ -257,4 +257,15 @@ export const DEFAULT_LIMITS: Record<ApiLimitType, readonly [number, number]> = {
   aboutLength: [70, 140],
 };
 
-export const PREF_BREAKOUT_SIZE = 3;
+export const RANK_POLL_REGEX = /^Who should be ranked as level ([1-6])\?$/;
+export const RANK_POLL_BASE_STR = 'Who should be ranked as level';
+export const RANK_POLL_STRS = [
+  `${RANK_POLL_BASE_STR} 1?`,
+  `${RANK_POLL_BASE_STR} 2?`,
+  `${RANK_POLL_BASE_STR} 3?`,
+  `${RANK_POLL_BASE_STR} 4?`,
+  `${RANK_POLL_BASE_STR} 5?`,
+  `${RANK_POLL_BASE_STR} 6?`,
+];
+export const SELECT_DELEGATE_REGEX = /^Who should be the delegate of this group\?$/;
+export const SELECT_DELEGATE_STR = 'Who should be the delegate of this group?';

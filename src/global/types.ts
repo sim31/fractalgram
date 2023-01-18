@@ -78,10 +78,6 @@ import type {
 import { typify } from '../lib/teact/teactn';
 import type { P2pMessage } from '../lib/secret-sauce';
 
-export type Rank = 6 | 5 | 4 | 3 | 2 | 1;
-export const rankPollRe = /^Who should be ranked as level ([1-6])\?$/;
-export const selectDelegateRe = /^Who should be the delegate of this break-out group\?$/;
-
 export type ChatConsensusMessages = {
   // id of prompt message -> platform
   extAccountPrompts: Record<number, string>;
@@ -91,6 +87,13 @@ export type ChatConsensusMessages = {
   rankingPolls: Record<number, Set<number>>;
   // delegate poll ids
   delegatePolls: Set<number>;
+};
+
+export type PollModalDefaults = {
+  question: string;
+  options: string[];
+  isAnonymous: boolean;
+  pinned: boolean;
 };
 
 export type MessageListType =
@@ -636,6 +639,7 @@ export type GlobalState = {
   pollModal: {
     isOpen: boolean;
     isQuiz?: boolean;
+    defaultValues?: PollModalDefaults;
   };
 
   webApp?: {
@@ -1201,8 +1205,21 @@ export interface ActionPayloads {
   // Misc
   openPollModal: {
     isQuiz?: boolean;
+    defaultValues?: PollModalDefaults;
   };
   closePollModal: never;
+  composeConsensusMessage: {
+    type: 'delegatePoll';
+  } | {
+    type: 'rankingsPoll';
+    rank: number;
+  } | {
+    type: 'accountPrompt';
+    platform: string;
+  } | {
+    type: 'resultsReport';
+    submissionUrl?: string;
+  };
   requestConfetti: {
     top: number;
     left: number;

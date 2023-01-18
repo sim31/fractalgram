@@ -23,6 +23,15 @@ export function selectChatUser(global: GlobalState, chat: ApiChat) {
   return selectUser(global, userId);
 }
 
+export function selectChatUsers(global: GlobalState, chat: ApiChat) {
+  const members = chat?.fullInfo?.members;
+  if (members) {
+    return members.map((member) => selectUser(global, member.userId));
+  } else {
+    return undefined;
+  }
+}
+
 export function selectIsChatWithSelf(global: GlobalState, chatId: string) {
   return chatId === global.currentUserId;
 }
