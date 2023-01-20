@@ -8,6 +8,7 @@ import type {
   ApiMessageEntityCustomEmoji,
   ApiMessageOutgoingStatus,
   ApiUser,
+  ApiPoll,
 } from '../../api/types';
 import {
   MAIN_THREAD_ID,
@@ -15,6 +16,7 @@ import {
 } from '../../api/types';
 
 import { LOCAL_MESSAGE_MIN_ID, REPLIES_USER_ID, SERVICE_NOTIFICATIONS_USER_ID } from '../../config';
+import type { Rank } from '../../config';
 import {
   selectChat, selectChatBot, selectIsChatWithBot, selectIsChatWithSelf,
 } from './chats';
@@ -78,6 +80,14 @@ export function selectChatConsensusMsgs(global: GlobalState, chatId: string): Ch
   return global.messages.byChatId[chatId]?.consensusMsgs;
 }
 
+export function selectChatDelegatePolls(global: GlobalState, chatId: string) {
+  return selectChatConsensusMsgs(global, chatId)?.delegatePolls;
+}
+
+export function selectChatRankingPolls(global: GlobalState, chatId: string) {
+  return selectChatConsensusMsgs(global, chatId)?.rankingPolls;
+}
+
 // Returns userId -> account id on platform
 export function selectChatMemberAccountMap(
   global: GlobalState, chat: ApiChat, platform: string,
@@ -125,6 +135,58 @@ export function selectAccountPromptStrs(global: GlobalState) {
 
 export function selectAccountPromptStr(global: GlobalState, platform: string): string | undefined {
   return global.accountPromptStrs[platform];
+}
+
+export function selectLatestMessage(
+  global: GlobalState, chatId: string, ids: number[],
+): ApiMessage | undefined {
+  const byId = selectChatMessages(global, chatId);
+  if (!byId) {
+    return undefined;
+  }
+
+  let maxDate = 0;
+  let lmsg: ApiMessage | undefined;
+  for (const id of ids) {
+    const msg: ApiMessage | undefined = byId[id];
+    if (msg && msg.date > maxDate) {
+      maxDate = msg.date;
+      lmsg = msg;
+    }
+  }
+
+  return lmsg;
+}
+
+export function selectLatestDelegatePoll(
+  global: GlobalState, chatId: string,
+): ApiPoll | undefined {
+  const delegatePollIds = selectChatDelegatePolls(global, chatId);
+  if (!delegatePollIds) {
+    return undefined;
+  }
+
+  const msg = selectLatestMessage(global, chatId, [...delegatePollIds]);
+
+  return msg?.content.poll;
+}
+
+export function selectLatestRankingPoll(
+  global: GlobalState, chatId: string, rank: Rank,
+): ApiPoll | undefined {
+  const rankingPolls = selectChatRankingPolls(global, chatId);
+  if (!rankingPolls) {
+    return undefined;
+  }
+
+  const pollIds = rankingPolls[rank];
+  if (!pollIds) {
+    return undefined;
+  }
+
+  const msg = selectLatestMessage(global, chatId, [...pollIds]);
+
+  return msg?.content.poll;
 }
 
 export function selectScheduledMessages(global: GlobalState, chatId: string) {

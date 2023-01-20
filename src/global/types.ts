@@ -1220,6 +1220,7 @@ export interface ActionPayloads {
   } | {
     type: 'resultsReport';
     submissionUrl?: string;
+    platform?: string;
   };
   requestConfetti: {
     top: number;

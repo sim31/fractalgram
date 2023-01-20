@@ -14,6 +14,7 @@ import {
   SERVICE_NOTIFICATIONS_USER_ID,
   SELECT_DELEGATE_STR,
   RANK_POLL_STRS,
+  // Rank,
 } from '../../../config';
 import { IS_TOUCH_ENV } from '../../../util/environment';
 import {
@@ -43,6 +44,9 @@ import {
   selectChatUsers,
   selectAccountPromptStr,
   selectChatMemberAccountMap,
+  // selectLatestDelegatePoll,
+  // selectChatRankingPolls,
+  // selectLatestRankingPoll,
 } from '../../selectors';
 import { findLast } from '../../../util/iteratees';
 import { getServerTime } from '../../../util/serverTime';
@@ -641,7 +645,10 @@ function getMembers(global: GlobalState): ApiUser[] | undefined {
   return allDef ? users as ApiUser[] : undefined;
 }
 
-function getAccountOptions(global: GlobalState, platform: string): string[] | undefined {
+function getAccountOptions(
+  global: GlobalState,
+  platform: string,
+): string[] | undefined {
   const users = getMembers(global);
 
   const chat = selectCurrentChat(global);
@@ -650,7 +657,7 @@ function getAccountOptions(global: GlobalState, platform: string): string[] | un
     return undefined;
   }
 
-  return users.map((user) => {
+  const optionStrs = users.map((user) => {
     const extAccount = accountMap.get(user.id);
     if (extAccount) {
       return `${user.firstName ?? ' '} (${extAccount}@${platform})`;
@@ -662,6 +669,8 @@ function getAccountOptions(global: GlobalState, platform: string): string[] | un
       return user.id;
     }
   });
+
+  return optionStrs;
 }
 
 function createPollWithAccounts(global: GlobalState, question: string, platform: string): GlobalState {
@@ -683,6 +692,63 @@ function createPollWithAccounts(global: GlobalState, question: string, platform:
 
   return openPollModal(global, false, values);
 }
+
+// function getWinnerOption(poll?: ApiPoll): [string, number] | undefined {
+//   const results = poll?.results.results;
+//   if (!results) {
+//     return undefined;
+//   }
+
+//   let winnerVotes = 0;
+//   let winnerOption: string | undefined;
+//   for (const result of results) {
+//     if (result.votersCount > winnerVotes) {
+//       winnerVotes = result.votersCount;
+//       winnerOption = result.option;
+//     }
+//   }
+
+//   return winnerOption ? [winnerOption, winnerVotes] : undefined;
+// }
+
+// function generateResultsReport(
+//   global: GlobalState,
+//   platform: string,
+//   submissionUrl: string
+// ): string | undefined {
+//   const chat = selectCurrentChat(global);
+//   const membersCount = chat?.membersCount;
+//   if (!chat || !membersCount) {
+//     return undefined;
+//   }
+
+//   // Then take all the eos account names defined in them and add them to some set
+//   // Then take winner one by one, removing from the eos account set as well,
+//   // while also checking that you are not adding an eos account name which was already ranked
+//   // If last poll does not exist then take the remaining account
+//   const delegate = getWinnerOption(selectLatestDelegatePoll(global, chat.id));
+//   // TODO: Derive the latest rank from results of the previous
+//   const ranks = new Array<[string, number] | undefined>();
+//   let i = 6;
+//   while (i > 0) {
+//     ranks.push(getWinnerOption(selectLatestRankingPoll(global, chat.id, i as Rank)));
+//     i--;
+//   }
+
+//   // * Iterate through them to find latest for each
+//   // * Iterate through each latest and determine result for each
+//   //    * Take simply options which have the most votes as winners
+//   //    * Store how much votes each winner has
+//   // * Construct results message:
+//   //   6. OPTION_STR     VOTES / GROUP_SIZE    PERCENT
+//   //   5. OPTION_STR     VOTES / GROUP_SIZE    PERCENT
+//   //   ...
+//   // * Construct submission url
+//   //    * Take option strs. Take EOS account names from that and if there are
+//   //    at least 1 result with EOS account name then construct the url.
+//   //    Only fill in for ranks and delegates which have EOS account names specified in options strs.
+
+// }
 
 addActionHandler('composeConsensusMessage', (global, actions, payload) => {
   const { sendPinnedMessage } = getActions();
