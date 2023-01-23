@@ -2,7 +2,7 @@ import {
   addActionHandler, getGlobal, setGlobal, getActions,
 } from '../../index';
 
-import type { ApiMessage, ApiUser } from '../../../api/types';
+import type { ApiChat, ApiMessage, ApiPoll } from '../../../api/types';
 import { MAIN_THREAD_ID } from '../../../api/types';
 import { FocusDirection } from '../../../types';
 
@@ -14,8 +14,9 @@ import {
   SERVICE_NOTIFICATIONS_USER_ID,
   SELECT_DELEGATE_STR,
   RANK_POLL_STRS,
-  // Rank,
+  ALLOWED_RANKS,
 } from '../../../config';
+import type { Rank } from '../../../config';
 import { IS_TOUCH_ENV } from '../../../util/environment';
 import {
   enterMessageSelectMode,
@@ -41,9 +42,10 @@ import {
   selectReplyStack,
   selectSender,
   selectScheduledMessages,
-  selectChatUsers,
   selectAccountPromptStr,
   selectChatMemberAccountMap,
+  selectLatestDelegatePoll,
+  selectLatestRankingPoll,
   // selectLatestDelegatePoll,
   // selectChatRankingPolls,
   // selectLatestRankingPoll,
@@ -56,9 +58,13 @@ import parseMessageInput from '../../../util/parseMessageInput';
 import { getMessageSummaryText, getSenderTitle } from '../../helpers';
 import * as langProvider from '../../../util/langProvider';
 import { copyHtmlToClipboard } from '../../../util/clipboard';
-import type { GlobalState, PollModalDefaults } from '../../types';
+import type {
+  AccountMap, ConsensusResultOption, ConsensusResults, ExtUser,
+  GlobalState, PollModalDefaults,
+} from '../../types';
 import { renderMessageSummaryHtml } from '../../helpers/renderMessageSummaryHtml';
 import assert from '../../../util/assert';
+import { buildQueryStringNoUndef } from '../../../util/requestQuery';
 
 const FOCUS_DURATION = 1500;
 const FOCUS_NO_HIGHLIGHT_DURATION = FAST_SMOOTH_MAX_DURATION + ANIMATION_END_DELAY;
@@ -637,40 +643,77 @@ addActionHandler('closePollModal', (global) => {
   };
 });
 
-function getMembers(global: GlobalState): ApiUser[] | undefined {
-  // NOTE: This should not be called if there are a lot of users in the chat
-  const currentChat = selectCurrentChat(global);
-  const users = currentChat && selectChatUsers(global, currentChat);
-  const allDef = users?.every((val) => val !== undefined);
-  return allDef ? users as ApiUser[] : undefined;
+function constructAccountOption(user: ExtUser, platform?: string) {
+  const extAccount = platform ? user.extAccounts[platform] : undefined;
+  let id1 = user.id;
+  const id2 = extAccount ? `(${extAccount}@${platform})` : '';
+  if (user.firstName) {
+    id1 = user.firstName;
+  } else if (user.usernames && user.usernames.length) {
+    id1 = user.usernames[0].username;
+  }
+
+  return `${id1} ${id2}`;
+}
+
+function constructAccountOptions(accountMap: AccountMap, platform: string) {
+  const optionStrs = Array.from(accountMap).map(([, user]) => {
+    return constructAccountOption(user, platform);
+  });
+
+  return optionStrs;
+}
+
+function optionToAccount(accountMap: AccountMap, optionStr: string): ExtUser | undefined {
+  const re = /^(.+) \((.+)@(.+)\)$/;
+  const regResult = optionStr.match(re);
+  let nameStr: string = optionStr;
+  let extAccountStr: string | undefined;
+  let platformStr: string | undefined;
+  if (regResult) {
+    nameStr = regResult[1];
+    extAccountStr = regResult[2];
+    platformStr = regResult[3];
+  }
+
+  const id1Matches = new Array<string>();
+  const id2Matches = new Array<string>();
+  for (const [userId, user] of accountMap) {
+    if (user.firstName === nameStr) {
+      id1Matches.push(userId);
+    } else if (user.usernames && user.usernames.length && user.usernames[0].username === nameStr) {
+      id1Matches.push(userId);
+    } else if (userId === nameStr) {
+      id1Matches.push(userId);
+    }
+
+    if (extAccountStr && platformStr) {
+      if (user.extAccounts[platformStr] && user.extAccounts[platformStr] === extAccountStr) {
+        id2Matches.push(userId);
+      }
+    }
+  }
+
+  if (id1Matches.length === 1) {
+    if (id2Matches.length === 0 || (id2Matches.length === 1 && id2Matches[0] === id1Matches[0])) {
+      return accountMap.get(id1Matches[0]);
+    }
+  }
+
+  return undefined;
 }
 
 function getAccountOptions(
   global: GlobalState,
   platform: string,
 ): string[] | undefined {
-  const users = getMembers(global);
-
   const chat = selectCurrentChat(global);
   const accountMap = chat && selectChatMemberAccountMap(global, chat, platform);
-  if (!accountMap || !users) {
+  if (!accountMap) {
     return undefined;
   }
 
-  const optionStrs = users.map((user) => {
-    const extAccount = accountMap.get(user.id);
-    if (extAccount) {
-      return `${user.firstName ?? ' '} (${extAccount}@${platform})`;
-    } else if (user.firstName) {
-      return user.firstName;
-    } else if (user.usernames && user.usernames.length) {
-      return user.usernames[0].username;
-    } else {
-      return user.id;
-    }
-  });
-
-  return optionStrs;
+  return constructAccountOptions(accountMap, platform);
 }
 
 function createPollWithAccounts(global: GlobalState, question: string, platform: string): GlobalState {
@@ -693,62 +736,150 @@ function createPollWithAccounts(global: GlobalState, question: string, platform:
   return openPollModal(global, false, values);
 }
 
-// function getWinnerOption(poll?: ApiPoll): [string, number] | undefined {
-//   const results = poll?.results.results;
-//   if (!results) {
-//     return undefined;
-//   }
+function getWinnerOption(poll: ApiPoll, accountMap: AccountMap, platform?: string): ConsensusResultOption | undefined {
+  const results = poll.results.results;
+  if (!results) {
+    return undefined;
+  }
 
-//   let winnerVotes = 0;
-//   let winnerOption: string | undefined;
-//   for (const result of results) {
-//     if (result.votersCount > winnerVotes) {
-//       winnerVotes = result.votersCount;
-//       winnerOption = result.option;
-//     }
-//   }
+  let winnerVotes = 0;
+  let winnerCount = 0;
+  let winnerOption: ConsensusResultOption | undefined;
+  for (const result of results) {
+    if (result.votersCount > winnerVotes) {
+      const answer = poll.summary.answers.find((opt) => opt.option === result.option);
+      const refUser = answer && optionToAccount(accountMap, answer.text);
+      if (answer && refUser) {
+        const refreshedOption = constructAccountOption(refUser, platform);
+        winnerOption = {
+          option: refreshedOption,
+          votes: result.votersCount,
+          ofTotal: accountMap.size,
+          refUser,
+        };
+        winnerVotes = result.votersCount;
+        winnerCount = 1;
+      } else {
+        winnerCount = 0;
+        break;
+      }
+    } else if (result.votersCount === winnerVotes) {
+      winnerCount++;
+    }
+  }
 
-//   return winnerOption ? [winnerOption, winnerVotes] : undefined;
-// }
+  return winnerCount === 1 && winnerVotes > 0 ? winnerOption : undefined;
+}
 
-// function generateResultsReport(
-//   global: GlobalState,
-//   platform: string,
-//   submissionUrl: string
-// ): string | undefined {
-//   const chat = selectCurrentChat(global);
-//   const membersCount = chat?.membersCount;
-//   if (!chat || !membersCount) {
-//     return undefined;
-//   }
+function guessConsensusResults(
+  global: GlobalState,
+  platform: string,
+  chat?: ApiChat,
+  accountMap?: AccountMap,
+): ConsensusResults | undefined {
+  chat = chat || selectCurrentChat(global);
+  const membersCount = chat?.membersCount;
+  if (!chat || !membersCount) {
+    return undefined;
+  }
 
-//   // Then take all the eos account names defined in them and add them to some set
-//   // Then take winner one by one, removing from the eos account set as well,
-//   // while also checking that you are not adding an eos account name which was already ranked
-//   // If last poll does not exist then take the remaining account
-//   const delegate = getWinnerOption(selectLatestDelegatePoll(global, chat.id));
-//   // TODO: Derive the latest rank from results of the previous
-//   const ranks = new Array<[string, number] | undefined>();
-//   let i = 6;
-//   while (i > 0) {
-//     ranks.push(getWinnerOption(selectLatestRankingPoll(global, chat.id, i as Rank)));
-//     i--;
-//   }
+  accountMap = accountMap || selectChatMemberAccountMap(global, chat, platform);
+  if (!accountMap) {
+    return undefined;
+  }
 
-//   // * Iterate through them to find latest for each
-//   // * Iterate through each latest and determine result for each
-//   //    * Take simply options which have the most votes as winners
-//   //    * Store how much votes each winner has
-//   // * Construct results message:
-//   //   6. OPTION_STR     VOTES / GROUP_SIZE    PERCENT
-//   //   5. OPTION_STR     VOTES / GROUP_SIZE    PERCENT
-//   //   ...
-//   // * Construct submission url
-//   //    * Take option strs. Take EOS account names from that and if there are
-//   //    at least 1 result with EOS account name then construct the url.
-//   //    Only fill in for ranks and delegates which have EOS account names specified in options strs.
+  const consensusResults: ConsensusResults = { rankings: {} };
+  const delegatePoll = selectLatestDelegatePoll(global, chat.id);
+  if (delegatePoll) {
+    consensusResults.delegate = getWinnerOption(delegatePoll, accountMap, platform);
+  }
 
-// }
+  const userIdsToRank = new Set<string>(accountMap.keys());
+  const leftToRank = new Set<Rank>([...ALLOWED_RANKS]);
+  for (const rank of ALLOWED_RANKS) {
+    const poll = selectLatestRankingPoll(global, chat.id, rank);
+    if (poll) {
+      const winner = getWinnerOption(poll, accountMap, platform);
+      if (winner?.refUser && userIdsToRank.has(winner.refUser.id)) {
+        consensusResults.rankings[rank] = winner;
+        userIdsToRank.delete(winner.refUser.id);
+        leftToRank.delete(rank);
+      }
+    }
+  }
+
+  if (userIdsToRank.size === 1 && leftToRank.size === 1) {
+    const rankRemaining = Array.from(leftToRank)[0];
+    const userIdRemaining = Array.from(userIdsToRank)[0];
+
+    consensusResults.rankings[rankRemaining] = {
+      option: constructAccountOption(accountMap.get(userIdRemaining)!, platform),
+      refUser: accountMap.get(userIdRemaining),
+    };
+  }
+
+  return consensusResults;
+}
+
+// https://edenfracfront.web.app/?delegate=tadastadas&groupnumber=2&vote1=tadasf&vote2=aaaaa&vote3=bbbb&vote4=cccc&vote5=ddd&vote6=lll
+type SubmissionObject = {
+  delegate?: string;
+  groupnumber?: string;
+  vote1?: string;
+  vote2?: string;
+  vote3?: string;
+  vote4?: string;
+  vote5?: string;
+  vote6?: string;
+};
+
+function toSubmissionObject(results: ConsensusResults, platform: string, groupNum?: number): SubmissionObject {
+  return {
+    delegate: results.delegate?.refUser?.extAccounts[platform],
+    groupnumber: groupNum?.toString(),
+    vote1: results.rankings[6]?.refUser?.extAccounts[platform],
+    vote2: results.rankings[5]?.refUser?.extAccounts[platform],
+    vote3: results.rankings[4]?.refUser?.extAccounts[platform],
+    vote4: results.rankings[3]?.refUser?.extAccounts[platform],
+    vote5: results.rankings[2]?.refUser?.extAccounts[platform],
+    vote6: results.rankings[1]?.refUser?.extAccounts[platform],
+  };
+}
+
+function createConsensusResultMsg(
+  results: ConsensusResults,
+  submissionUrl?: string,
+  platform?: string,
+  groupNum?: number,
+): string {
+  function getVotesStr(opt: ConsensusResultOption) {
+    return opt.votes && opt.ofTotal ? `${opt.votes} / ${opt.ofTotal}` : '';
+  }
+
+  let msg = '**Based on the latest polls this seems to be the result:**\n\n';
+  for (const rank of ALLOWED_RANKS) {
+    const winner = results.rankings[rank];
+    const option = winner?.option ?? '';
+    const votes = winner ? getVotesStr(winner) : '';
+    msg = msg.concat(`Level ${rank}: ${option}     ${votes}\n`);
+  }
+  msg = msg.concat('\n');
+
+  if (results.delegate) {
+    const votes = getVotesStr(results.delegate);
+    msg = msg.concat(`Delegate: ${results.delegate.option}    ${votes}\n`);
+  }
+
+  msg = msg.concat('\n\nPlease check if correct. 👍 if so.\n\n');
+
+  if (submissionUrl && platform) {
+    const obj = toSubmissionObject(results, platform, groupNum);
+    const queryStr = buildQueryStringNoUndef(obj);
+    msg = msg.concat(`Submit here if this is correct: ${submissionUrl}/${queryStr}`);
+  }
+
+  return msg;
+}
 
 addActionHandler('composeConsensusMessage', (global, actions, payload) => {
   const { sendPinnedMessage } = getActions();
@@ -773,6 +904,22 @@ addActionHandler('composeConsensusMessage', (global, actions, payload) => {
       return global;
     }
     case 'resultsReport': {
+      const { platform, submissionUrl } = payload;
+      if (!platform || !submissionUrl) {
+        return global;
+      }
+      const chat = selectCurrentChat(global);
+      if (!chat) {
+        return global;
+      }
+      const accountMap = selectChatMemberAccountMap(global, chat, platform);
+      const results = accountMap && guessConsensusResults(global, platform, chat, accountMap);
+      if (!results) {
+        return global;
+      }
+      const msg = createConsensusResultMsg(results, submissionUrl, platform, 1);
+      const { text, entities } = parseMessageInput(msg);
+      sendPinnedMessage({ text, entities });
       return global;
     }
     default: {

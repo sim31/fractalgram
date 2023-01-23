@@ -1,5 +1,6 @@
 import type {
-  ChatConsensusMessages, GlobalState, MessageListType, Thread,
+  AccountMap,
+  ChatConsensusMessages, ExtUser, GlobalState, MessageListType, Thread,
 } from '../types';
 import type {
   ApiChat,
@@ -18,7 +19,7 @@ import {
 import { LOCAL_MESSAGE_MIN_ID, REPLIES_USER_ID, SERVICE_NOTIFICATIONS_USER_ID } from '../../config';
 import type { Rank } from '../../config';
 import {
-  selectChat, selectChatBot, selectIsChatWithBot, selectIsChatWithSelf,
+  selectChat, selectChatBot, selectChatUsers, selectIsChatWithBot, selectIsChatWithSelf,
 } from './chats';
 import {
   selectIsCurrentUserPremium, selectIsUserOrChatContact, selectUser, selectUserStatus,
@@ -88,14 +89,16 @@ export function selectChatRankingPolls(global: GlobalState, chatId: string) {
   return selectChatConsensusMsgs(global, chatId)?.rankingPolls;
 }
 
-// Returns userId -> account id on platform
+// Returns userId -> ExtUser on platform
 export function selectChatMemberAccountMap(
   global: GlobalState, chat: ApiChat, platform: string,
-): Map<string, string> | undefined {
-  const members = chat?.fullInfo?.members;
-  if (!members) {
+): AccountMap | undefined {
+  const u = selectChatUsers(global, chat);
+  if (!u?.every((val) => val !== undefined)) {
     return undefined;
   }
+  const users = u.filter((user) => user !== undefined) as ApiUser[];
+
   const consensusMsgs = selectChatConsensusMsgs(global, chat.id);
   if (!consensusMsgs) {
     return undefined;
@@ -109,18 +112,20 @@ export function selectChatMemberAccountMap(
     return undefined;
   }
 
-  const accountMap = new Map<string, string>();
+  const accountMap = new Map<string, ExtUser>(users.map((user) => [user.id, { ...user, extAccounts: {} }]));
   // userId -> date
   const dateMap = new Map<string, number>();
   for (const msgId of accountMsgs) {
     const msg = byId[msgId];
     const text = msg?.content.text?.text;
     const senderId = msg?.senderId;
-    if (text && senderId) {
+    const sender = senderId ? accountMap.get(senderId) : undefined;
+    if (text && senderId && sender) {
       const existingDate = dateMap.get(senderId);
 
       if (!existingDate || msg.date >= existingDate) {
-        accountMap.set(senderId, text);
+        const newValue: ExtUser = { ...sender, extAccounts: { [platform]: text } };
+        accountMap.set(senderId, newValue);
         dateMap.set(senderId, msg.date);
       }
     }

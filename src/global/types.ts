@@ -90,6 +90,25 @@ export type ChatConsensusMessages = {
   delegatePolls: Set<number>;
 };
 
+export interface ExtUser extends ApiUser {
+  // platform -> account name
+  extAccounts: Record<string, string>;
+}
+
+export interface ConsensusResultOption {
+  option: string;
+  votes?: number;
+  ofTotal?: number;
+  refUser?: ExtUser;
+}
+
+export interface ConsensusResults {
+  delegate?: ConsensusResultOption;
+  rankings: Partial<Record<Rank, ConsensusResultOption>>;
+}
+
+export type AccountMap = Map<string, ExtUser>;
+
 export type PollModalDefaults = {
   question: string;
   options: string[];

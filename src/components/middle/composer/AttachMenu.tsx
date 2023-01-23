@@ -108,7 +108,7 @@ const AttachMenu: FC<OwnProps> = ({
   }, [onConsensusMsg]);
 
   const handleResultReport = useCallback(() => {
-    onConsensusMsg({ type: 'resultsReport', submissionUrl: DEFAULT_CONSENSUS_SUBMIT_URL });
+    onConsensusMsg({ type: 'resultsReport', platform: 'eos', submissionUrl: DEFAULT_CONSENSUS_SUBMIT_URL });
   }, [onConsensusMsg]);
 
   const bots = useMemo(() => {

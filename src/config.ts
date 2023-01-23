@@ -269,7 +269,7 @@ export const RANK_POLL_STRS = [
 ];
 export const SELECT_DELEGATE_REGEX = /^Who should be the delegate of this group\?$/;
 export const SELECT_DELEGATE_STR = 'Who should be the delegate of this group?';
-export const ALLOWED_RANKS = [1, 2, 3, 4, 5, 6];
+export const ALLOWED_RANKS: Rank[] = [6, 5, 4, 3, 2, 1];
 export type Rank = 6 | 5 | 4 | 3 | 2 | 1;
 
 export const DEFAULT_CONSENSUS_SUBMIT_URL = 'https://edenfracfront.web.app/';
