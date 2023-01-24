@@ -14,6 +14,7 @@ import InputText from '../../ui/InputText';
 import './PollModal.scss';
 import type { AccountPromptInfo, AccountPromptDefaults } from '../../../global/types';
 import TextArea from '../../ui/TextArea';
+import { composePrompt } from '../../../global/helpers/consensusMessages';
 
 export type OwnProps = {
   isOpen: boolean;
@@ -21,10 +22,6 @@ export type OwnProps = {
   onSend: (info: AccountPromptInfo) => void;
   onClear: () => void;
 };
-
-function composePrompt(platform: string) {
-  return `Please enter your ${platform} account as a reply to this message`;
-}
 
 const AccountPromptModal: FC<OwnProps> = ({
   isOpen, defaultValues, onSend, onClear,

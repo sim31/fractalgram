@@ -15,7 +15,8 @@ import {
   SELECT_DELEGATE_STR,
   RANK_POLL_STRS,
   ALLOWED_RANKS,
-  DEFAULT_CONSENSUS_PLATFORM,
+  DEFAULT_PLATFORM,
+  FRACTAL_INFO_BY_PLATFORM,
 } from '../../../config';
 import type { Rank } from '../../../config';
 import { IS_TOUCH_ENV } from '../../../util/environment';
@@ -43,10 +44,10 @@ import {
   selectReplyStack,
   selectSender,
   selectScheduledMessages,
-  selectAccountPromptStr,
   selectChatMemberAccountMap,
   selectLatestDelegatePoll,
   selectLatestRankingPoll,
+  selectLatestPrompt,
   // selectLatestDelegatePoll,
   // selectChatRankingPolls,
   // selectLatestRankingPoll,
@@ -65,7 +66,7 @@ import type {
 } from '../../types';
 import { renderMessageSummaryHtml } from '../../helpers/renderMessageSummaryHtml';
 import assert from '../../../util/assert';
-import { buildQueryStringNoUndef } from '../../../util/requestQuery';
+import { promptStrToPlatform } from '../../helpers/consensusMessages';
 
 const FOCUS_DURATION = 1500;
 const FOCUS_NO_HIGHLIGHT_DURATION = FAST_SMOOTH_MAX_DURATION + ANIMATION_END_DELAY;
@@ -800,7 +801,7 @@ function getWinnerOption(poll: ApiPoll, accountMap: AccountMap, platform?: strin
 
 function guessConsensusResults(
   global: GlobalState,
-  platform: string,
+  platform?: string,
   chat?: ApiChat,
   accountMap?: AccountMap,
 ): ConsensusResults | undefined {
@@ -848,66 +849,6 @@ function guessConsensusResults(
   return consensusResults;
 }
 
-// https://edenfracfront.web.app/?delegate=tadastadas&groupnumber=2&vote1=tadasf&vote2=aaaaa&vote3=bbbb&vote4=cccc&vote5=ddd&vote6=lll
-type SubmissionObject = {
-  delegate?: string;
-  groupnumber?: string;
-  vote1?: string;
-  vote2?: string;
-  vote3?: string;
-  vote4?: string;
-  vote5?: string;
-  vote6?: string;
-};
-
-function toSubmissionObject(results: ConsensusResults, platform: string, groupNum?: number): SubmissionObject {
-  return {
-    delegate: results.delegate?.refUser?.extAccounts[platform],
-    groupnumber: groupNum?.toString(),
-    vote1: results.rankings[6]?.refUser?.extAccounts[platform],
-    vote2: results.rankings[5]?.refUser?.extAccounts[platform],
-    vote3: results.rankings[4]?.refUser?.extAccounts[platform],
-    vote4: results.rankings[3]?.refUser?.extAccounts[platform],
-    vote5: results.rankings[2]?.refUser?.extAccounts[platform],
-    vote6: results.rankings[1]?.refUser?.extAccounts[platform],
-  };
-}
-
-function createConsensusResultMsg(
-  results: ConsensusResults,
-  submissionUrl?: string,
-  platform?: string,
-  groupNum?: number,
-): string {
-  function getVotesStr(opt: ConsensusResultOption) {
-    return opt.votes && opt.ofTotal ? `${opt.votes} / ${opt.ofTotal}` : '';
-  }
-
-  let msg = '**Based on the latest polls this seems to be the result:**\n\n';
-  for (const rank of ALLOWED_RANKS) {
-    const winner = results.rankings[rank];
-    const option = winner?.option ?? '';
-    const votes = winner ? getVotesStr(winner) : '';
-    msg = msg.concat(`Level ${rank}: ${option}     ${votes}\n`);
-  }
-  msg = msg.concat('\n');
-
-  if (results.delegate) {
-    const votes = getVotesStr(results.delegate);
-    msg = msg.concat(`Delegate: ${results.delegate.option}    ${votes}\n`);
-  }
-
-  msg = msg.concat('\n\nPlease check if correct. 👍 if so.\n\n');
-
-  if (submissionUrl && platform) {
-    const obj = toSubmissionObject(results, platform, groupNum);
-    const queryStr = buildQueryStringNoUndef(obj);
-    msg = msg.concat(`Submit here if this is correct: ${submissionUrl}/${queryStr}`);
-  }
-
-  return msg;
-}
-
 addActionHandler('composeConsensusMessage', (global, actions, payload) => {
   const { sendPinnedMessage } = getActions();
   switch (payload.type) {
@@ -922,7 +863,7 @@ addActionHandler('composeConsensusMessage', (global, actions, payload) => {
     case 'accountPrompt': {
       let { platform } = payload;
       if (!platform) {
-        platform = DEFAULT_CONSENSUS_PLATFORM;
+        platform = DEFAULT_PLATFORM;
       }
       return openAccountPromptModal(global, platform);
     }
@@ -933,19 +874,6 @@ addActionHandler('composeConsensusMessage', (global, actions, payload) => {
         return global;
       }
 
-      const existingPrompt = selectAccountPromptStr(global, platform);
-      // Update prompt
-      // FIXME: This will not be preserved accross sessions
-      if (!existingPrompt || existingPrompt !== promptMessage) {
-        global = {
-          ...global,
-          accountPromptStrs: {
-            ...global.accountPromptStrs,
-            [platform]: promptMessage,
-          },
-        };
-      }
-
       const { text, entities } = parseMessageInput(promptMessage);
       sendPinnedMessage({ text, entities });
 
@@ -953,23 +881,52 @@ addActionHandler('composeConsensusMessage', (global, actions, payload) => {
     }
     // TODO: Should derive platform from the messages
     case 'resultsReport': {
-      const { platform, submissionUrl } = payload;
-      if (!platform || !submissionUrl) {
-        return global;
-      }
       const chat = selectCurrentChat(global);
+      // TODO: show error instead?
       if (!chat) {
         return global;
       }
-      const accountMap = selectChatMemberAccountMap(global, chat, platform);
-      const results = accountMap && guessConsensusResults(global, platform, chat, accountMap);
+      const latestPromptStr = selectLatestPrompt(global, chat.id)?.content.text?.text;
+      const platform = latestPromptStr && promptStrToPlatform(latestPromptStr);
+      const extPlatformInfo = platform ? FRACTAL_INFO_BY_PLATFORM[platform] : undefined;
+
+      return {
+        ...global,
+        consensusResultsModal: {
+          isOpen: true,
+          page: 'extPlatform',
+          extPlatformInfo,
+        },
+      };
+      // const accountMap = selectChatMemberAccountMap(global, chat, platform);
+      // const results = accountMap && guessConsensusResults(global, platform, chat, accountMap);
+      // if (!results) {
+      //   return global;
+      // }
+      // const msg = createConsensusResultMsg(results, submissionUrl, platform, 1);
+      // const { text, entities } = parseMessageInput(msg);
+      // sendPinnedMessage({ text, entities });
+      // return global;
+    }
+    case 'resultsReportCompose': {
+      const { extPlatformInfo } = payload;
+      const platform = extPlatformInfo?.platform;
+      const results = guessConsensusResults(global, platform);
+      // TODO: signal error
       if (!results) {
         return global;
       }
-      const msg = createConsensusResultMsg(results, submissionUrl, platform, 1);
-      const { text, entities } = parseMessageInput(msg);
-      sendPinnedMessage({ text, entities });
-      return global;
+
+      return {
+        ...global,
+        consensusResultsModal: {
+          isOpen: true,
+          page: 'editText',
+          extPlatformInfo,
+          guessedResults: results,
+        },
+      };
+      // const msg = createConsensusResultMsg(results, submissionUrl, platform, 1);
     }
     default: {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars

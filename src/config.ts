@@ -1,4 +1,4 @@
-import type { ApiLimitType } from './global/types';
+import type { ApiLimitType, ExtPlatformInfo } from './global/types';
 
 export const APP_NAME = process.env.APP_NAME || 'Telegram WebZ';
 export const APP_VERSION = process.env.APP_VERSION!;
@@ -272,8 +272,23 @@ export const SELECT_DELEGATE_STR = 'Who should be the delegate of this group?';
 export const ALLOWED_RANKS: Rank[] = [6, 5, 4, 3, 2, 1];
 export type Rank = 6 | 5 | 4 | 3 | 2 | 1;
 
-export const DEFAULT_CONSENSUS_SUBMIT_URL = 'https://edenfracfront.web.app/';
-export const DEFAULT_CONSENSUS_PLATFORM = 'EOS';
-export const DEFAULT_ACCOUNT_PROMPT_STRS = {
-  EOS: 'Please enter your EOS account as a reply to this message',
+export const DEFAULT_FRACTAL_NAME = 'EdenFractal';
+export const FRACTAL_INFO: Record<string, ExtPlatformInfo> = {
+  EdenFractal: {
+    fractalName: 'EdenFractal',
+    submitUrl: 'https://edenfracfront.web.app/',
+    platform: 'EOS',
+  },
 };
+export const DEFAULT_PLATFORM = FRACTAL_INFO[DEFAULT_FRACTAL_NAME].platform;
+export const FRACTAL_INFO_BY_PLATFORM: Record<string, ExtPlatformInfo> = {
+  EOS: {
+    fractalName: 'EdenFractal',
+    submitUrl: 'https://edenfracfront.web.app',
+    platform: 'EOS',
+  },
+};
+
+export const ACCOUNT_PROMPT_RE = /^Please enter your (\w+) account as a reply to this message$/;
+export const ACCOUNT_PROMPT_TEMPLATE = 'Please enter your <PLATFORM> account as a reply to this message';
+export const ACCOUNT_PROMPT_REPLACE_RE = /<PLATFORM>/;

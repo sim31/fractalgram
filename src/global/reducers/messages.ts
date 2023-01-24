@@ -25,14 +25,13 @@ import {
   selectChatMessage,
   selectCurrentMessageList,
   selectChatConsensusMsgs,
-  selectAccountPromptStr,
-  selectAccountPromptStrs,
 } from '../selectors';
 import {
   areSortedArraysEqual, omit, pickTruthy, unique,
 } from '../../util/iteratees';
 import { INIT_CONSENSUS_MSGS } from '../initialState';
 import assert from '../../util/assert';
+import { promptStrToPlatform } from '../helpers/consensusMessages';
 
 const rankPollRe = RANK_POLL_REGEX;
 const selectDelegateRe = SELECT_DELEGATE_REGEX;
@@ -198,23 +197,21 @@ function addConsensusMessage(
         delegatePolls: new Set([...consensusMsgs.delegatePolls, msg.id]),
       };
     }
-  } else {
-    // Check if it is account prompt message
-    Object.entries(selectAccountPromptStrs(global)).forEach(([platform, str]) => {
-      if (msg.content.text && msg.content.text.text === str) {
-        consensusMsgs = {
-          ...consensusMsgs,
-          extAccountPrompts: {
-            ...consensusMsgs.extAccountPrompts,
-            [msg.id]: platform,
-          },
-        };
-        // Check for existing replies to this prompt
-        Object.values(currentById).forEach((existingMsg) => {
-          consensusMsgs = addPromptReplies(consensusMsgs, existingMsg);
-        });
-      }
-    });
+  } else if (msg.content.text && msg.content.text.text) {
+    const platform = promptStrToPlatform(msg.content.text.text);
+    if (platform) {
+      consensusMsgs = {
+        ...consensusMsgs,
+        extAccountPrompts: {
+          ...consensusMsgs.extAccountPrompts,
+          [msg.id]: platform,
+        },
+      };
+      // Check for existing replies to this prompt
+      Object.values(currentById).forEach((existingMsg) => {
+        consensusMsgs = addPromptReplies(consensusMsgs, existingMsg);
+      });
+    }
   }
 
   return consensusMsgs;
@@ -274,8 +271,9 @@ function updateConsensusMessage(
     const messageId = message.id;
     const promptPlatform = consensusMsgs.extAccountPrompts[messageId];
     if (promptPlatform) {
-      const promptStr = selectAccountPromptStr(global, promptPlatform);
-      if (updatedMessage.content.text?.text !== promptStr) {
+      const newText = updatedMessage.content.text?.text;
+      const newPlatform = newText && promptStrToPlatform(newText);
+      if (newPlatform !== promptPlatform) {
         consensusMsgs = {
           ...consensusMsgs,
           extAccountPrompts: { ...consensusMsgs.extAccountPrompts },

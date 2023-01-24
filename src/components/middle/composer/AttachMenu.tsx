@@ -7,7 +7,7 @@ import type { ActionPayloads, GlobalState } from '../../../global/types';
 import type { ApiAttachMenuPeerType } from '../../../api/types';
 import type { ISettings } from '../../../types';
 
-import { CONTENT_TYPES_WITH_PREVIEW, DEFAULT_CONSENSUS_SUBMIT_URL } from '../../../config';
+import { CONTENT_TYPES_WITH_PREVIEW } from '../../../config';
 import type { Rank } from '../../../config';
 import { IS_TOUCH_ENV } from '../../../util/environment';
 import { openSystemFilesDialog } from '../../../util/systemFilesDialog';
@@ -108,7 +108,7 @@ const AttachMenu: FC<OwnProps> = ({
   }, [onConsensusMsg]);
 
   const handleResultReport = useCallback(() => {
-    onConsensusMsg({ type: 'resultsReport', platform: 'eos', submissionUrl: DEFAULT_CONSENSUS_SUBMIT_URL });
+    onConsensusMsg({ type: 'resultsReport' });
   }, [onConsensusMsg]);
 
   const bots = useMemo(() => {

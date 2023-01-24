@@ -3,7 +3,7 @@ import { NewChatMembersProgress } from '../types';
 
 import {
   ANIMATION_LEVEL_DEFAULT, DARK_THEME_PATTERN_COLOR,
-  DEFAULT_ACCOUNT_PROMPT_STRS, DEFAULT_CONSENSUS_PLATFORM, DEFAULT_MESSAGE_TEXT_SIZE_PX, DEFAULT_PATTERN_COLOR,
+  DEFAULT_PLATFORM, DEFAULT_MESSAGE_TEXT_SIZE_PX, DEFAULT_PATTERN_COLOR,
   DEFAULT_PLAYBACK_RATE,
   DEFAULT_VOLUME,
   IOS_DEFAULT_MESSAGE_TEXT_SIZE_PX, MACOS_DEFAULT_MESSAGE_TEXT_SIZE_PX,
@@ -47,8 +47,6 @@ export const INITIAL_STATE: GlobalState = {
     messageLists: [],
     sponsoredByChatId: {},
   },
-
-  accountPromptStrs: { ...DEFAULT_ACCOUNT_PROMPT_STRS },
 
   groupCalls: {
     byId: {},
@@ -237,7 +235,11 @@ export const INITIAL_STATE: GlobalState = {
   },
   accountPromptModal: {
     isOpen: false,
-    defaultValues: { platform: DEFAULT_CONSENSUS_PLATFORM },
+    defaultValues: { platform: DEFAULT_PLATFORM },
+  },
+  consensusResultsModal: {
+    isOpen: false,
+    page: 'extPlatform',
   },
 
   trustedBotIds: [],

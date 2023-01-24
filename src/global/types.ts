@@ -106,9 +106,13 @@ export interface ConsensusResults {
   groupNumber?: number;
   delegate?: ConsensusResultOption;
   rankings: Partial<Record<Rank, ConsensusResultOption>>;
-  consensusSubmitUrl?: string;
-  platform?: string;
 }
+
+export type ExtPlatformInfo = {
+  fractalName: string;
+  platform: string;
+  submitUrl: string;
+};
 
 export type AccountMap = Map<string, ExtUser>;
 
@@ -280,9 +284,6 @@ export type GlobalState = {
     };
     sponsoredByChatId: Record<string, ApiSponsoredMessage>;
   };
-
-  // platform -> account prompt string for that platform
-  accountPromptStrs: Record<string, string>;
 
   groupCalls: {
     byId: Record<string, ApiGroupCall>;
@@ -676,6 +677,13 @@ export type GlobalState = {
   accountPromptModal: {
     isOpen: boolean;
     defaultValues: AccountPromptDefaults;
+  };
+
+  consensusResultsModal: {
+    isOpen: boolean;
+    page: 'extPlatform' | 'editText';
+    extPlatformInfo?: ExtPlatformInfo;
+    guessedResults?: ConsensusResults;
   };
 
   webApp?: {
@@ -1257,8 +1265,9 @@ export interface ActionPayloads {
     value: AccountPromptInfo;
   } | {
     type: 'resultsReport';
-    submissionUrl?: string;
-    platform?: string;
+  } | {
+    type: 'resultsReportCompose';
+    extPlatformInfo?: ExtPlatformInfo;
   };
   requestConfetti: {
     top: number;

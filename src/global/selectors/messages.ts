@@ -91,13 +91,19 @@ export function selectChatRankingPolls(global: GlobalState, chatId: string) {
 
 // Returns userId -> ExtUser on platform
 export function selectChatMemberAccountMap(
-  global: GlobalState, chat: ApiChat, platform: string,
+  global: GlobalState, chat: ApiChat, platform?: string,
 ): AccountMap | undefined {
   const u = selectChatUsers(global, chat);
   if (!u?.every((val) => val !== undefined)) {
     return undefined;
   }
   const users = u.filter((user) => user !== undefined) as ApiUser[];
+
+  const accountMap = new Map<string, ExtUser>(users.map((user) => [user.id, { ...user, extAccounts: {} }]));
+
+  if (!platform) {
+    return accountMap;
+  }
 
   const consensusMsgs = selectChatConsensusMsgs(global, chat.id);
   if (!consensusMsgs) {
@@ -112,7 +118,6 @@ export function selectChatMemberAccountMap(
     return undefined;
   }
 
-  const accountMap = new Map<string, ExtUser>(users.map((user) => [user.id, { ...user, extAccounts: {} }]));
   // userId -> date
   const dateMap = new Map<string, number>();
   for (const msgId of accountMsgs) {
@@ -134,14 +139,6 @@ export function selectChatMemberAccountMap(
   return accountMap;
 }
 
-export function selectAccountPromptStrs(global: GlobalState) {
-  return global.accountPromptStrs;
-}
-
-export function selectAccountPromptStr(global: GlobalState, platform: string): string | undefined {
-  return global.accountPromptStrs[platform];
-}
-
 export function selectLatestMessage(
   global: GlobalState, chatId: string, ids: number[],
 ): ApiMessage | undefined {
@@ -161,6 +158,24 @@ export function selectLatestMessage(
   }
 
   return lmsg;
+}
+
+export function selectAccountPrompts(global: GlobalState, chatId: string): Record<number, string> | undefined {
+  const consensusMsgs: ChatConsensusMessages | undefined = global.messages.byChatId[chatId]?.consensusMsgs;
+  if (!consensusMsgs) {
+    return undefined;
+  }
+
+  return consensusMsgs.extAccountPrompts;
+}
+
+export function selectLatestPrompt(global: GlobalState, chatId: string): ApiMessage | undefined {
+  const prompts = selectAccountPrompts(global, chatId);
+  if (!prompts) {
+    return undefined;
+  }
+
+  return selectLatestMessage(global, chatId, (Object.keys(prompts) as unknown[]) as number[]);
 }
 
 export function selectLatestDelegatePoll(
