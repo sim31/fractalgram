@@ -74,7 +74,7 @@ const PollModal: FC<OwnProps> = ({
       setHasErrors(false);
     } else if (defaultValues) {
       setQuestion(defaultValues.question);
-      setOptions(defaultValues.options);
+      setOptions([...defaultValues.options, '']);
       setIsAnonymous(defaultValues.isAnonymous);
     }
   }, [isQuiz, isOpen, defaultValues]);
