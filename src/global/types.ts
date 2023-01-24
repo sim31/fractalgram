@@ -103,8 +103,11 @@ export interface ConsensusResultOption {
 }
 
 export interface ConsensusResults {
+  groupNumber?: number;
   delegate?: ConsensusResultOption;
   rankings: Partial<Record<Rank, ConsensusResultOption>>;
+  consensusSubmitUrl?: string;
+  platform?: string;
 }
 
 export type AccountMap = Map<string, ExtUser>;
@@ -115,6 +118,14 @@ export type PollModalDefaults = {
   isAnonymous: boolean;
   pinned: boolean;
 };
+
+export interface AccountPromptDefaults {
+  platform: string;
+}
+
+export interface AccountPromptInfo extends AccountPromptDefaults {
+  promptMessage: string;
+}
 
 export type MessageListType =
   'thread'
@@ -660,6 +671,11 @@ export type GlobalState = {
     isOpen: boolean;
     isQuiz?: boolean;
     defaultValues?: PollModalDefaults;
+  };
+
+  accountPromptModal: {
+    isOpen: boolean;
+    defaultValues: AccountPromptDefaults;
   };
 
   webApp?: {
@@ -1235,7 +1251,10 @@ export interface ActionPayloads {
     rank: Rank;
   } | {
     type: 'accountPrompt';
-    platform: string;
+    platform?: string;
+  } | {
+    type: 'accountPromptSubmit';
+    value: AccountPromptInfo;
   } | {
     type: 'resultsReport';
     submissionUrl?: string;
@@ -1382,6 +1401,8 @@ export type NonTypedActionNames = (
   'sendEmojiInteraction' | 'sendWatchingEmojiInteraction' | 'copySelectedMessages' | 'copyMessagesByIds' |
   'setEditingId' |
   'sendPinnedMessage' |
+  // fractalgram
+  'closeAccountPromptModal' |
   // scheduled messages
   'loadScheduledHistory' | 'sendScheduledMessages' | 'rescheduleMessage' | 'deleteScheduledMessages' |
   // poll result

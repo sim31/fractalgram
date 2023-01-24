@@ -15,6 +15,7 @@ import {
   SELECT_DELEGATE_STR,
   RANK_POLL_STRS,
   ALLOWED_RANKS,
+  DEFAULT_CONSENSUS_PLATFORM,
 } from '../../../config';
 import type { Rank } from '../../../config';
 import { IS_TOUCH_ENV } from '../../../util/environment';
@@ -628,6 +629,32 @@ function openPollModal(global: GlobalState, isQuiz?: boolean, defaultValues?: Po
   };
 }
 
+function openAccountPromptModal(
+  global: GlobalState, platform: string,
+): GlobalState {
+  return {
+    ...global,
+    accountPromptModal: {
+      isOpen: true,
+      defaultValues: { platform },
+    },
+  };
+}
+
+function closeAccountPromptModal(global: GlobalState): GlobalState {
+  return {
+    ...global,
+    accountPromptModal: {
+      ...global.accountPromptModal,
+      isOpen: false,
+    },
+  };
+}
+
+addActionHandler('closeAccountPromptModal', (global) => {
+  return closeAccountPromptModal(global);
+});
+
 addActionHandler('openPollModal', (global, actions, payload) => {
   const { isQuiz, defaultValues } = payload || {};
 
@@ -893,16 +920,38 @@ addActionHandler('composeConsensusMessage', (global, actions, payload) => {
       return createPollWithAccounts(global, question, 'eos');
     }
     case 'accountPrompt': {
-      const { platform } = payload;
-      const promptStr = selectAccountPromptStr(global, platform);
-      if (!promptStr) {
+      let { platform } = payload;
+      if (!platform) {
+        platform = DEFAULT_CONSENSUS_PLATFORM;
+      }
+      return openAccountPromptModal(global, platform);
+    }
+    case 'accountPromptSubmit': {
+      const { value } = payload;
+      const { platform, promptMessage } = value;
+      if (!platform.length || !promptMessage.length) {
         return global;
       }
 
-      const { text, entities } = parseMessageInput(promptStr);
+      const existingPrompt = selectAccountPromptStr(global, platform);
+      // Update prompt
+      // FIXME: This will not be preserved accross sessions
+      if (!existingPrompt || existingPrompt !== promptMessage) {
+        global = {
+          ...global,
+          accountPromptStrs: {
+            ...global.accountPromptStrs,
+            [platform]: promptMessage,
+          },
+        };
+      }
+
+      const { text, entities } = parseMessageInput(promptMessage);
       sendPinnedMessage({ text, entities });
+
       return global;
     }
+    // TODO: Should derive platform from the messages
     case 'resultsReport': {
       const { platform, submissionUrl } = payload;
       if (!platform || !submissionUrl) {

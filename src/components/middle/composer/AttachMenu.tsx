@@ -104,7 +104,7 @@ const AttachMenu: FC<OwnProps> = ({
   }, [onConsensusMsg]);
 
   const handleAccountPrompt = useCallback(() => {
-    onConsensusMsg({ type: 'accountPrompt', platform: 'eos' });
+    onConsensusMsg({ type: 'accountPrompt' });
   }, [onConsensusMsg]);
 
   const handleResultReport = useCallback(() => {
@@ -193,7 +193,7 @@ const AttachMenu: FC<OwnProps> = ({
 
         {canAttachAccountPrompts && (
           <MenuItem icon="poll" onClick={handleAccountPrompt}>
-            {lang('Account prompt for EOS')}
+            {lang('Account prompt')}
           </MenuItem>
         )}
 

@@ -4,7 +4,7 @@ import React, {
 } from '../../../lib/teact/teact';
 import { getActions, getGlobal, withGlobal } from '../../../global';
 
-import type { GlobalState, MessageListType } from '../../../global/types';
+import type { AccountPromptInfo, GlobalState, MessageListType } from '../../../global/types';
 import type {
   ApiAttachment,
   ApiBotInlineResult,
@@ -128,6 +128,7 @@ import SendAsMenu from './SendAsMenu.async';
 import BotMenuButton from './BotMenuButton';
 
 import './Composer.scss';
+import AccountPromptModal from './AccountPromptModal';
 
 type OwnProps = {
   chatId: string;
@@ -151,6 +152,7 @@ type StateProps =
     isSelectModeActive?: boolean;
     isForwarding?: boolean;
     pollModal: GlobalState['pollModal'];
+    accountPromptModal: GlobalState['accountPromptModal'];
     botKeyboardMessageId?: number;
     botKeyboardPlaceholder?: string;
     withScheduledButton?: boolean;
@@ -235,6 +237,7 @@ const Composer: FC<OwnProps & StateProps> = ({
   isSelectModeActive,
   isForwarding,
   pollModal,
+  accountPromptModal,
   botKeyboardMessageId,
   botKeyboardPlaceholder,
   withScheduledButton,
@@ -275,6 +278,7 @@ const Composer: FC<OwnProps & StateProps> = ({
     forwardMessages,
     openPollModal,
     closePollModal,
+    closeAccountPromptModal,
     loadScheduledHistory,
     openChat,
     addRecentEmoji,
@@ -937,6 +941,11 @@ const Composer: FC<OwnProps & StateProps> = ({
     }
   }, [closePollModal, handleMessageSchedule, requestCalendar, sendMessage, sendPinnedMessage, shouldSchedule]);
 
+  const handleAccountPromptSend = useCallback((value: AccountPromptInfo) => {
+    composeConsensusMessage({ type: 'accountPromptSubmit', value });
+    closeAccountPromptModal();
+  }, [composeConsensusMessage, closeAccountPromptModal]);
+
   const handleSendSilent = useCallback(() => {
     if (shouldSchedule) {
       requestCalendar((scheduledAt) => {
@@ -1141,6 +1150,12 @@ const Composer: FC<OwnProps & StateProps> = ({
         defaultValues={pollModal.defaultValues}
         onClear={closePollModal}
         onSend={handlePollSend}
+      />
+      <AccountPromptModal
+        isOpen={accountPromptModal.isOpen}
+        defaultValues={accountPromptModal.defaultValues}
+        onSend={handleAccountPromptSend}
+        onClear={closeAccountPromptModal}
       />
       {renderedEditedMessage && (
         <DeleteMessageModal
@@ -1476,6 +1491,7 @@ export default memo(withGlobal<OwnProps>(
       botKeyboardPlaceholder: keyboardMessage?.keyboardPlaceholder,
       isForwarding: chatId === global.forwardMessages.toChatId,
       pollModal: global.pollModal,
+      accountPromptModal: global.accountPromptModal,
       stickersForEmoji: global.stickers.forEmoji.stickers,
       customEmojiForEmoji: global.customEmojis.forEmoji.stickers,
       groupChatMembers: chat?.fullInfo?.members,

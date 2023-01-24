@@ -273,6 +273,7 @@ export const ALLOWED_RANKS: Rank[] = [6, 5, 4, 3, 2, 1];
 export type Rank = 6 | 5 | 4 | 3 | 2 | 1;
 
 export const DEFAULT_CONSENSUS_SUBMIT_URL = 'https://edenfracfront.web.app/';
+export const DEFAULT_CONSENSUS_PLATFORM = 'EOS';
 export const DEFAULT_ACCOUNT_PROMPT_STRS = {
-  eos: 'Please enter your EOS account name as a reply to this message',
+  EOS: 'Please enter your EOS account as a reply to this message',
 };
