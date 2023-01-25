@@ -129,6 +129,7 @@ import BotMenuButton from './BotMenuButton';
 
 import './Composer.scss';
 import AccountPromptModal from './AccountPromptModal';
+import FractalResultModal from './FractalResultModal';
 
 type OwnProps = {
   chatId: string;
@@ -153,6 +154,7 @@ type StateProps =
     isForwarding?: boolean;
     pollModal: GlobalState['pollModal'];
     accountPromptModal: GlobalState['accountPromptModal'];
+    consensusResultsModal: GlobalState['consensusResultsModal'];
     botKeyboardMessageId?: number;
     botKeyboardPlaceholder?: string;
     withScheduledButton?: boolean;
@@ -238,6 +240,7 @@ const Composer: FC<OwnProps & StateProps> = ({
   isForwarding,
   pollModal,
   accountPromptModal,
+  consensusResultsModal,
   botKeyboardMessageId,
   botKeyboardPlaceholder,
   withScheduledButton,
@@ -279,6 +282,7 @@ const Composer: FC<OwnProps & StateProps> = ({
     openPollModal,
     closePollModal,
     closeAccountPromptModal,
+    closeResultsReportModal,
     loadScheduledHistory,
     openChat,
     addRecentEmoji,
@@ -943,8 +947,11 @@ const Composer: FC<OwnProps & StateProps> = ({
 
   const handleAccountPromptSend = useCallback((value: AccountPromptInfo) => {
     composeConsensusMessage({ type: 'accountPromptSubmit', value });
-    closeAccountPromptModal();
-  }, [composeConsensusMessage, closeAccountPromptModal]);
+  }, [composeConsensusMessage]);
+
+  const handleResultsSend = useCallback((message: string, pinMessage: boolean) => {
+    composeConsensusMessage({ type: 'resultsReportSubmit', message, pinMessage });
+  }, [composeConsensusMessage]);
 
   const handleSendSilent = useCallback(() => {
     if (shouldSchedule) {
@@ -1156,6 +1163,11 @@ const Composer: FC<OwnProps & StateProps> = ({
         defaultValues={accountPromptModal.defaultValues}
         onSend={handleAccountPromptSend}
         onClear={closeAccountPromptModal}
+      />
+      <FractalResultModal
+        values={consensusResultsModal}
+        onSend={handleResultsSend}
+        onClear={closeResultsReportModal}
       />
       {renderedEditedMessage && (
         <DeleteMessageModal
@@ -1492,6 +1504,7 @@ export default memo(withGlobal<OwnProps>(
       isForwarding: chatId === global.forwardMessages.toChatId,
       pollModal: global.pollModal,
       accountPromptModal: global.accountPromptModal,
+      consensusResultsModal: global.consensusResultsModal,
       stickersForEmoji: global.stickers.forEmoji.stickers,
       customEmojiForEmoji: global.customEmojis.forEmoji.stickers,
       groupChatMembers: chat?.fullInfo?.members,

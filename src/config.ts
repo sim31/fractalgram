@@ -276,7 +276,7 @@ export const DEFAULT_FRACTAL_NAME = 'EdenFractal';
 export const FRACTAL_INFO: Record<string, ExtPlatformInfo> = {
   EdenFractal: {
     fractalName: 'EdenFractal',
-    submitUrl: 'https://edenfracfront.web.app/',
+    submitUrl: 'https://edenfracfront.web.app',
     platform: 'EOS',
   },
 };

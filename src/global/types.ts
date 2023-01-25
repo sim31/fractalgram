@@ -1268,6 +1268,10 @@ export interface ActionPayloads {
   } | {
     type: 'resultsReportCompose';
     extPlatformInfo?: ExtPlatformInfo;
+  } | {
+    type: 'resultsReportSubmit';
+    message: string;
+    pinMessage: boolean;
   };
   requestConfetti: {
     top: number;
@@ -1411,7 +1415,7 @@ export type NonTypedActionNames = (
   'setEditingId' |
   'sendPinnedMessage' |
   // fractalgram
-  'closeAccountPromptModal' |
+  'closeAccountPromptModal' | 'closeResultsReportModal' |
   // scheduled messages
   'loadScheduledHistory' | 'sendScheduledMessages' | 'rescheduleMessage' | 'deleteScheduledMessages' |
   // poll result

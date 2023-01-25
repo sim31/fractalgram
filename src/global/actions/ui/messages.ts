@@ -61,7 +61,7 @@ import { getMessageSummaryText, getSenderTitle } from '../../helpers';
 import * as langProvider from '../../../util/langProvider';
 import { copyHtmlToClipboard } from '../../../util/clipboard';
 import type {
-  AccountMap, ConsensusResultOption, ConsensusResults, ExtUser,
+  AccountMap, ConsensusResultOption, ConsensusResults, ExtPlatformInfo, ExtUser,
   GlobalState, PollModalDefaults,
 } from '../../types';
 import { renderMessageSummaryHtml } from '../../helpers/renderMessageSummaryHtml';
@@ -652,6 +652,37 @@ function closeAccountPromptModal(global: GlobalState): GlobalState {
   };
 }
 
+function openResultsReportModal(
+  global: GlobalState,
+  page: GlobalState['consensusResultsModal']['page'],
+  extPlatformInfo?: ExtPlatformInfo,
+  guessedResults?: ConsensusResults,
+): GlobalState {
+  return {
+    ...global,
+    consensusResultsModal: {
+      isOpen: true,
+      page,
+      extPlatformInfo,
+      guessedResults,
+    },
+  };
+}
+
+function closeResultsReportModal(global: GlobalState): GlobalState {
+  return {
+    ...global,
+    consensusResultsModal: {
+      isOpen: false,
+      page: 'extPlatform',
+    },
+  };
+}
+
+addActionHandler('closeResultsReportModal', (global) => {
+  return closeResultsReportModal(global);
+});
+
 addActionHandler('closeAccountPromptModal', (global) => {
   return closeAccountPromptModal(global);
 });
@@ -850,7 +881,7 @@ function guessConsensusResults(
 }
 
 addActionHandler('composeConsensusMessage', (global, actions, payload) => {
-  const { sendPinnedMessage } = getActions();
+  const { sendPinnedMessage, sendMessage } = getActions();
   switch (payload.type) {
     case 'delegatePoll': {
       return createPollWithAccounts(global, SELECT_DELEGATE_STR, 'eos');
@@ -877,7 +908,7 @@ addActionHandler('composeConsensusMessage', (global, actions, payload) => {
       const { text, entities } = parseMessageInput(promptMessage);
       sendPinnedMessage({ text, entities });
 
-      return global;
+      return closeAccountPromptModal(global);
     }
     // TODO: Should derive platform from the messages
     case 'resultsReport': {
@@ -890,23 +921,7 @@ addActionHandler('composeConsensusMessage', (global, actions, payload) => {
       const platform = latestPromptStr && promptStrToPlatform(latestPromptStr);
       const extPlatformInfo = platform ? FRACTAL_INFO_BY_PLATFORM[platform] : undefined;
 
-      return {
-        ...global,
-        consensusResultsModal: {
-          isOpen: true,
-          page: 'extPlatform',
-          extPlatformInfo,
-        },
-      };
-      // const accountMap = selectChatMemberAccountMap(global, chat, platform);
-      // const results = accountMap && guessConsensusResults(global, platform, chat, accountMap);
-      // if (!results) {
-      //   return global;
-      // }
-      // const msg = createConsensusResultMsg(results, submissionUrl, platform, 1);
-      // const { text, entities } = parseMessageInput(msg);
-      // sendPinnedMessage({ text, entities });
-      // return global;
+      return openResultsReportModal(global, 'extPlatform', extPlatformInfo);
     }
     case 'resultsReportCompose': {
       const { extPlatformInfo } = payload;
@@ -917,16 +932,20 @@ addActionHandler('composeConsensusMessage', (global, actions, payload) => {
         return global;
       }
 
-      return {
-        ...global,
-        consensusResultsModal: {
-          isOpen: true,
-          page: 'editText',
-          extPlatformInfo,
-          guessedResults: results,
-        },
-      };
-      // const msg = createConsensusResultMsg(results, submissionUrl, platform, 1);
+      return openResultsReportModal(global, 'editText', extPlatformInfo, results);
+    }
+    case 'resultsReportSubmit': {
+      const { message, pinMessage } = payload;
+
+      const { text, entities } = parseMessageInput(message);
+
+      if (pinMessage) {
+        sendPinnedMessage({ text, entities });
+      } else {
+        sendMessage({ text, entities });
+      }
+
+      return closeResultsReportModal(global);
     }
     default: {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars

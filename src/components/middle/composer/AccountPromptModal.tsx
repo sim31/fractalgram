@@ -49,7 +49,7 @@ const AccountPromptModal: FC<OwnProps> = ({
     }
 
     onSend({ platform, promptMessage: promptMsg });
-  }, [onSend, platform, setHasErrors, promptMsg]);
+  }, [onSend, platform, promptMsg]);
 
   const handlePlatformChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     const newPlatform = e.target.value;
