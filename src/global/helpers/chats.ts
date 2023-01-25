@@ -225,12 +225,12 @@ export function getAllowedAttachmentOptions(chat?: ApiChat, isChatWithBot = fals
     canAttachDelegatePolls: canDoConsensus,
     canAttachResultReport: canDoConsensus,
     canAttachRankingPolls: {
-      1: canDoConsensus,
-      2: canDoConsensus,
-      3: canDoConsensus && memberCount ? memberCount >= 3 : false,
-      4: canDoConsensus && memberCount ? memberCount >= 4 : false,
-      5: canDoConsensus && memberCount ? memberCount >= 5 : false,
-      6: canDoConsensus && memberCount ? memberCount >= 6 : false,
+      6: canDoConsensus,
+      5: canDoConsensus,
+      4: canDoConsensus && memberCount ? memberCount >= 3 : false,
+      3: canDoConsensus && memberCount ? memberCount >= 4 : false,
+      2: canDoConsensus && memberCount ? memberCount >= 5 : false,
+      1: canDoConsensus && memberCount ? memberCount >= 6 : false,
     },
   };
 }

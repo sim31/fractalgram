@@ -854,7 +854,7 @@ function guessConsensusResults(
   }
 
   const userIdsToRank = new Set<string>(accountMap.keys());
-  const leftToRank = new Set<Rank>([...ALLOWED_RANKS]);
+  const leftToRank = new Set<Rank>([...ALLOWED_RANKS].slice(0, userIdsToRank.size));
   for (const rank of ALLOWED_RANKS) {
     const poll = selectLatestRankingPoll(global, chat.id, rank);
     if (poll) {

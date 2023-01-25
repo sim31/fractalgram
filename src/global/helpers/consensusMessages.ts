@@ -65,12 +65,12 @@ export function createConsensusResultMsg(
     msg = msg.concat(`\nGroup number: ${results.groupNum}\n`);
   }
 
-  msg = msg.concat('\n\n👍 if you think this is correct.\n\n');
+  msg = msg.concat('\n\n👍 if you agree.\n\n');
 
   if (submissionUrl && platform) {
     const obj = toSubmissionObject(results, platform, results.groupNum);
     const queryStr = buildQueryStringNoUndef(obj);
-    msg = msg.concat(`You can submit here: ${submissionUrl}/${queryStr}`);
+    msg = msg.concat(`Results can be submit here: ${submissionUrl}/${queryStr}`);
   }
 
   return msg;

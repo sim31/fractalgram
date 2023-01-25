@@ -304,7 +304,7 @@ const Poll: FC<OwnProps & StateProps> = ({
           {summary.answers.map(renderResultOption)}
         </div>
       )}
-      {!canViewResult && !isMultiple && (
+      {!isMultiple && (
         <div className="poll-voters-count">{getReadableVotersCount(lang, summary.quiz, results.totalVoters)}</div>
       )}
       {isMultiple && (

@@ -98,7 +98,7 @@ const SendMessageModal: FC<OwnProps> = ({
     <Modal isOpen={isOpen} onClose={onClear} header={renderHeader()}>
 
       <Checkbox
-        label={lang('Pin sent message')}
+        label={lang('Pin message')}
         checked={toPin}
         onChange={handleToPinChange}
       />
