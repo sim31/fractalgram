@@ -923,7 +923,7 @@ addActionHandler('composeConsensusMessage', (global, actions, payload) => {
 
       return openResultsReportModal(global, 'extPlatform', extPlatformInfo);
     }
-    case 'resultsReportCompose': {
+    case 'resultsReportPlatformSelect': {
       const { extPlatformInfo } = payload;
       const platform = extPlatformInfo?.platform;
       const results = guessConsensusResults(global, platform);
@@ -932,6 +932,18 @@ addActionHandler('composeConsensusMessage', (global, actions, payload) => {
         return global;
       }
 
+      const nextPage = extPlatformInfo ? 'editGroupNumber' : 'editText';
+
+      return openResultsReportModal(global, nextPage, extPlatformInfo, results);
+    }
+
+    case 'resultsReportGroupNumSelect': {
+      const { groupNum } = payload;
+      const { extPlatformInfo, guessedResults } = global.consensusResultsModal;
+
+      assert(extPlatformInfo && guessedResults, 'Platform info and guessedResults have to be defined at this point');
+
+      const results = { ...(guessedResults as ConsensusResults), groupNum };
       return openResultsReportModal(global, 'editText', extPlatformInfo, results);
     }
     case 'resultsReportSubmit': {

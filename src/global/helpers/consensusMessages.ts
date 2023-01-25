@@ -42,7 +42,6 @@ export function createConsensusResultMsg(
   results: ConsensusResults,
   submissionUrl?: string,
   platform?: string,
-  groupNum?: number,
 ): string {
   function getVotesStr(opt: ConsensusResultOption) {
     return opt.votes && opt.ofTotal ? `${opt.votes} / ${opt.ofTotal}` : '';
@@ -62,12 +61,16 @@ export function createConsensusResultMsg(
     msg = msg.concat(`Delegate: ${results.delegate.option}    ${votes}\n`);
   }
 
-  msg = msg.concat('\n\nPlease check if correct. 👍 if so.\n\n');
+  if (results.groupNum) {
+    msg = msg.concat(`\nGroup number: ${results.groupNum}\n`);
+  }
+
+  msg = msg.concat('\n\n👍 if you think this is correct.\n\n');
 
   if (submissionUrl && platform) {
-    const obj = toSubmissionObject(results, platform, groupNum);
+    const obj = toSubmissionObject(results, platform, results.groupNum);
     const queryStr = buildQueryStringNoUndef(obj);
-    msg = msg.concat(`Submit here if this is correct: ${submissionUrl}/${queryStr}`);
+    msg = msg.concat(`You can submit here: ${submissionUrl}/${queryStr}`);
   }
 
   return msg;

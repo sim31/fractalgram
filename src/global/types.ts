@@ -103,7 +103,7 @@ export interface ConsensusResultOption {
 }
 
 export interface ConsensusResults {
-  groupNumber?: number;
+  groupNum?: number;
   delegate?: ConsensusResultOption;
   rankings: Partial<Record<Rank, ConsensusResultOption>>;
 }
@@ -681,7 +681,7 @@ export type GlobalState = {
 
   consensusResultsModal: {
     isOpen: boolean;
-    page: 'extPlatform' | 'editText';
+    page: 'extPlatform' | 'editText' | 'editGroupNumber';
     extPlatformInfo?: ExtPlatformInfo;
     guessedResults?: ConsensusResults;
   };
@@ -1266,8 +1266,11 @@ export interface ActionPayloads {
   } | {
     type: 'resultsReport';
   } | {
-    type: 'resultsReportCompose';
+    type: 'resultsReportPlatformSelect';
     extPlatformInfo?: ExtPlatformInfo;
+  } | {
+    type: 'resultsReportGroupNumSelect';
+    groupNum: number;
   } | {
     type: 'resultsReportSubmit';
     message: string;
