@@ -107,11 +107,11 @@ export function selectChatMemberAccountMap(
 
   const consensusMsgs = selectChatConsensusMsgs(global, chat.id);
   if (!consensusMsgs) {
-    return undefined;
+    return accountMap;
   }
   const accountMsgs = consensusMsgs.extAccountReplies[platform];
   if (!accountMsgs) {
-    return undefined;
+    return accountMap;
   }
   const byId = selectChatMessages(global, chat.id);
   if (!byId) {

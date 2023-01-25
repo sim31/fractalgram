@@ -715,7 +715,7 @@ function constructAccountOption(user: ExtUser, platform?: string) {
   return `${id1} ${id2}`;
 }
 
-function constructAccountOptions(accountMap: AccountMap, platform: string) {
+function constructAccountOptions(accountMap: AccountMap, platform?: string) {
   const optionStrs = Array.from(accountMap).map(([, user]) => {
     return constructAccountOption(user, platform);
   });
@@ -764,7 +764,7 @@ function optionToAccount(accountMap: AccountMap, optionStr: string): ExtUser | u
 
 function getAccountOptions(
   global: GlobalState,
-  platform: string,
+  platform?: string,
 ): string[] | undefined {
   const chat = selectCurrentChat(global);
   const accountMap = chat && selectChatMemberAccountMap(global, chat, platform);
@@ -775,14 +775,14 @@ function getAccountOptions(
   return constructAccountOptions(accountMap, platform);
 }
 
-function createPollWithAccounts(global: GlobalState, question: string, platform: string): GlobalState {
+function createPollWithAccounts(global: GlobalState, question: string, platform?: string): GlobalState {
   if (global.pollModal.isOpen) {
     return global;
   }
 
   // NOTE: This should not be called if there are a lot of users in the chat
   const opt = getAccountOptions(global, platform);
-  assert(opt, 'Chat member list not loaded');
+  assert(opt, 'Chat member list or messages not loaded');
   const options = opt as string[];
 
   const values: PollModalDefaults = {
@@ -880,16 +880,25 @@ function guessConsensusResults(
   return consensusResults;
 }
 
+function getLatestPlatform(global: GlobalState): string | undefined {
+  const { chatId } = selectCurrentMessageList(global) ?? {};
+
+  const latestPromptStr = chatId && selectLatestPrompt(global, chatId)?.content.text?.text;
+  return latestPromptStr && promptStrToPlatform(latestPromptStr);
+}
+
 addActionHandler('composeConsensusMessage', (global, actions, payload) => {
   const { sendPinnedMessage, sendMessage } = getActions();
   switch (payload.type) {
     case 'delegatePoll': {
-      return createPollWithAccounts(global, SELECT_DELEGATE_STR, 'eos');
+      const platform = getLatestPlatform(global);
+      return createPollWithAccounts(global, SELECT_DELEGATE_STR, platform);
     }
     case 'rankingsPoll': {
       const { rank } = payload;
       const question = RANK_POLL_STRS[rank as number - 1];
-      return createPollWithAccounts(global, question, 'eos');
+      const platform = getLatestPlatform(global);
+      return createPollWithAccounts(global, question, platform);
     }
     case 'accountPrompt': {
       let { platform } = payload;
@@ -912,13 +921,8 @@ addActionHandler('composeConsensusMessage', (global, actions, payload) => {
     }
     // TODO: Should derive platform from the messages
     case 'resultsReport': {
-      const chat = selectCurrentChat(global);
-      // TODO: show error instead?
-      if (!chat) {
-        return global;
-      }
-      const latestPromptStr = selectLatestPrompt(global, chat.id)?.content.text?.text;
-      const platform = latestPromptStr && promptStrToPlatform(latestPromptStr);
+      const platform = getLatestPlatform(global);
+
       const extPlatformInfo = platform ? FRACTAL_INFO_BY_PLATFORM[platform] : undefined;
 
       return openResultsReportModal(global, 'extPlatform', extPlatformInfo);
