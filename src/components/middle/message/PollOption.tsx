@@ -15,6 +15,7 @@ type OwnProps = {
   maxVotersCount?: number;
   correctResults: string[];
   shouldAnimate: boolean;
+  showFraction?: boolean;
 };
 
 const PollOption: FC<OwnProps> = ({
@@ -24,11 +25,13 @@ const PollOption: FC<OwnProps> = ({
   maxVotersCount,
   correctResults,
   shouldAnimate,
+  showFraction,
 }) => {
   const result = voteResults && voteResults.find((r) => r.option === answer.option);
   const correctAnswer = correctResults.length === 0 || correctResults.indexOf(answer.option) !== -1;
   const showIcon = (correctResults.length > 0 && correctAnswer) || (result?.isChosen);
   const answerPercent = result ? getPercentage(result.votersCount, totalVoters || 0) : 0;
+  const votesFraction = result ? `${result.votersCount}/${totalVoters || 0}` : '';
   const [finalPercent, setFinalPercent] = useState(shouldAnimate ? 0 : answerPercent);
   // eslint-disable-next-line no-null/no-null
   const lineRef = useRef<HTMLDivElement>(null);
@@ -68,7 +71,7 @@ const PollOption: FC<OwnProps> = ({
   return (
     <div className="PollOption" dir="ltr">
       <div className={`poll-option-share ${answerPercent === '100' ? 'limit-width' : ''}`}>
-        {answerPercent}%
+        {showFraction && votesFraction} {answerPercent}%
         {showIcon && (
           <span className={buildClassName(
             'poll-option-chosen',

@@ -2,7 +2,7 @@ import {
   ACCOUNT_PROMPT_RE, ACCOUNT_PROMPT_REPLACE_RE, ACCOUNT_PROMPT_TEMPLATE, ALLOWED_RANKS,
 } from '../../config';
 import { buildQueryStringNoUndef } from '../../util/requestQuery';
-import type { ConsensusResultOption, ConsensusResults } from '../types';
+import type { ChatConsensusMessages, ConsensusResultOption, ConsensusResults } from '../types';
 
 export function composePrompt(platform: string) {
   return ACCOUNT_PROMPT_TEMPLATE.replace(ACCOUNT_PROMPT_REPLACE_RE, platform);
@@ -74,4 +74,21 @@ export function createConsensusResultMsg(
   }
 
   return msg;
+}
+
+export function isConsensusMsg(consensusMessages: ChatConsensusMessages, msgId: number): boolean {
+  return isRankingMessage(consensusMessages, msgId)
+    || isDelegateMessage(consensusMessages, msgId);
+}
+
+export function isRankingMessage(consensusMsgs: ChatConsensusMessages, msgId: number): boolean {
+  const val = Object.values(consensusMsgs.rankingPolls).find((msgIds) => {
+    return msgIds.has(msgId);
+  });
+
+  return val !== undefined;
+}
+
+export function isDelegateMessage(consensusMsgs: ChatConsensusMessages, msgId: number): boolean {
+  return consensusMsgs.delegatePolls.has(msgId);
 }
