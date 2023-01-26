@@ -44,7 +44,7 @@ export function createConsensusResultMsg(
   platform?: string,
 ): string {
   function getVotesStr(opt: ConsensusResultOption) {
-    return opt.votes && opt.ofTotal ? `${opt.votes} / ${opt.ofTotal}` : '';
+    return opt.votes && opt.ofTotal ? `${opt.votes}/${opt.ofTotal}` : '';
   }
 
   let msg = '**Based on the latest polls this seems to be the result:**\n\n';
@@ -52,7 +52,7 @@ export function createConsensusResultMsg(
     const winner = results.rankings[rank];
     const option = winner?.option ?? '';
     const votes = winner ? getVotesStr(winner) : '';
-    msg = msg.concat(`Level ${rank}: ${option}     ${votes}\n`);
+    msg = msg.concat(`Level ${rank}: ${option} ${votes}\n`);
   }
   msg = msg.concat('\n');
 
