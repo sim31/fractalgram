@@ -1,6 +1,6 @@
 import type { ApiLimitType, ExtPlatformInfo } from './global/types';
 
-export const APP_NAME = process.env.APP_NAME || 'Telegram WebZ';
+export const APP_NAME = process.env.APP_NAME || 'Fractalgram';
 export const APP_VERSION = process.env.APP_VERSION!;
 export const RELEASE_DATETIME = process.env.RELEASE_DATETIME;
 
@@ -19,7 +19,7 @@ export const BETA_CHANGELOG_URL = 'https://telegra.ph/WebZ-Beta-04-01';
 export const DEBUG_ALERT_MSG = 'Shoot!\nSomething went wrong, please see the error details in Dev Tools Console.';
 export const DEBUG_GRAMJS = false;
 
-export const PAGE_TITLE = 'Telegram';
+export const PAGE_TITLE = 'Fractalgram';
 export const INACTIVE_MARKER = ' [Inactive]';
 
 export const DEBUG_PAYMENT_SMART_GLOCAL = false;

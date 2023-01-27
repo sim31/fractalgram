@@ -441,14 +441,16 @@ addActionHandler('updateLastRenderedCustomEmojis', (global, actions, payload) =>
 });
 
 addActionHandler('checkAppVersion', () => {
-  const APP_VERSION_REGEX = /^\d+\.\d+(\.\d+)?$/;
+  // eslint-disable-next-line no-useless-escape
+  const APP_VERSION_REGEX = /^\d+\.\d+(\.\d+)?/;
 
   fetch(`${APP_VERSION_URL}?${Date.now()}`)
     .then((response) => response.text())
     .then((version) => {
       version = version.trim();
 
-      if (APP_VERSION_REGEX.test(version) && version !== APP_VERSION) {
+      const match = version.match(APP_VERSION_REGEX);
+      if (match && match[0] !== APP_VERSION) {
         setGlobal({
           ...getGlobal(),
           isUpdateAvailable: true,

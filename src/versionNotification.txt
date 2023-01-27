@@ -1,26 +1,9 @@
-**Telegram Web Z was updated to version 1.57**
+**Introducing Fractalgram 1.0!**
 
-[👏](customEmoji:5471921242866981303) **Harder**
-• Custom emoji now animate as you write a message.
-• Voice messages can now be played with more speed options like 0.5x, 0.75x and 1.5x.
-• You can now set a main photo for your profile, group or channel in the Media Viewer.
-• Messages will now display 'admin', 'owner' and 'imported' labels.
-• A notification will appear when camera or microphone access is needed.
-
-[🤩](customEmoji:5373026167722876724) **Better**
-• Unread message counters animate as their number increases.
-• Custom Emoji have even better quality at larger sizes.
-• Clicking on live locations now requires a confirmation before opening Google Maps.
-
-[🚀](customEmoji:5445284980978621387) **Faster**
-• Uploading media and documents is drastically accelerated.
-• Video messages now load even more smoothly.
-
-[💪](customEmoji:5471883477219549006) **Stronger**
-• Fixed copying selected text in messages.
-• Fixed outgoing messages sometimes being displayed as incoming.
-• Fixed group descriptions being uneditable.
-• Fixed streaming video from files.
-• Fixed auto-closing calendar after rescheduling.
-• Fixed scrolling to the bottom of the chat after sending a new message.
-• Various layout improvements.
+**Changes from the original [Telegram Web Z client](https://github.com/Ajaxy/telegram-tt):**
+• Added additional buttons in attachment menu which automate creation of messages relevant for consensus building in Eden / Fractal style meetings.
+  • Polls for ranking contributions of break-out room participants.
+  • Poll for electing a delegate of a break-out group.
+  • A message which summarizes results from the polls.
+  • A message to prompt for account names of external platform (like EOS blockchain) ("account prompt messsage").
+• Replies to "account prompt message" and information derived from the polls are used to generate a url, which participants can use to post results to the blockchain. This URL can optionally be shown as part of results message.

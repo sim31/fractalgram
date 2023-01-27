@@ -1,3 +1,11 @@
+## Fractalgram 1.0 (2023-01-27)
+* Added additional buttons in attachment menu which automate creation of messages relevant for consensus building in Eden / Fractal style meetings.
+  * Polls for ranking contributions of break-out room participants.
+  * Poll for electing a delegate of a break-out group.
+  * A message which summarizes results from the polls.
+  * A message to prompt for account names of external platform (like EOS blockchain) ("account prompt messsage").
+* Replies to "account prompt message" and information derived from the polls are used to generate a url, which participants can use to post results to the blockchain. This URL can optionally be shown as part of results message.
+
 ## 1.57.0 (2022-12-07)
 
 ### 👏 **Harder**
