@@ -1,0 +1,2 @@
+(self.webpackChunkfractalgram=self.webpackChunkfractalgram||[]).push([[3848],{69609:a=>{a.exports=function(a){return{name:"Node REPL",contains:[{className:"meta.prompt",starts:{end:/ |$/,starts:{end:"$",subLanguage:"javascript"}},variants:[{begin:/^>(?=[ ]|$)/},{begin:/^\.\.\.(?=[ ]|$)/}]}]}}}}]);
+//# sourceMappingURL=3848.02432d553274b52760ef.js.map

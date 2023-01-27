@@ -1,0 +1,2 @@
+(self.webpackChunkfractalgram=self.webpackChunkfractalgram||[]).push([[1641],{87061:a=>{a.exports=function(a){return{name:"Backus–Naur Form",contains:[{className:"attribute",begin:/</,end:/>/},{begin:/::=/,end:/$/,contains:[{begin:/</,end:/>/},a.C_LINE_COMMENT_MODE,a.C_BLOCK_COMMENT_MODE,a.APOS_STRING_MODE,a.QUOTE_STRING_MODE]}]}}}}]);
+//# sourceMappingURL=1641.38d2e9942e9fe200922d.js.map

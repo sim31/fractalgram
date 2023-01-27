@@ -1,0 +1,2 @@
+(self.webpackChunkfractalgram=self.webpackChunkfractalgram||[]).push([[1752],{23961:a=>{a.exports=function(a){return{name:"Leaf",contains:[{className:"function",begin:"#+[A-Za-z_0-9]*\\(",end:/ \{/,returnBegin:!0,excludeEnd:!0,contains:[{className:"keyword",begin:"#+"},{className:"title",begin:"[A-Za-z_][A-Za-z_0-9]*"},{className:"params",begin:"\\(",end:"\\)",endsParent:!0,contains:[{className:"string",begin:'"',end:'"'},{className:"variable",begin:"[A-Za-z_][A-Za-z_0-9]*"}]}]}]}}}}]);
+//# sourceMappingURL=1752.353bccc30c0bac0a62c3.js.map

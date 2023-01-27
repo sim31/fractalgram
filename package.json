@@ -1,6 +1,6 @@
 {
   "name": "fractalgram",
-  "version": "0.3.0+webz1.57.6",
+  "version": "1.0.0+webz1.57.6",
   "description": "",
   "main": "index.js",
   "scripts": {
