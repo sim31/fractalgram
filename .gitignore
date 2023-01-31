@@ -8,3 +8,6 @@ tests/
 *.iml
 dev/perf/screenshot*
 .DS_store
+.firebase
+.firebaserc
+.github
