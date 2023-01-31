@@ -112,6 +112,7 @@ export type ExtPlatformInfo = {
   fractalName: string;
   platform: string;
   submitUrl: string;
+  accountInfoUrl?: string;
 };
 
 export type AccountMap = Map<string, ExtUser>;

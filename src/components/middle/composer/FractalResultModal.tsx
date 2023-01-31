@@ -28,7 +28,12 @@ const FractalResultModal: FC<OwnProps> = ({
 
   const guessedMessage = useMemo<string>(() => {
     if (guessedResults) {
-      return createConsensusResultMsg(guessedResults, extPlatformInfo?.submitUrl, extPlatformInfo?.platform);
+      return createConsensusResultMsg(
+        guessedResults,
+        extPlatformInfo?.submitUrl,
+        extPlatformInfo?.platform,
+        extPlatformInfo?.accountInfoUrl,
+      );
     } else {
       return '';
     }

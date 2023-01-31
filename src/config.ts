@@ -278,6 +278,7 @@ export const FRACTAL_INFO: Record<string, ExtPlatformInfo> = {
     fractalName: 'EdenFractal',
     submitUrl: 'https://edenfracfront.web.app',
     platform: 'EOS',
+    accountInfoUrl: 'https://bloks.io/account',
   },
 };
 export const DEFAULT_PLATFORM = FRACTAL_INFO[DEFAULT_FRACTAL_NAME].platform;
@@ -286,6 +287,7 @@ export const FRACTAL_INFO_BY_PLATFORM: Record<string, ExtPlatformInfo> = {
     fractalName: 'EdenFractal',
     submitUrl: 'https://edenfracfront.web.app',
     platform: 'EOS',
+    accountInfoUrl: 'https://bloks.io/account',
   },
 };
 
@@ -293,3 +295,5 @@ export const ACCOUNT_PROMPT_RE = /^Please enter your (\w+) account as a reply to
 export const PLATFORM_RE = /^\w+$/;
 export const ACCOUNT_PROMPT_TEMPLATE = 'Please enter your <PLATFORM> account as a reply to this message';
 export const ACCOUNT_PROMPT_REPLACE_RE = /<PLATFORM>/;
+
+export const ACCOUNT_RE = /(\w+)@\w+/g;

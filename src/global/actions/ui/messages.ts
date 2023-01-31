@@ -953,7 +953,7 @@ addActionHandler('composeConsensusMessage', (global, actions, payload) => {
     case 'resultsReportSubmit': {
       const { message, pinMessage } = payload;
 
-      const { text, entities } = parseMessageInput(message);
+      const { text, entities } = parseMessageInput(message, true);
 
       if (pinMessage) {
         sendPinnedMessage({ text, entities });

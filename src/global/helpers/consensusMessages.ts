@@ -42,6 +42,7 @@ export function createConsensusResultMsg(
   results: ConsensusResults,
   submissionUrl?: string,
   platform?: string,
+  accountInfoUrl?: string,
 ): string {
   function getVotesStr(opt: ConsensusResultOption) {
     return opt.votes && opt.ofTotal ? `${opt.votes}/${opt.ofTotal}` : '';
@@ -70,7 +71,13 @@ export function createConsensusResultMsg(
   if (submissionUrl && platform) {
     const obj = toSubmissionObject(results, platform, results.groupNum);
     const queryStr = buildQueryStringNoUndef(obj);
-    msg = msg.concat(`Results can be submit here: ${submissionUrl}/${queryStr}`);
+    msg = msg.concat(`Results can be submitted [here](${submissionUrl}/${queryStr})`);
+  }
+
+  if (accountInfoUrl && platform) {
+    const accountReStr = `\\W(\\w+)@${platform}\\W`;
+    const accountRe = new RegExp(accountReStr, 'g');
+    msg = msg.replace(accountRe, `[$&](${accountInfoUrl}/$1) `);
   }
 
   return msg;
