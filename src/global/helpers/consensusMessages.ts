@@ -75,7 +75,7 @@ export function createConsensusResultMsg(
   }
 
   if (accountInfoUrl && platform) {
-    const accountReStr = `\\W(\\w+)@${platform}\\W`;
+    const accountReStr = `\\W([\\w.]+)@${platform}\\W`;
     const accountRe = new RegExp(accountReStr, 'g');
     msg = msg.replace(accountRe, `[$&](${accountInfoUrl}/$1) `);
   }

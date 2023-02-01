@@ -295,5 +295,3 @@ export const ACCOUNT_PROMPT_RE = /^Please enter your (\w+) account as a reply to
 export const PLATFORM_RE = /^\w+$/;
 export const ACCOUNT_PROMPT_TEMPLATE = 'Please enter your <PLATFORM> account as a reply to this message';
 export const ACCOUNT_PROMPT_REPLACE_RE = /<PLATFORM>/;
-
-export const ACCOUNT_RE = /(\w+)@\w+/g;
