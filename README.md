@@ -4,7 +4,7 @@ Telegram web client tailored for participants of [Eden](https://www.edenelection
 
 This is a fork of [Telegram Web Z](https://github.com/Ajaxy/telegram-tt), which adds some additional features to help run [Eden](https://www.edenelections.com/) / [Fractally](https://fractally.com/) style meetings. Specifically it adds some buttons to automate creation of polls and other kinds of messages which help reach consensus in these meetings.
 
-Explanation for how to use coming soon...
+[See introductory post for details](https://peakd.com/dao/@sim31/introducing-fractalgram).
 
 ## Local setup
 

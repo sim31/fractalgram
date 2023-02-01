@@ -1,5 +1,7 @@
 **Introducing Fractalgram 1.0!**
 
+https://peakd.com/dao/@sim31/introducing-fractalgram
+
 **Changes from the original [Telegram Web Z client](https://github.com/Ajaxy/telegram-tt):**
 • Added additional buttons in attachment menu which automate creation of messages relevant for consensus building in Eden / Fractal style meetings.
   • Polls for ranking contributions of break-out room participants.
