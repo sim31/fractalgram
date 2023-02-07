@@ -1101,9 +1101,10 @@ async function sendMessage(
   if (messageSentCb) {
     msgId = generateMessageId();
     messageSentCallbacks.set(msgId, messageSentCb);
+    await callApi('sendMessage', params, progressCallback, msgId);
+  } else {
+    await callApi('sendMessage', params, progressCallback);
   }
-
-  await callApi('sendMessage', params, progressCallback, msgId);
 
   if (progressCallback && localId) {
     uploadProgressCallbacks.delete(localId);

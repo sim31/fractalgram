@@ -6,6 +6,7 @@ import type { WorkerMessageEvent, OriginRequest } from './types';
 import { DEBUG } from '../../../config';
 import generateIdFor from '../../../util/generateIdFor';
 import { pause } from '../../../util/schedulers';
+import assert from '../../../util/assert';
 
 type RequestStates = {
   messageId: string;
@@ -143,6 +144,7 @@ function makeRequest(message: OriginRequest) {
   if ('args' in payload && 'name' in payload && typeof payload.args[1] === 'function') {
     payload.withCallback = true;
 
+    assert(payload.args.length === 2, 'Expected args of length 2 here');
     const callback = payload.args.pop() as AnyToVoidFunction;
     requestState.callback = callback;
     requestStatesByCallback.set(callback, requestState);
