@@ -687,6 +687,11 @@ export type GlobalState = {
     guessedResults?: ConsensusResults;
   };
 
+  loadingModal: {
+    isOpen: boolean;
+    title: string;
+  };
+
   webApp?: {
     url: string;
     botId: string;
@@ -1417,9 +1422,9 @@ export type NonTypedActionNames = (
   'stopActiveEmojiInteraction' | 'interactWithAnimatedEmoji' | 'loadReactors' |
   'sendEmojiInteraction' | 'sendWatchingEmojiInteraction' | 'copySelectedMessages' | 'copyMessagesByIds' |
   'setEditingId' |
-  'sendPinnedMessage' |
+  'sendPinnedMessage' | 'loadRemainingMessages' |
   // fractalgram
-  'closeAccountPromptModal' | 'closeResultsReportModal' |
+  'closeAccountPromptModal' | 'closeResultsReportModal' | 'closeLoadingModal' |
   // scheduled messages
   'loadScheduledHistory' | 'sendScheduledMessages' | 'rescheduleMessage' | 'deleteScheduledMessages' |
   // poll result

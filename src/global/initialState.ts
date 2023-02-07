@@ -241,6 +241,10 @@ export const INITIAL_STATE: GlobalState = {
     isOpen: false,
     page: 'extPlatform',
   },
+  loadingModal: {
+    isOpen: false,
+    title: '',
+  },
 
   trustedBotIds: [],
 

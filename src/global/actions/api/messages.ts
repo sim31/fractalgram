@@ -161,6 +161,48 @@ addActionHandler('loadViewportMessages', (global, actions, payload) => {
   return global;
 });
 
+addActionHandler('loadRemainingMessages', async (global, actions, payload) => {
+  const { chatId, threadId } = payload || {};
+
+  await loadRemainingMessages(global, chatId, threadId);
+});
+
+export async function loadRemainingMessages(
+  global: GlobalState,
+  chatId?: string,
+  threadId?: number,
+) {
+  if (!chatId || !threadId) {
+    const currentMessageList = selectCurrentMessageList(global);
+    if (!currentMessageList) {
+      return;
+    }
+
+    chatId = currentMessageList.chatId;
+    threadId = currentMessageList.threadId;
+  }
+
+  const chat = selectChat(global, chatId);
+  // TODO Revise if `chat.isRestricted` check is needed
+  if (!chat || chat.isRestricted) {
+    return;
+  }
+
+  let listedIds = selectListedIds(global, chatId, threadId);
+  if (!listedIds || listedIds.length === 0) {
+    return; // It should be loaded first
+  }
+
+  let size: number | undefined;
+  const limit = 100;
+  do {
+    size = listedIds.length;
+    await loadViewportMessages(chat, threadId, listedIds[0], LoadMoreDirection.Backwards, undefined, true, limit);
+    global = getGlobal();
+    listedIds = selectListedIds(global, chatId, threadId)!;
+  } while (listedIds.length - size >= limit);
+}
+
 async function loadWithBudget(
   actions: GlobalActions,
   areAllLocal: boolean, isOutlying: boolean, isBudgetPreload: boolean,
@@ -847,6 +889,7 @@ async function loadViewportMessages(
   direction: LoadMoreDirection,
   isOutlying = false,
   isBudgetPreload = false,
+  limit = MESSAGE_LIST_SLICE,
 ) {
   const chatId = chat.id;
 
@@ -856,10 +899,10 @@ async function loadViewportMessages(
       addOffset = undefined;
       break;
     case LoadMoreDirection.Around:
-      addOffset = -(Math.round(MESSAGE_LIST_SLICE / 2) + 1);
+      addOffset = -(Math.round(limit / 2) + 1);
       break;
     case LoadMoreDirection.Forwards:
-      addOffset = -(MESSAGE_LIST_SLICE + 1);
+      addOffset = -(limit + 1);
       break;
   }
 
@@ -867,7 +910,7 @@ async function loadViewportMessages(
     chat: selectThreadOriginChat(getGlobal(), chatId, threadId)!,
     offsetId,
     addOffset,
-    limit: MESSAGE_LIST_SLICE,
+    limit,
     threadId,
   });
 

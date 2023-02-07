@@ -67,6 +67,7 @@ import type {
 import { renderMessageSummaryHtml } from '../../helpers/renderMessageSummaryHtml';
 import assert from '../../../util/assert';
 import { promptStrToPlatform } from '../../helpers/consensusMessages';
+import { loadRemainingMessages } from '../api/messages';
 
 const FOCUS_DURATION = 1500;
 const FOCUS_NO_HIGHLIGHT_DURATION = FAST_SMOOTH_MAX_DURATION + ANIMATION_END_DELAY;
@@ -679,6 +680,30 @@ function closeResultsReportModal(global: GlobalState): GlobalState {
   };
 }
 
+function openLoadingModal(global: GlobalState, title: string): GlobalState {
+  return {
+    ...global,
+    loadingModal: {
+      isOpen: true,
+      title,
+    },
+  };
+}
+
+function closeLoadingModal(global: GlobalState): GlobalState {
+  return {
+    ...global,
+    loadingModal: {
+      isOpen: false,
+      title: '',
+    },
+  };
+}
+
+addActionHandler('closeLoadingModal', (global) => {
+  return closeLoadingModal(global);
+});
+
 addActionHandler('closeResultsReportModal', (global) => {
   return closeResultsReportModal(global);
 });
@@ -887,45 +912,71 @@ function getLatestPlatform(global: GlobalState): string | undefined {
   return latestPromptStr && promptStrToPlatform(latestPromptStr);
 }
 
-addActionHandler('composeConsensusMessage', (global, actions, payload) => {
+addActionHandler('composeConsensusMessage', async (global, actions, payload) => {
   const { sendPinnedMessage, sendMessage } = getActions();
   switch (payload.type) {
     case 'delegatePoll': {
-      const platform = getLatestPlatform(global);
-      return createPollWithAccounts(global, SELECT_DELEGATE_STR, platform);
+      setGlobal(openLoadingModal(global, 'NewPoll'));
+      await loadRemainingMessages(getGlobal());
+      global = getGlobal();
+      if (global.loadingModal.isOpen) {
+        // If modal wasn't canceled
+        global = closeLoadingModal(global);
+
+        const platform = getLatestPlatform(global);
+        setGlobal(createPollWithAccounts(global, SELECT_DELEGATE_STR, platform));
+      }
+      break;
     }
     case 'rankingsPoll': {
-      const { rank } = payload;
-      const question = RANK_POLL_STRS[rank as number - 1];
-      const platform = getLatestPlatform(global);
-      return createPollWithAccounts(global, question, platform);
+      setGlobal(openLoadingModal(global, 'NewPoll'));
+      await loadRemainingMessages(getGlobal());
+      global = getGlobal();
+      if (global.loadingModal.isOpen) {
+        global = closeLoadingModal(global);
+
+        const { rank } = payload;
+        const question = RANK_POLL_STRS[rank as number - 1];
+        const platform = getLatestPlatform(global);
+        setGlobal(createPollWithAccounts(global, question, platform));
+      }
+      break;
     }
     case 'accountPrompt': {
       let { platform } = payload;
       if (!platform) {
         platform = DEFAULT_PLATFORM;
       }
-      return openAccountPromptModal(global, platform);
+      setGlobal(openAccountPromptModal(global, platform));
+      break;
     }
     case 'accountPromptSubmit': {
       const { value } = payload;
       const { platform, promptMessage } = value;
       if (!platform.length || !promptMessage.length) {
-        return global;
+        return;
       }
 
       const { text, entities } = parseMessageInput(promptMessage);
       sendPinnedMessage({ text, entities });
 
-      return closeAccountPromptModal(global);
+      setGlobal(closeAccountPromptModal(global));
+      break;
     }
-    // TODO: Should derive platform from the messages
     case 'resultsReport': {
-      const platform = getLatestPlatform(global);
+      setGlobal(openLoadingModal(global, 'Consensus results'));
+      await loadRemainingMessages(getGlobal());
+      global = getGlobal();
+      if (global.loadingModal.isOpen) {
+        global = closeLoadingModal(global);
 
-      const extPlatformInfo = platform ? FRACTAL_INFO_BY_PLATFORM[platform] : undefined;
+        const platform = getLatestPlatform(global);
 
-      return openResultsReportModal(global, 'extPlatform', extPlatformInfo);
+        const extPlatformInfo = platform ? FRACTAL_INFO_BY_PLATFORM[platform] : undefined;
+
+        setGlobal(openResultsReportModal(global, 'extPlatform', extPlatformInfo));
+      }
+      break;
     }
     case 'resultsReportPlatformSelect': {
       const { extPlatformInfo } = payload;
@@ -933,12 +984,13 @@ addActionHandler('composeConsensusMessage', (global, actions, payload) => {
       const results = guessConsensusResults(global, platform);
       // TODO: signal error
       if (!results) {
-        return global;
+        return;
       }
 
       const nextPage = extPlatformInfo ? 'editGroupNumber' : 'editText';
 
-      return openResultsReportModal(global, nextPage, extPlatformInfo, results);
+      setGlobal(openResultsReportModal(global, nextPage, extPlatformInfo, results));
+      break;
     }
 
     case 'resultsReportGroupNumSelect': {
@@ -948,7 +1000,8 @@ addActionHandler('composeConsensusMessage', (global, actions, payload) => {
       assert(extPlatformInfo && guessedResults, 'Platform info and guessedResults have to be defined at this point');
 
       const results = { ...(guessedResults as ConsensusResults), groupNum };
-      return openResultsReportModal(global, 'editText', extPlatformInfo, results);
+      setGlobal(openResultsReportModal(global, 'editText', extPlatformInfo, results));
+      break;
     }
     case 'resultsReportSubmit': {
       const { message, pinMessage } = payload;
@@ -961,12 +1014,12 @@ addActionHandler('composeConsensusMessage', (global, actions, payload) => {
         sendMessage({ text, entities });
       }
 
-      return closeResultsReportModal(global);
+      setGlobal(closeResultsReportModal(global));
+      break;
     }
     default: {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const p: never = payload;
-      return global;
     }
   }
 });

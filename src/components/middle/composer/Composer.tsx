@@ -126,10 +126,11 @@ import DropArea, { DropAreaState } from './DropArea.async';
 import WebPagePreview from './WebPagePreview';
 import SendAsMenu from './SendAsMenu.async';
 import BotMenuButton from './BotMenuButton';
-
-import './Composer.scss';
 import AccountPromptModal from './AccountPromptModal';
 import FractalResultModal from './FractalResultModal';
+import LoadingModal from './LoadingModal';
+
+import './Composer.scss';
 
 type OwnProps = {
   chatId: string;
@@ -155,6 +156,7 @@ type StateProps =
     pollModal: GlobalState['pollModal'];
     accountPromptModal: GlobalState['accountPromptModal'];
     consensusResultsModal: GlobalState['consensusResultsModal'];
+    loadingModal: GlobalState['loadingModal'];
     botKeyboardMessageId?: number;
     botKeyboardPlaceholder?: string;
     withScheduledButton?: boolean;
@@ -241,6 +243,7 @@ const Composer: FC<OwnProps & StateProps> = ({
   pollModal,
   accountPromptModal,
   consensusResultsModal,
+  loadingModal,
   botKeyboardMessageId,
   botKeyboardPlaceholder,
   withScheduledButton,
@@ -296,6 +299,7 @@ const Composer: FC<OwnProps & StateProps> = ({
     showNotification,
     composeConsensusMessage,
     sendPinnedMessage,
+    closeLoadingModal,
   } = getActions();
   const lang = useLang();
 
@@ -1150,6 +1154,11 @@ const Composer: FC<OwnProps & StateProps> = ({
         shouldSuggestCustomEmoji={shouldSuggestCustomEmoji}
         customEmojiForEmoji={customEmojiForEmoji}
       />
+      <LoadingModal
+        isOpen={loadingModal.isOpen}
+        title={loadingModal.title}
+        onClear={closeLoadingModal}
+      />
       <PollModal
         isOpen={pollModal.isOpen}
         isQuiz={pollModal.isQuiz}
@@ -1505,6 +1514,7 @@ export default memo(withGlobal<OwnProps>(
       pollModal: global.pollModal,
       accountPromptModal: global.accountPromptModal,
       consensusResultsModal: global.consensusResultsModal,
+      loadingModal: global.loadingModal,
       stickersForEmoji: global.stickers.forEmoji.stickers,
       customEmojiForEmoji: global.customEmojis.forEmoji.stickers,
       groupChatMembers: chat?.fullInfo?.members,

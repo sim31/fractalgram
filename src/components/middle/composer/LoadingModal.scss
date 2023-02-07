@@ -1,0 +1,17 @@
+.LoadingModal {
+
+  .modal-dialog {
+    max-width: 26.25rem;
+    max-height: calc(100vh - 5rem);
+  }
+
+  .spinner {
+    margin: auto;
+    margin-bottom: 2rem;
+  }
+
+  .modal-header-condensed {
+    margin-bottom: 1rem;
+  }
+
+}
