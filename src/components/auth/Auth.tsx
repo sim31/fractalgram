@@ -12,6 +12,8 @@ import useCurrentOrPrev from '../../hooks/useCurrentOrPrev';
 
 import Transition from '../ui/Transition';
 import AuthCode from './AuthCode.async';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import AuthPhoneNumber from './AuthPhoneNumber';
 import AuthPassword from './AuthPassword.async';
 import AuthRegister from './AuthRegister.async';
 import AuthQrCode from './AuthQrCode';
@@ -66,7 +68,9 @@ const Auth: FC<OwnProps & StateProps> = ({
       case 'authorizationStateWaitQrCode':
         return <AuthQrCode />;
       default:
-        return <AuthQrCode />;
+        // eslint-disable-next-line no-constant-condition
+        // Hack to avoid a bug where clicks are triggered on hidden elements
+        return true ? <AuthQrCode /> : <AuthPhoneNumber />;
     }
   }
 
