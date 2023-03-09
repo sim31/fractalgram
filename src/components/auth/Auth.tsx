@@ -68,8 +68,8 @@ const Auth: FC<OwnProps & StateProps> = ({
       case 'authorizationStateWaitQrCode':
         return <AuthQrCode />;
       default:
-        // eslint-disable-next-line no-constant-condition
         // Hack to avoid a bug where clicks are triggered on hidden elements
+        // eslint-disable-next-line no-constant-condition
         return true ? <AuthQrCode /> : <AuthPhoneNumber />;
     }
   }
