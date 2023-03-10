@@ -5,6 +5,7 @@ import React, {
 import { getActions, withGlobal } from '../../../global';
 
 import type {
+  AccountPromptInfo,
   TabState, MessageListType, GlobalState, ApiDraft,
 } from '../../../global/types';
 import type {
@@ -100,6 +101,7 @@ import useEmojiTooltip from './hooks/useEmojiTooltip';
 import useMentionTooltip from './hooks/useMentionTooltip';
 import useInlineBotTooltip from './hooks/useInlineBotTooltip';
 import useBotCommandTooltip from './hooks/useBotCommandTooltip';
+// eslint-disable-next-line import/no-cycle
 import useSchedule from '../../../hooks/useSchedule';
 import useCustomEmojiTooltip from './hooks/useCustomEmojiTooltip';
 import useAttachmentModal from './hooks/useAttachmentModal';
@@ -131,6 +133,9 @@ import DropArea, { DropAreaState } from './DropArea.async';
 import WebPagePreview from './WebPagePreview';
 import SendAsMenu from './SendAsMenu.async';
 import BotMenuButton from './BotMenuButton';
+import AccountPromptModal from './AccountPromptModal';
+import FractalResultModal from './FractalResultModal';
+import LoadingModal from './LoadingModal';
 import SymbolMenuButton from './SymbolMenuButton';
 
 import './Composer.scss';
@@ -159,6 +164,9 @@ type StateProps =
     isSelectModeActive?: boolean;
     isForwarding?: boolean;
     pollModal: TabState['pollModal'];
+    accountPromptModal: TabState['accountPromptModal'];
+    consensusResultsModal: TabState['consensusResultsModal'];
+    loadingModal: TabState['loadingModal'];
     botKeyboardMessageId?: number;
     botKeyboardPlaceholder?: string;
     withScheduledButton?: boolean;
@@ -245,6 +253,9 @@ const Composer: FC<OwnProps & StateProps> = ({
   isSelectModeActive,
   isForwarding,
   pollModal,
+  accountPromptModal,
+  consensusResultsModal,
+  loadingModal,
   botKeyboardMessageId,
   botKeyboardPlaceholder,
   withScheduledButton,
@@ -285,6 +296,8 @@ const Composer: FC<OwnProps & StateProps> = ({
     forwardMessages,
     openPollModal,
     closePollModal,
+    closeAccountPromptModal,
+    closeResultsReportModal,
     loadScheduledHistory,
     openChat,
     addRecentEmoji,
@@ -294,6 +307,9 @@ const Composer: FC<OwnProps & StateProps> = ({
     callAttachBot,
     addRecentCustomEmoji,
     showNotification,
+    composeConsensusMessage,
+    sendPinnedMessage,
+    closeLoadingModal,
     showAllowedMessageTypesNotification,
   } = getActions();
 
@@ -359,6 +375,7 @@ const Composer: FC<OwnProps & StateProps> = ({
   const {
     canSendStickers, canSendGifs, canAttachMedia, canAttachPolls, canAttachEmbedLinks,
     canSendVoices, canSendPlainText, canSendAudios, canSendVideos, canSendPhotos, canSendDocuments,
+    canAttachDelegatePolls, canAttachAccountPrompts, canAttachResultReport, canAttachRankingPolls,
   } = useMemo(() => getAllowedAttachmentOptions(chat, isChatWithBot), [chat, isChatWithBot]);
 
   const isComposerBlocked = !canSendPlainText && !editingMessage;
@@ -1022,17 +1039,29 @@ const Composer: FC<OwnProps & StateProps> = ({
     });
   }, [chatId, clearDraft, resetComposer]);
 
-  const handlePollSend = useCallback((poll: ApiNewPoll) => {
+  const handlePollSend = useCallback((poll: ApiNewPoll, pinned: boolean) => {
     if (shouldSchedule) {
       requestCalendar((scheduledAt) => {
         handleMessageSchedule({ poll }, scheduledAt);
       });
       closePollModal();
     } else {
-      sendMessage({ poll });
+      if (pinned) {
+        sendPinnedMessage({ poll });
+      } else {
+        sendMessage({ poll });
+      }
       closePollModal();
     }
-  }, [closePollModal, handleMessageSchedule, requestCalendar, sendMessage, shouldSchedule]);
+  }, [closePollModal, handleMessageSchedule, requestCalendar, sendMessage, sendPinnedMessage, shouldSchedule]);
+
+  const handleAccountPromptSend = useCallback((value: AccountPromptInfo) => {
+    composeConsensusMessage({ type: 'accountPromptSubmit', value });
+  }, [composeConsensusMessage]);
+
+  const handleResultsSend = useCallback((message: string, pinMessage: boolean) => {
+    composeConsensusMessage({ type: 'resultsReportSubmit', message, pinMessage });
+  }, [composeConsensusMessage]);
 
   const sendSilent = useCallback((additionalArgs?: ScheduledMessageArgs) => {
     if (shouldSchedule) {
@@ -1258,12 +1287,29 @@ const Composer: FC<OwnProps & StateProps> = ({
         onRemoveSymbol={removeSymbolAttachmentModal}
         onEmojiSelect={insertTextAndUpdateCursorAttachmentModal}
       />
+      <LoadingModal
+        isOpen={loadingModal.isOpen}
+        title={loadingModal.title}
+        onClear={closeLoadingModal}
+      />
       <PollModal
         isOpen={pollModal.isOpen}
         isQuiz={pollModal.isQuiz}
         shouldBeAnonymous={isChannel}
+        defaultValues={pollModal.defaultValues}
         onClear={closePollModal}
         onSend={handlePollSend}
+      />
+      <AccountPromptModal
+        isOpen={accountPromptModal.isOpen}
+        defaultValues={accountPromptModal.defaultValues}
+        onSend={handleAccountPromptSend}
+        onClear={closeAccountPromptModal}
+      />
+      <FractalResultModal
+        values={consensusResultsModal}
+        onSend={handleResultsSend}
+        onClear={closeResultsReportModal}
       />
       {renderedEditedMessage && (
         <DeleteMessageModal
@@ -1441,12 +1487,17 @@ const Composer: FC<OwnProps & StateProps> = ({
             isButtonVisible={!activeVoiceRecording && !editingMessage}
             canAttachMedia={canAttachMedia}
             canAttachPolls={canAttachPolls}
+            canAttachDelegatePolls={canAttachDelegatePolls}
+            canAttachRankingPolls={canAttachRankingPolls}
+            canAttachResultReport={canAttachResultReport}
+            canAttachAccountPrompts={canAttachAccountPrompts}
+            canSendAudios={canSendAudios}
+            canSendDocuments={canSendDocuments}
             canSendPhotos={canSendPhotos}
             canSendVideos={canSendVideos}
-            canSendDocuments={canSendDocuments}
-            canSendAudios={canSendAudios}
             onFileSelect={handleFileSelect}
             onPollCreate={openPollModal}
+            onConsensusMsg={composeConsensusMessage}
             isScheduled={shouldSchedule}
             attachBots={attachBots}
             peerType={attachMenuPeerType}
@@ -1601,6 +1652,9 @@ export default memo(withGlobal<OwnProps>(
       botKeyboardPlaceholder: keyboardMessage?.keyboardPlaceholder,
       isForwarding: chatId === tabState.forwardMessages.toChatId,
       pollModal: tabState.pollModal,
+      consensusResultsModal: tabState.consensusResultsModal,
+      loadingModal: tabState.loadingModal,
+      accountPromptModal: tabState.accountPromptModal,
       stickersForEmoji: global.stickers.forEmoji.stickers,
       customEmojiForEmoji: global.customEmojis.forEmoji.stickers,
       groupChatMembers: chat?.fullInfo?.members,

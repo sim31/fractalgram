@@ -1,5 +1,7 @@
 import type { RequiredGlobalActions } from '../../index';
-import { addActionHandler, getGlobal, setGlobal } from '../../index';
+import {
+  addActionHandler, getGlobal, setGlobal,
+} from '../../index';
 
 import type {
   ActionReturnType, ApiDraft, GlobalState, TabArgs,
@@ -33,7 +35,7 @@ import {
   SUPPORTED_VIDEO_CONTENT_TYPES,
 } from '../../../config';
 import { IS_IOS } from '../../../util/environment';
-import { callApi, cancelApiProgress } from '../../../api/gramjs';
+import { callApi, cancelApiProgress, generateMessageId } from '../../../api/gramjs';
 import {
   areSortedArraysIntersecting, buildCollectionByKey, omit, split, unique,
 } from '../../../util/iteratees';
@@ -102,6 +104,10 @@ const AUTOLOGIN_TOKEN_KEY = 'autologin_token';
 
 const uploadProgressCallbacks = new Map<number, ApiOnProgress>();
 
+type MessageSentCb = (newId: number, message: Partial<ApiMessage>) => void;
+const messageSentCallbacks = new Map<string, MessageSentCb>();
+const messageSentIds = new Map<number, string>();
+
 const runDebouncedForMarkRead = debounce((cb) => cb(), 500, false);
 
 addActionHandler('loadViewportMessages', (global, actions, payload): ActionReturnType => {
@@ -148,7 +154,15 @@ addActionHandler('loadViewportMessages', (global, actions, payload): ActionRetur
     if (!areAllLocal) {
       onTickEnd(() => {
         void loadViewportMessages(
-          global, chat, threadId!, offsetId, LoadMoreDirection.Around, isOutlying, isBudgetPreload, tabId,
+          global,
+          chat,
+          threadId!,
+          offsetId,
+          LoadMoreDirection.Around,
+          isOutlying,
+          isBudgetPreload,
+          MESSAGE_LIST_SLICE,
+          tabId,
         );
       });
     }
@@ -178,6 +192,57 @@ addActionHandler('loadViewportMessages', (global, actions, payload): ActionRetur
   return global;
 });
 
+addActionHandler('loadRemainingMessages', async (global, actions, payload): Promise<void> => {
+  const { chatId, threadId } = payload || {};
+
+  await loadRemainingMessages(global, chatId, threadId);
+});
+
+export async function loadRemainingMessages(
+  global: GlobalState,
+  chatId?: string,
+  threadId?: number,
+) {
+  if (!chatId || !threadId) {
+    const currentMessageList = selectCurrentMessageList(global);
+    if (!currentMessageList) {
+      return;
+    }
+
+    chatId = currentMessageList.chatId;
+    threadId = currentMessageList.threadId;
+  }
+
+  const chat = selectChat(global, chatId);
+  // TODO Revise if `chat.isRestricted` check is needed
+  if (!chat || chat.isRestricted) {
+    return;
+  }
+
+  let listedIds = selectListedIds(global, chatId, threadId);
+  if (!listedIds || listedIds.length === 0) {
+    return; // It should be loaded first
+  }
+
+  let size: number | undefined;
+  const limit = 100;
+  do {
+    size = listedIds.length;
+    await loadViewportMessages(
+      global,
+      chat,
+      threadId,
+      listedIds[0],
+      LoadMoreDirection.Backwards,
+      undefined,
+      true,
+      limit,
+    );
+    global = getGlobal();
+    listedIds = selectListedIds(global, chatId, threadId)!;
+  } while (listedIds.length - size >= limit);
+}
+
 async function loadWithBudget<T extends GlobalState>(
   global: T,
   actions: RequiredGlobalActions,
@@ -187,7 +252,7 @@ async function loadWithBudget<T extends GlobalState>(
 ) {
   if (!areAllLocal) {
     await loadViewportMessages(
-      global, chat, threadId, offsetId, direction, isOutlying, isBudgetPreload, tabId,
+      global, chat, threadId, offsetId, direction, isOutlying, isBudgetPreload, MESSAGE_LIST_SLICE, tabId,
     );
   }
 
@@ -224,10 +289,12 @@ addActionHandler('loadMessage', async (global, actions, payload): Promise<void> 
   }
 });
 
-addActionHandler('sendMessage', (global, actions, payload): ActionReturnType => {
+function sendMessageImpl(
+  global: GlobalState, actions: any, payload: any,
+  sentCb?: MessageSentCb,
+) {
   const { tabId = getCurrentTabId() } = payload;
   const currentMessageList = selectCurrentMessageList(global, tabId);
-
   if (!currentMessageList) {
     return undefined;
   }
@@ -270,7 +337,7 @@ addActionHandler('sendMessage', (global, actions, payload): ActionReturnType => 
     sendMessage(global, {
       ...restParams,
       attachment: attachments ? attachments[0] : undefined,
-    }, tabId);
+    }, sentCb, tabId);
   } else if (isGrouped) {
     const {
       text, entities, attachments, ...commonParams
@@ -283,6 +350,7 @@ addActionHandler('sendMessage', (global, actions, payload): ActionReturnType => 
         const [firstAttachment, ...restAttachments] = groupedAttachments[i];
         const groupedId = `${Date.now()}${groupIndex}${i}`;
 
+        const cb = i === 0 ? sentCb : undefined;
         const isFirst = i === 0 && groupIndex === 0;
 
         sendMessage(global, {
@@ -291,7 +359,7 @@ addActionHandler('sendMessage', (global, actions, payload): ActionReturnType => 
           entities: isFirst ? entities : undefined,
           attachment: firstAttachment,
           groupedId: restAttachments.length > 0 ? groupedId : undefined,
-        }, tabId);
+        }, cb, tabId);
 
         restAttachments.forEach((attachment: ApiAttachment) => {
           sendMessage(global, {
@@ -313,7 +381,7 @@ addActionHandler('sendMessage', (global, actions, payload): ActionReturnType => 
         text,
         entities,
         replyingTo,
-      }, tabId);
+      }, sentCb, tabId);
     }
 
     attachments?.forEach((attachment: ApiAttachment) => {
@@ -325,6 +393,34 @@ addActionHandler('sendMessage', (global, actions, payload): ActionReturnType => 
   }
 
   return undefined;
+}
+
+addActionHandler('sendMessage', (global, actions, payload): ActionReturnType => {
+  return sendMessageImpl(global, actions, payload);
+});
+
+addActionHandler('pinMessage', (global, actions, payload): ActionReturnType => {
+  const {
+    messageId, isUnpin, isOneSide, isSilent, tabId = getCurrentTabId(),
+  } = payload;
+  const chat = selectCurrentChat(global, tabId);
+  if (!chat) {
+    return;
+  }
+
+  void callApi('pinMessage', {
+    chat, messageId, isUnpin, isOneSide, isSilent,
+  });
+});
+
+addActionHandler('sendPinnedMessage', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+
+  return sendMessageImpl(global, actions, payload, (messageId) => {
+    actions.pinMessage({
+      messageId, isUnpin: false, isSilent: true, tabId,
+    });
+  });
 });
 
 addActionHandler('editMessage', (global, actions, payload): ActionReturnType => {
@@ -428,21 +524,6 @@ addActionHandler('toggleMessageWebPage', (global, actions, payload): ActionRetur
   const { chatId, threadId, noWebPage } = payload!;
 
   return replaceThreadParam(global, chatId, threadId, 'noWebPage', noWebPage);
-});
-
-addActionHandler('pinMessage', (global, actions, payload): ActionReturnType => {
-  const {
-    messageId, isUnpin, isOneSide, isSilent, tabId = getCurrentTabId(),
-  } = payload;
-
-  const chat = selectCurrentChat(global, tabId);
-  if (!chat) {
-    return;
-  }
-
-  void callApi('pinMessage', {
-    chat, messageId, isUnpin, isOneSide, isSilent,
-  });
 });
 
 addActionHandler('unpinAllMessages', async (global, actions, payload): Promise<void> => {
@@ -779,7 +860,7 @@ addActionHandler('forwardMessages', (global, actions, payload): ActionReturnType
         isSilent,
         scheduledAt,
         sendAs,
-      }, tabId);
+      }, undefined, tabId);
     });
 
   global = getGlobal();
@@ -921,6 +1002,34 @@ addActionHandler('loadCustomEmojis', async (global, actions, payload): Promise<v
   setGlobal(global);
 });
 
+addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
+  switch (update['@type']) {
+    case 'newMessage': {
+      const { id, providedId } = update;
+      if (providedId) {
+        messageSentIds.set(id, providedId);
+      }
+      break;
+    }
+    case 'updateMessageSendSucceeded': {
+      const { localId, message } = update;
+      const providedId = messageSentIds.get(localId);
+      if (providedId) {
+        const cb = messageSentCallbacks.get(providedId);
+        if (cb) {
+          try {
+            cb(message.id, message);
+          } finally {
+            messageSentCallbacks.delete(providedId);
+            messageSentIds.delete(localId);
+          }
+        }
+      }
+      break;
+    }
+  }
+});
+
 async function loadViewportMessages<T extends GlobalState>(
   global: T,
   chat: ApiChat,
@@ -929,6 +1038,7 @@ async function loadViewportMessages<T extends GlobalState>(
   direction: LoadMoreDirection,
   isOutlying = false,
   isBudgetPreload = false,
+  limit = MESSAGE_LIST_SLICE,
   ...[tabId = getCurrentTabId()]: TabArgs<T>
 ) {
   const chatId = chat.id;
@@ -939,10 +1049,10 @@ async function loadViewportMessages<T extends GlobalState>(
       addOffset = undefined;
       break;
     case LoadMoreDirection.Around:
-      addOffset = -(Math.round(MESSAGE_LIST_SLICE / 2) + 1);
+      addOffset = -(Math.round(limit / 2) + 1);
       break;
     case LoadMoreDirection.Forwards:
-      addOffset = -(MESSAGE_LIST_SLICE + 1);
+      addOffset = -(limit + 1);
       break;
   }
 
@@ -951,7 +1061,7 @@ async function loadViewportMessages<T extends GlobalState>(
     chat: selectChat(global, chatId)!,
     offsetId,
     addOffset,
-    limit: MESSAGE_LIST_SLICE,
+    limit,
     threadId,
   });
 
@@ -1081,22 +1191,25 @@ function getViewportSlice(
   return { newViewportIds, areSomeLocal, areAllLocal };
 }
 
-async function sendMessage<T extends GlobalState>(global: T, params: {
-  chat: ApiChat;
-  text?: string;
-  entities?: ApiMessageEntity[];
-  replyingTo?: number;
-  attachment?: ApiAttachment;
-  sticker?: ApiSticker;
-  gif?: ApiVideo;
-  poll?: ApiNewPoll;
-  isSilent?: boolean;
-  scheduledAt?: number;
-  sendAs?: ApiChat | ApiUser;
-  replyingToTopId?: number;
-  groupedId?: string;
-},
-...[tabId = getCurrentTabId()]: TabArgs<T>) {
+async function sendMessage<T extends GlobalState>(global: T,
+  params: {
+    chat: ApiChat;
+    text?: string;
+    entities?: ApiMessageEntity[];
+    replyingTo?: number;
+    attachment?: ApiAttachment;
+    sticker?: ApiSticker;
+    gif?: ApiVideo;
+    poll?: ApiNewPoll;
+    serverTimeOffset?: number;
+    isSilent?: boolean;
+    scheduledAt?: number;
+    sendAs?: ApiChat | ApiUser;
+    replyingToTopId?: number;
+    groupedId?: string;
+  },
+  messageSentCb?: MessageSentCb,
+  ...[tabId = getCurrentTabId()]: TabArgs<T>) {
   let localId: number | undefined;
   const progressCallback = params.attachment ? (progress: number, messageLocalId: number) => {
     if (!uploadProgressCallbacks.has(messageLocalId)) {
@@ -1138,7 +1251,14 @@ async function sendMessage<T extends GlobalState>(global: T, params: {
     params.replyingToTopId = selectThreadTopMessageId(global, params.chat.id, threadId)!;
   }
 
-  await callApi('sendMessage', params, progressCallback);
+  let msgId: string | undefined;
+  if (messageSentCb) {
+    msgId = generateMessageId();
+    messageSentCallbacks.set(msgId, messageSentCb);
+    await callApi('sendMessage', params, progressCallback, msgId);
+  } else {
+    await callApi('sendMessage', params, progressCallback);
+  }
 
   if (progressCallback && localId) {
     uploadProgressCallbacks.delete(localId);

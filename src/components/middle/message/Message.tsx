@@ -123,6 +123,7 @@ import useTextLanguage from '../../../hooks/useTextLanguage';
 
 import Button from '../../ui/Button';
 import Avatar from '../../common/Avatar';
+// eslint-disable-next-line import/no-cycle
 import EmbeddedMessage from '../../common/EmbeddedMessage';
 import Document from '../../common/Document';
 import Audio from '../../common/Audio';

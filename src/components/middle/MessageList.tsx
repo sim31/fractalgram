@@ -63,6 +63,7 @@ import useEffectWithPrevDeps from '../../hooks/useEffectWithPrevDeps';
 import useResizeObserver from '../../hooks/useResizeObserver';
 
 import Loading from '../ui/Loading';
+// eslint-disable-next-line import/no-cycle
 import MessageListContent from './MessageListContent';
 import ContactGreeting from './ContactGreeting';
 import NoMessages from './NoMessages';

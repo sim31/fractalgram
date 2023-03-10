@@ -38,9 +38,11 @@ export async function loadBundle<B extends Bundles>(bundleName: B) {
           console.log('>>> START LOAD MAIN BUNDLE');
         }
 
+        // eslint-disable-next-line import/no-cycle
         LOAD_PROMISES[Bundles.Main] = import(/* webpackChunkName: "BundleMain" */ '../bundles/main');
         break;
       case Bundles.Extra:
+        // eslint-disable-next-line import/no-cycle
         LOAD_PROMISES[Bundles.Extra] = import(/* webpackChunkName: "BundleExtra" */ '../bundles/extra');
         break;
       case Bundles.Calls:

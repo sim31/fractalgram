@@ -1,6 +1,6 @@
 {
-  "name": "telegram-t",
-  "version": "1.60.0",
+  "name": "fractalgram",
+  "version": "1.1.0+webz1.60.0",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -41,7 +41,10 @@
     "*.{ts,tsx,js}": "eslint --fix",
     "*.{css,scss}": "stylelint --fix"
   },
-  "author": "Alexander Zinchuk (alexander@zinchuk.com)",
+  "author": "Tadas Vaitiekūnas (vtadas25@gmail.com)",
+  "contributors": [
+    "Alexander Zinchuk (alexander@zinchuk.com)"
+  ],
   "license": "GPL-3.0-or-later",
   "devDependencies": {
     "@babel/core": "^7.20.5",

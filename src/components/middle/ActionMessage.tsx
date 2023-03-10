@@ -30,6 +30,7 @@ import useLang from '../../hooks/useLang';
 import useFlag from '../../hooks/useFlag';
 import useShowTransition from '../../hooks/useShowTransition';
 
+// eslint-disable-next-line import/no-cycle
 import ContextMenuContainer from './message/ContextMenuContainer.async';
 import AnimatedIconFromSticker from '../common/AnimatedIconFromSticker';
 import ActionMessageSuggestedAvatar from './ActionMessageSuggestedAvatar';

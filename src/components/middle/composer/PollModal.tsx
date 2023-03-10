@@ -17,12 +17,14 @@ import Checkbox from '../../ui/Checkbox';
 import RadioGroup from '../../ui/RadioGroup';
 
 import './PollModal.scss';
+import type { PollModalDefaults } from '../../../global/types';
 
 export type OwnProps = {
   isOpen: boolean;
   shouldBeAnonymous?: boolean;
   isQuiz?: boolean;
-  onSend: (pollSummary: ApiNewPoll) => void;
+  defaultValues?: PollModalDefaults;
+  onSend: (pollSummary: ApiNewPoll, pinned: boolean) => void;
   onClear: () => void;
 };
 
@@ -33,7 +35,7 @@ const MAX_QUESTION_LENGTH = 255;
 const MAX_SOLUTION_LENGTH = 200;
 
 const PollModal: FC<OwnProps> = ({
-  isOpen, isQuiz, shouldBeAnonymous, onSend, onClear,
+  isOpen, isQuiz, shouldBeAnonymous, defaultValues, onSend, onClear,
 }) => {
   // eslint-disable-next-line no-null/no-null
   const questionInputRef = useRef<HTMLInputElement>(null);
@@ -42,9 +44,9 @@ const PollModal: FC<OwnProps> = ({
   // eslint-disable-next-line no-null/no-null
   const solutionRef = useRef<HTMLDivElement>(null);
 
-  const [question, setQuestion] = useState<string>('');
-  const [options, setOptions] = useState<string[]>(['']);
-  const [isAnonymous, setIsAnonymous] = useState(true);
+  const [question, setQuestion] = useState<string>(defaultValues?.question ?? '');
+  const [options, setOptions] = useState<string[]>(defaultValues?.options ?? ['']);
+  const [isAnonymous, setIsAnonymous] = useState(defaultValues?.isAnonymous ?? true);
   const [isMultipleAnswers, setIsMultipleAnswers] = useState(false);
   const [isQuizMode, setIsQuizMode] = useState(isQuiz || false);
   const [solution, setSolution] = useState<string>('');
@@ -70,8 +72,12 @@ const PollModal: FC<OwnProps> = ({
       setSolution('');
       setCorrectOption(undefined);
       setHasErrors(false);
+    } else if (defaultValues) {
+      setQuestion(defaultValues.question);
+      setOptions([...defaultValues.options, '']);
+      setIsAnonymous(defaultValues.isAnonymous);
     }
-  }, [isQuiz, isOpen]);
+  }, [isQuiz, isOpen, defaultValues]);
 
   useEffect(() => focusInput(questionInputRef), [focusInput, isOpen]);
 
@@ -152,7 +158,7 @@ const PollModal: FC<OwnProps> = ({
       };
     }
 
-    onSend(payload);
+    onSend(payload, defaultValues?.pinned ?? false);
   }, [
     isOpen,
     question,
@@ -164,6 +170,7 @@ const PollModal: FC<OwnProps> = ({
     onSend,
     addNewOption,
     solution,
+    defaultValues,
   ]);
 
   const updateOption = useCallback((index: number, text: string) => {

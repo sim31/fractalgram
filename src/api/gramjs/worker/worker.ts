@@ -26,7 +26,7 @@ onmessage = async (message: OriginMessageEvent) => {
     }
     case 'callMethod': {
       const {
-        messageId, name, args, withCallback,
+        messageId, name, args, withCallback, providedId,
       } = data;
       try {
         if (messageId && withCallback) {
@@ -42,7 +42,9 @@ onmessage = async (message: OriginMessageEvent) => {
 
           callbackState.set(messageId, callback);
 
+          // What?
           args.push(callback as never);
+          args.push(providedId as never);
         }
 
         const response = await callApi(name, ...args);

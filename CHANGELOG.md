@@ -1,4 +1,4 @@
-## 1.60.0 (2023-03-03)
+## WebZ 1.60.0 (2023-03-03)
 
 ### 🤩 **What’s New**
 * Archived Chats Header - Archived Chats are now accessible from the chat list in a collapsable header.
@@ -24,7 +24,7 @@
 * Various layout and performance improvements.
 
 
-## 1.59.0 (2023-01-30)
+## WebZ 1.59.0 (2023-01-30)
 
 ### 👏 **Harder**
 * Chats can be opened in multiple browser tabs or windows.
@@ -72,6 +72,14 @@
 * Fixed issues when changing display name.
 * Fixed issues with emoji in display names on Windows.
 * Fixed inline bot query parsing on Windows.
+
+## Fractalgram 1.0 (2023-01-27)
+* Added additional buttons in attachment menu which automate creation of messages relevant for consensus building in Eden / Fractal style meetings.
+  * Polls for ranking contributions of break-out room participants.
+  * Poll for electing a delegate of a break-out group.
+  * A message which summarizes results from the polls.
+  * A message to prompt for account names of external platform (like EOS blockchain) ("account prompt messsage").
+* Replies to "account prompt message" and information derived from the polls are used to generate a url, which participants can use to post results to the blockchain. This URL can optionally be shown as part of results message.
 
 ## 1.57.0 (2022-12-07)
 

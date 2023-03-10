@@ -249,6 +249,7 @@ export function sendMessage(
     shouldUpdateStickerSetsOrder?: boolean;
   },
   onProgress?: ApiOnProgress,
+  providedId?: string,
 ) {
   const localMessage = buildLocalMessage(
     chat,
@@ -271,6 +272,7 @@ export function sendMessage(
     id: localMessage.id,
     chatId: chat.id,
     message: localMessage,
+    providedId,
   });
 
   // This is expected to arrive after `updateMessageSendSucceeded` which replaces the local ID,

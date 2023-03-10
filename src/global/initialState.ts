@@ -1,8 +1,9 @@
-import type { TabState, GlobalState } from './types';
+import type { ChatConsensusMessages, TabState, GlobalState } from './types';
 import { NewChatMembersProgress } from '../types';
 
 import {
-  ANIMATION_LEVEL_DEFAULT, DARK_THEME_PATTERN_COLOR, DEFAULT_MESSAGE_TEXT_SIZE_PX, DEFAULT_PATTERN_COLOR,
+  ANIMATION_LEVEL_DEFAULT, DARK_THEME_PATTERN_COLOR,
+  DEFAULT_PLATFORM, DEFAULT_MESSAGE_TEXT_SIZE_PX, DEFAULT_PATTERN_COLOR,
   DEFAULT_PLAYBACK_RATE,
   DEFAULT_VOLUME,
   IOS_DEFAULT_MESSAGE_TEXT_SIZE_PX, MACOS_DEFAULT_MESSAGE_TEXT_SIZE_PX,
@@ -274,8 +275,27 @@ export const INITIAL_TAB_STATE: TabState = {
   pollModal: {
     isOpen: false,
   },
+  accountPromptModal: {
+    isOpen: false,
+    defaultValues: { platform: DEFAULT_PLATFORM },
+  },
+  consensusResultsModal: {
+    isOpen: false,
+    page: 'extPlatform',
+  },
+  loadingModal: {
+    isOpen: false,
+    title: '',
+  },
 
   requestedTranslations: {
     byChatId: {},
   },
+};
+
+export const INIT_CONSENSUS_MSGS: ChatConsensusMessages = {
+  extAccountPrompts: {},
+  extAccountReplies: {},
+  rankingPolls: {},
+  delegatePolls: new Set([]),
 };

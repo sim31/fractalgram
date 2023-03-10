@@ -1,4 +1,5 @@
 import type {
+  ChatConsensusMessages,
   GlobalState, MessageList, MessageListType, TabArgs, Thread, TabThread,
 } from '../types';
 import type {
@@ -10,6 +11,7 @@ import type { FocusDirection } from '../../types';
 import {
   IS_MOCKED_CLIENT,
   IS_TEST, MESSAGE_LIST_SLICE, MESSAGE_LIST_VIEWPORT_LIMIT, TMP_CHAT_ID,
+  RANK_POLL_REGEX, SELECT_DELEGATE_REGEX,
 } from '../../config';
 import {
   selectListedIds,
@@ -26,6 +28,7 @@ import {
   selectCurrentMessageList,
   selectChat,
   selectTabState,
+  selectChatConsensusMsgs,
 } from '../selectors';
 import {
   areSortedArraysEqual, omit, pickTruthy, unique,
@@ -33,10 +36,17 @@ import {
 import { updateTabState } from './tabs';
 import { getCurrentTabId } from '../../util/establishMultitabRole';
 import { isLocalMessageId } from '../helpers';
+import { INIT_CONSENSUS_MSGS } from '../initialState';
+import assert from '../../util/assert';
+import { promptStrToPlatform } from '../helpers/consensusMessages';
+
+const rankPollRe = RANK_POLL_REGEX;
+const selectDelegateRe = SELECT_DELEGATE_REGEX;
 
 type MessageStoreSections = {
   byId: Record<number, ApiMessage>;
   threadsById: Record<number, Thread>;
+  consensusMsgs: ChatConsensusMessages;
 };
 
 export function updateCurrentMessageList<T extends GlobalState>(
@@ -69,9 +79,14 @@ export function updateCurrentMessageList<T extends GlobalState>(
   }, tabId);
 }
 
-function replaceChatMessages<T extends GlobalState>(global: T, chatId: string, newById: Record<number, ApiMessage>): T {
+function replaceChatMessages<T extends GlobalState>(
+  global: T, chatId: string,
+  newById: Record<number, ApiMessage>,
+  newConsensusMsgs: ChatConsensusMessages,
+): T {
   return updateMessageStore(global, chatId, {
     byId: newById,
+    consensusMsgs: newConsensusMsgs,
   });
 }
 
@@ -122,7 +137,8 @@ export function updateThread<T extends GlobalState>(
 function updateMessageStore<T extends GlobalState>(
   global: T, chatId: string, update: Partial<MessageStoreSections>,
 ): T {
-  const current = global.messages.byChatId[chatId] || { byId: {}, threadsById: {} };
+  const current = global.messages.byChatId[chatId]
+    || { byId: {}, threadsById: {}, consensusMsgs: { ...INIT_CONSENSUS_MSGS } };
 
   return {
     ...global,
@@ -176,6 +192,79 @@ export function addMessages<T extends GlobalState>(
   return global;
 }
 
+function addPromptReplies(
+  consensusMsgs: ChatConsensusMessages,
+  msg: ApiMessage,
+): ChatConsensusMessages {
+  if (msg.replyToMessageId && msg.senderId && msg.content.text?.text) {
+    const platform = consensusMsgs.extAccountPrompts[msg.replyToMessageId];
+    if (platform) {
+      const replies = consensusMsgs.extAccountReplies[platform];
+      consensusMsgs = {
+        ...consensusMsgs,
+        extAccountReplies: {
+          ...consensusMsgs.extAccountReplies,
+          [platform]: replies ? new Set([...replies, msg.id]) : new Set([msg.id]),
+        },
+      };
+    }
+  }
+
+  return consensusMsgs;
+}
+
+function addConsensusMessage(
+  global: GlobalState,
+  currentById: Record<number, ApiMessage>,
+  consensusMsgs: ChatConsensusMessages,
+  msg: ApiMessage,
+) {
+  const prevConsensusInfo = consensusMsgs;
+  consensusMsgs = addPromptReplies(consensusMsgs, msg);
+  if (prevConsensusInfo === consensusMsgs && msg.content.poll) {
+    // rankings poll
+    const regResult = msg.content.poll.summary.question.match(rankPollRe);
+    if (regResult) {
+      const rank = parseInt(regResult[1], 10);
+      const rankPolls = consensusMsgs.rankingPolls[rank];
+      consensusMsgs = {
+        ...consensusMsgs,
+        rankingPolls: {
+          ...consensusMsgs.rankingPolls,
+          [rank]: rankPolls ? new Set([...rankPolls, msg.id]) : new Set([msg.id]),
+        },
+      };
+    } else if (msg.content.poll.summary.question.match(selectDelegateRe)) { // delegate poll
+      consensusMsgs = {
+        ...consensusMsgs,
+        delegatePolls: new Set([...consensusMsgs.delegatePolls, msg.id]),
+      };
+    }
+  } else if (msg.content.text && msg.content.text.text) {
+    const platform = promptStrToPlatform(msg.content.text.text);
+    if (platform) {
+      consensusMsgs = {
+        ...consensusMsgs,
+        extAccountPrompts: {
+          ...consensusMsgs.extAccountPrompts,
+          [msg.id]: platform,
+        },
+      };
+      // Check for existing replies to this prompt
+      Object.values(currentById).forEach((existingMsg) => {
+        consensusMsgs = addPromptReplies(consensusMsgs, existingMsg);
+      });
+    }
+  }
+
+  return consensusMsgs;
+}
+
+function getConsensusMsgsOrNew(global: GlobalState, chatId: string) {
+  const consensusMsgs = selectChatConsensusMsgs(global, chatId);
+  return consensusMsgs ?? { ...INIT_CONSENSUS_MSGS };
+}
+
 export function addChatMessagesById<T extends GlobalState>(
   global: T, chatId: string, newById: Record<number, ApiMessage>,
 ): T {
@@ -185,10 +274,109 @@ export function addChatMessagesById<T extends GlobalState>(
     return global;
   }
 
+  let consensusMsgs = getConsensusMsgsOrNew(global, chatId);
+  const currentById = { ...byId };
+  Object.values(newById).forEach((msg) => {
+    consensusMsgs = addConsensusMessage(global, currentById, consensusMsgs, msg);
+    currentById[msg.id] = msg;
+  });
+
   return replaceChatMessages(global, chatId, {
     ...newById,
     ...byId,
-  });
+  }, consensusMsgs);
+}
+
+function updateConsensusMessage(
+  global: GlobalState,
+  consensusMsgs: ChatConsensusMessages,
+  byId: Record<number, ApiMessage>,
+  updatedMessage: ApiMessage,
+  message?: ApiMessage,
+): ChatConsensusMessages {
+  let update: boolean = true;
+  if (message) {
+    // Cases to handle
+    // * Was a prompt and is not anymore
+    // * Was a reply and is not anymore
+    // * Was a poll and is not anymore
+    // * Was not a prompt, but is now
+    // * Was not a reply but is now
+    // * Was not a poll but is now
+    // * Was a promt for one platform, now it is for another
+    // * Was a reply for one platform, now for another
+    // * Was a poll for one rank, now for another
+    // So to handle:
+    // * old prompt: check the message does not match the old prompt (platform). If so then just delete it
+    // * old reply: check if replyingToMsgId did not change. If it did remove the reply.
+    // * old poll: check if question did not change. If it did remove this poll.
+    // Run the updated message through adding new consensus message - it won't duplicate anything and might detect new consensus message
+    const messageId = message.id;
+    const promptPlatform = consensusMsgs.extAccountPrompts[messageId];
+    if (promptPlatform) {
+      const newText = updatedMessage.content.text?.text;
+      const newPlatform = newText && promptStrToPlatform(newText);
+      if (newPlatform !== promptPlatform) {
+        consensusMsgs = {
+          ...consensusMsgs,
+          extAccountPrompts: { ...consensusMsgs.extAccountPrompts },
+        };
+        delete consensusMsgs.extAccountPrompts[messageId];
+      } else {
+        update = false;
+      }
+    } else if (message.replyToMessageId && message.senderId && message.content.text?.text) {
+      if (message.replyToMessageId !== updatedMessage.replyToMessageId) {
+        const platform = consensusMsgs.extAccountPrompts[message.replyToMessageId];
+        if (platform) {
+          consensusMsgs = {
+            ...consensusMsgs,
+            extAccountReplies: { ...consensusMsgs.extAccountReplies },
+          };
+          consensusMsgs.extAccountReplies[platform].delete(messageId);
+        }
+      } else {
+        update = false;
+      }
+    } else if (message.content.poll) {
+      // handle when poll question changes
+      const oldQuestion = message.content.poll?.summary.question;
+      const newQuestion = updatedMessage.content.poll?.summary.question;
+      if (oldQuestion !== newQuestion) {
+        const regResult = oldQuestion.match(rankPollRe);
+        if (regResult) {
+          const rank = parseInt(regResult[1], 10);
+          let polls = consensusMsgs.rankingPolls[rank];
+          if (polls) {
+            polls = new Set(polls);
+            polls.delete(messageId);
+            consensusMsgs = {
+              ...consensusMsgs,
+              rankingPolls: {
+                ...consensusMsgs.rankingPolls,
+                [rank]: polls,
+              },
+            };
+          }
+        } else if (oldQuestion.match(selectDelegateRe)) {
+          const polls = new Set(consensusMsgs.delegatePolls);
+          polls.delete(messageId);
+          consensusMsgs = {
+            ...consensusMsgs,
+            delegatePolls: polls,
+          };
+        }
+      } else {
+        update = false;
+      }
+    }
+  }
+
+  if (update) {
+    consensusMsgs = addConsensusMessage(global, byId, consensusMsgs, updatedMessage);
+  }
+
+  return consensusMsgs;
 }
 
 export function updateChatMessage<T extends GlobalState>(
@@ -205,10 +393,18 @@ export function updateChatMessage<T extends GlobalState>(
     return global;
   }
 
-  return replaceChatMessages(global, chatId, {
+  const newById = {
     ...byId,
     [messageId]: updatedMessage,
-  });
+  };
+
+  assert(updatedMessage.id === messageId,
+    'Unexpected for updatedMessage.id to not equal messageId');
+
+  let consensusMsgs = getConsensusMsgsOrNew(global, chatId);
+  consensusMsgs = updateConsensusMessage(global, consensusMsgs, byId, updatedMessage, message);
+
+  return replaceChatMessages(global, chatId, newById, consensusMsgs);
 }
 
 export function updateScheduledMessage<T extends GlobalState>(
@@ -231,6 +427,54 @@ export function updateScheduledMessage<T extends GlobalState>(
   });
 }
 
+function deleteConsensusMessages(
+  consensusMsgs: ChatConsensusMessages,
+  messageIds: number[],
+) {
+  Object.values(messageIds).forEach((msgId) => {
+    if (consensusMsgs.extAccountPrompts[msgId]) {
+      consensusMsgs = { ...consensusMsgs };
+      delete consensusMsgs.extAccountPrompts[msgId];
+    } else if (consensusMsgs.delegatePolls.has(msgId)) {
+      consensusMsgs = { ...consensusMsgs };
+      consensusMsgs.delegatePolls.delete(msgId);
+    } else {
+      let newExtAccountReplies = consensusMsgs.extAccountReplies;
+      Object.entries(consensusMsgs.extAccountReplies).forEach(([platform, replies]) => {
+        if (replies.has(msgId)) {
+          const newReplies = new Set(replies);
+          newReplies.delete(msgId);
+          newExtAccountReplies = {
+            ...newExtAccountReplies,
+            [platform]: newReplies,
+          };
+        }
+      });
+      let newRankingPolls = consensusMsgs.rankingPolls;
+      Object.entries(consensusMsgs.rankingPolls).forEach(([rank, polls]) => {
+        if (polls.has(msgId)) {
+          const newPolls = new Set(polls);
+          newPolls.delete(msgId);
+          newRankingPolls = {
+            ...newRankingPolls,
+            [rank]: newPolls,
+          };
+        }
+      });
+
+      if (newExtAccountReplies !== consensusMsgs.extAccountReplies || newRankingPolls !== consensusMsgs.rankingPolls) {
+        consensusMsgs = {
+          ...consensusMsgs,
+          extAccountReplies: newExtAccountReplies,
+          rankingPolls: newRankingPolls,
+        };
+      }
+    }
+  });
+
+  return consensusMsgs;
+}
+
 export function deleteChatMessages<T extends GlobalState>(
   global: T,
   chatId: string,
@@ -240,6 +484,7 @@ export function deleteChatMessages<T extends GlobalState>(
   if (!byId) {
     return global;
   }
+
   const newById = omit(byId, messageIds);
   const deletedForwardedPosts = Object.values(pickTruthy(byId, messageIds)).filter(
     ({ forwardInfo }) => forwardInfo?.isLinkedChannelPost,
@@ -319,7 +564,12 @@ export function deleteChatMessages<T extends GlobalState>(
     });
   }
 
-  global = replaceChatMessages(global, chatId, newById);
+  let consensusMsgs = selectChatConsensusMsgs(global, chatId);
+  // See check on byId at the beginning of a function
+  assert(consensusMsgs, 'consensusMsgs should be set if byId of chat is set');
+  consensusMsgs = deleteConsensusMessages(consensusMsgs as ChatConsensusMessages, messageIds);
+
+  global = replaceChatMessages(global, chatId, newById, consensusMsgs);
 
   return global;
 }

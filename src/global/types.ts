@@ -88,7 +88,61 @@ import type {
 } from '../types';
 import { typify } from '../lib/teact/teactn';
 import type { P2pMessage } from '../lib/secret-sauce';
+import type { Rank } from '../config';
 import type { ApiCredentials } from '../components/payment/PaymentModal';
+
+export type ChatConsensusMessages = {
+  // id of prompt message -> platform
+  extAccountPrompts: Record<number, string>;
+  // platform -> ids of replies to prompt messages for a platform
+  extAccountReplies: Record<string, Set<number>>;
+  // rank -> poll message ids
+  rankingPolls: Record<number, Set<number>>;
+  // delegate poll ids
+  delegatePolls: Set<number>;
+};
+
+export interface ExtUser extends ApiUser {
+  // platform -> account name
+  extAccounts: Record<string, string>;
+}
+
+export interface ConsensusResultOption {
+  option: string;
+  votes?: number;
+  ofTotal?: number;
+  refUser?: ExtUser;
+}
+
+export interface ConsensusResults {
+  groupNum?: number;
+  delegate?: ConsensusResultOption;
+  rankings: Partial<Record<Rank, ConsensusResultOption>>;
+}
+
+export type ExtPlatformInfo = {
+  fractalName: string;
+  platform: string;
+  submitUrl: string;
+  accountInfoUrl?: string;
+};
+
+export type AccountMap = Map<string, ExtUser>;
+
+export type PollModalDefaults = {
+  question: string;
+  options: string[];
+  isAnonymous: boolean;
+  pinned: boolean;
+};
+
+export interface AccountPromptDefaults {
+  platform: string;
+}
+
+export interface AccountPromptInfo extends AccountPromptDefaults {
+  promptMessage: string;
+}
 
 export type MessageListType =
   'thread'
@@ -403,6 +457,10 @@ export type TabState = {
     error?: string;
   };
 
+  consensusProcess?: {
+    error?: string;
+  };
+
   profileEdit?: {
     progress: ProfileEditProgress;
     checkedUsername?: string;
@@ -450,6 +508,24 @@ export type TabState = {
   pollModal: {
     isOpen: boolean;
     isQuiz?: boolean;
+    defaultValues?: PollModalDefaults;
+  };
+
+  accountPromptModal: {
+    isOpen: boolean;
+    defaultValues: AccountPromptDefaults;
+  };
+
+  consensusResultsModal: {
+    isOpen: boolean;
+    page: 'extPlatform' | 'editText' | 'editGroupNumber';
+    extPlatformInfo?: ExtPlatformInfo;
+    guessedResults?: ConsensusResults;
+  };
+
+  loadingModal: {
+    isOpen: boolean;
+    title: string;
   };
 
   webApp?: {
@@ -658,6 +734,7 @@ export type GlobalState = {
     byChatId: Record<string, {
       byId: Record<number, ApiMessage>;
       threadsById: Record<number, Thread>;
+      consensusMsgs: ChatConsensusMessages;
     }>;
     sponsoredByChatId: Record<string, ApiSponsoredMessage>;
   };
@@ -1140,6 +1217,7 @@ export interface ActionPayloads {
     shouldUpdateStickerSetsOrder?: boolean;
     shouldGroupMessages?: boolean;
   } & WithTabId;
+  sendPinnedMessage: ActionPayloads['sendMessage'];
   cancelSendingMessage: {
     chatId: string;
     messageId: number;
@@ -2131,8 +2209,42 @@ export interface ActionPayloads {
   // Misc
   openPollModal: {
     isQuiz?: boolean;
+    defaultValues?: PollModalDefaults;
   } & WithTabId;
   closePollModal: WithTabId | undefined;
+  closeAccountPromptModal: WithTabId | undefined;
+  closeResultsReportModal: WithTabId | undefined;
+  closeLoadingModal: WithTabId | undefined;
+  composeConsensusMessage: ({
+    type: 'delegatePoll';
+  } | {
+    type: 'rankingsPoll';
+    rank: Rank;
+  } | {
+    type: 'accountPrompt';
+    platform?: string;
+  } | {
+    type: 'accountPromptSubmit';
+    value: AccountPromptInfo;
+  } | {
+    type: 'resultsReport';
+  } | {
+    type: 'resultsReportPlatformSelect';
+    extPlatformInfo?: ExtPlatformInfo;
+  } | {
+    type: 'resultsReportGroupNumSelect';
+    groupNum: number;
+  } | {
+    type: 'resultsReportSubmit';
+    message: string;
+    pinMessage: boolean;
+  }) & WithTabId;
+
+  loadRemainingMessages: {
+    chatId?: string;
+    threadId?: number;
+  };
+
   requestConfetti: ({
     top: number;
     left: number;

@@ -32,6 +32,7 @@ import { waitForTransitionEnd } from '../../util/cssAnimationEndListeners';
 import { processDeepLink } from '../../util/deeplink';
 import { parseInitialLocationHash, parseLocationHash } from '../../util/routing';
 import { fastRaf } from '../../util/schedulers';
+// eslint-disable-next-line import/no-cycle
 import { Bundles, loadBundle } from '../../util/moduleLoader';
 import updateIcon from '../../util/updateIcon';
 

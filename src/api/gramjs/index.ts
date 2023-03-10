@@ -5,4 +5,5 @@ export {
   handleMethodResponse,
   updateFullLocalDb,
   updateLocalDb,
+  generateMessageId,
 } from './worker/provider';

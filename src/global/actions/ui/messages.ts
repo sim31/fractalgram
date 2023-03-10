@@ -1,10 +1,13 @@
-import { addActionHandler, getGlobal, setGlobal } from '../../index';
+import {
+  addActionHandler, getGlobal, setGlobal,
+} from '../../index';
 
-import type { ApiMessage } from '../../../api/types';
+import type { ApiChat, ApiMessage, ApiPoll } from '../../../api/types';
 import { MAIN_THREAD_ID } from '../../../api/types';
 import { FocusDirection } from '../../../types';
 import type {
-  TabState, GlobalState, ActionReturnType,
+  TabState, GlobalState, ActionReturnType, ExtPlatformInfo, ConsensusResults,
+  PollModalDefaults, ExtUser, AccountMap, ConsensusResultOption,
 } from '../../types';
 
 import {
@@ -13,7 +16,13 @@ import {
   RELEASE_DATETIME,
   FAST_SMOOTH_MAX_DURATION,
   SERVICE_NOTIFICATIONS_USER_ID,
+  SELECT_DELEGATE_STR,
+  RANK_POLL_STRS,
+  ALLOWED_RANKS,
+  DEFAULT_PLATFORM,
+  FRACTAL_INFO_BY_PLATFORM,
 } from '../../../config';
+import type { Rank } from '../../../config';
 import { IS_TOUCH_ENV } from '../../../util/environment';
 import {
   enterMessageSelectMode,
@@ -42,6 +51,13 @@ import {
   selectChatScheduledMessages,
   selectTabState,
   selectRequestedTranslationLanguage,
+  selectChatMemberAccountMap,
+  selectLatestDelegatePoll,
+  selectLatestRankingPoll,
+  selectLatestPrompt,
+  // selectLatestDelegatePoll,
+  // selectChatRankingPolls,
+  // selectLatestRankingPoll,
 } from '../../selectors';
 import { compact, findLast } from '../../../util/iteratees';
 import { getServerTime } from '../../../util/serverTime';
@@ -55,6 +71,9 @@ import { renderMessageSummaryHtml } from '../../helpers/renderMessageSummaryHtml
 import { updateTabState } from '../../reducers/tabs';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
 import { getIsMobile } from '../../../hooks/useAppLayout';
+import assert from '../../../util/assert';
+import { promptStrToPlatform } from '../../helpers/consensusMessages';
+import { loadRemainingMessages } from '../api/messages';
 
 const FOCUS_DURATION = 1500;
 const FOCUS_NO_HIGHLIGHT_DURATION = FAST_SMOOTH_MAX_DURATION + ANIMATION_END_DELAY;
@@ -671,15 +690,105 @@ addActionHandler('exitMessageSelectMode', (global, actions, payload): ActionRetu
   return exitMessageSelectMode(global, tabId);
 });
 
-addActionHandler('openPollModal', (global, actions, payload): ActionReturnType => {
-  const { isQuiz, tabId = getCurrentTabId() } = payload || {};
-
+function openPollModal(
+  global: GlobalState,
+  tabId: number,
+  isQuiz?: boolean,
+  defaultValues?: PollModalDefaults,
+): GlobalState {
   return updateTabState(global, {
     pollModal: {
       isOpen: true,
       isQuiz,
+      defaultValues,
     },
   }, tabId);
+}
+
+function openAccountPromptModal(
+  global: GlobalState, platform: string, tabId: number,
+): GlobalState {
+  return updateTabState(global, {
+    accountPromptModal: {
+      isOpen: true,
+      defaultValues: { platform },
+    },
+  }, tabId);
+}
+
+function closeAccountPromptModal(global: GlobalState, tabId: number): GlobalState {
+  const tabState = selectTabState(global, tabId);
+  return updateTabState(global, {
+    accountPromptModal: {
+      ...tabState.accountPromptModal,
+      isOpen: false,
+    },
+  }, tabId);
+}
+
+function openResultsReportModal(
+  global: GlobalState,
+  page: TabState['consensusResultsModal']['page'],
+  tabId: number,
+  extPlatformInfo?: ExtPlatformInfo,
+  guessedResults?: ConsensusResults,
+): GlobalState {
+  return updateTabState(global, {
+    consensusResultsModal: {
+      isOpen: true,
+      page,
+      extPlatformInfo,
+      guessedResults,
+    },
+  }, tabId);
+}
+
+function closeResultsReportModal(global: GlobalState, tabId: number): GlobalState {
+  return updateTabState(global, {
+    consensusResultsModal: {
+      isOpen: false,
+      page: 'extPlatform',
+    },
+  }, tabId);
+}
+
+function openLoadingModal(global: GlobalState, title: string, tabId: number): GlobalState {
+  return updateTabState(global, {
+    loadingModal: {
+      isOpen: true,
+      title,
+    },
+  }, tabId);
+}
+
+function closeLoadingModal(global: GlobalState, tabId: number): GlobalState {
+  return updateTabState(global, {
+    loadingModal: {
+      isOpen: false,
+      title: '',
+    },
+  }, tabId);
+}
+
+addActionHandler('closeLoadingModal', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+  return closeLoadingModal(global, tabId);
+});
+
+addActionHandler('closeResultsReportModal', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+  return closeResultsReportModal(global, tabId);
+});
+
+addActionHandler('closeAccountPromptModal', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+  return closeAccountPromptModal(global, tabId);
+});
+
+addActionHandler('openPollModal', (global, actions, payload): ActionReturnType => {
+  const { isQuiz, defaultValues, tabId = getCurrentTabId() } = payload || {};
+
+  return openPollModal(global, tabId, isQuiz, defaultValues);
 });
 
 addActionHandler('closePollModal', (global, actions, payload): ActionReturnType => {
@@ -691,6 +800,324 @@ addActionHandler('closePollModal', (global, actions, payload): ActionReturnType 
     },
   }, tabId);
 });
+
+function constructAccountOptions(accountMap: AccountMap, platform?: string) {
+  const optionStrs = Array.from(accountMap).map(([, user]) => {
+    return constructAccountOption(user, platform);
+  });
+
+  return optionStrs;
+}
+
+addActionHandler('composeConsensusMessage', async (gl, actions, payload): Promise<void> => {
+  const { sendPinnedMessage, sendMessage } = actions;
+  const { tabId = getCurrentTabId() } = payload || {};
+  switch (payload.type) {
+    case 'delegatePoll': {
+      let global = openLoadingModal(gl, 'NewPoll', tabId);
+      setGlobal(global);
+      global = getGlobal();
+      await loadRemainingMessages(global);
+      global = getGlobal();
+      // TODO: Are we sure tabId did not change?
+      const tab = selectTabState(global, tabId);
+      if (tab.loadingModal.isOpen) {
+        // If modal wasn't canceled
+        global = closeLoadingModal(global, tabId);
+
+        const platform = getLatestPlatform(global);
+        global = createPollWithAccounts(global, SELECT_DELEGATE_STR, tabId, platform);
+        setGlobal(global);
+      }
+      break;
+    }
+    case 'rankingsPoll': {
+      let global = openLoadingModal(gl, 'NewPoll', tabId);
+      setGlobal(global);
+      global = getGlobal();
+      await loadRemainingMessages(global);
+      global = getGlobal();
+      const tab = selectTabState(global, tabId);
+      if (tab.loadingModal.isOpen) {
+        global = closeLoadingModal(global, tabId);
+
+        const { rank } = payload;
+        const question = RANK_POLL_STRS[rank as number - 1];
+        const platform = getLatestPlatform(global);
+        global = createPollWithAccounts(global, question, tabId, platform);
+        setGlobal(global);
+      }
+      break;
+    }
+    case 'accountPrompt': {
+      let { platform } = payload;
+      if (!platform) {
+        platform = DEFAULT_PLATFORM;
+      }
+      const global = openAccountPromptModal(gl, platform, tabId);
+      setGlobal(global);
+      break;
+    }
+    case 'accountPromptSubmit': {
+      const { value } = payload;
+      const { platform, promptMessage } = value;
+      if (!platform.length || !promptMessage.length) {
+        return;
+      }
+
+      const { text, entities } = parseMessageInput(promptMessage);
+      sendPinnedMessage({ text, entities, tabId });
+
+      const global = closeAccountPromptModal(gl, tabId);
+      setGlobal(global);
+      break;
+    }
+    case 'resultsReport': {
+      let global = openLoadingModal(gl, 'Consensus results', tabId);
+      setGlobal(global);
+      global = getGlobal();
+      await loadRemainingMessages(global);
+      global = getGlobal();
+      const tab = selectTabState(global, tabId);
+      if (tab.loadingModal.isOpen) {
+        global = closeLoadingModal(global, tabId);
+
+        const platform = getLatestPlatform(global);
+
+        const extPlatformInfo = platform ? FRACTAL_INFO_BY_PLATFORM[platform] : undefined;
+
+        global = openResultsReportModal(global, 'extPlatform', tabId, extPlatformInfo);
+        setGlobal(global);
+      }
+      break;
+    }
+    case 'resultsReportPlatformSelect': {
+      const { extPlatformInfo } = payload;
+      const platform = extPlatformInfo?.platform;
+      const results = guessConsensusResults(gl, platform);
+      // TODO: signal error
+      if (!results) {
+        return;
+      }
+
+      const nextPage = extPlatformInfo ? 'editGroupNumber' : 'editText';
+
+      const global = openResultsReportModal(gl, nextPage, tabId, extPlatformInfo, results);
+      setGlobal(global);
+      break;
+    }
+
+    case 'resultsReportGroupNumSelect': {
+      const { groupNum } = payload;
+      const tab = selectTabState(gl, tabId);
+      const { extPlatformInfo, guessedResults } = tab.consensusResultsModal;
+
+      assert(extPlatformInfo && guessedResults, 'Platform info and guessedResults have to be defined at this point');
+
+      const results = { ...(guessedResults as ConsensusResults), groupNum };
+      const global = openResultsReportModal(gl, 'editText', tabId, extPlatformInfo, results);
+      setGlobal(global);
+      break;
+    }
+    case 'resultsReportSubmit': {
+      const { message, pinMessage } = payload;
+
+      const { text, entities } = parseMessageInput(message, true);
+
+      if (pinMessage) {
+        sendPinnedMessage({ text, entities, tabId });
+      } else {
+        sendMessage({ text, entities, tabId });
+      }
+
+      const global = closeResultsReportModal(gl, tabId);
+      setGlobal(global);
+      break;
+    }
+    default: {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const p: never = payload;
+    }
+  }
+});
+
+function constructAccountOption(user: ExtUser, platform?: string) {
+  const extAccount = platform ? user.extAccounts[platform] : undefined;
+  let id1 = user.id;
+  const id2 = extAccount ? `(${extAccount}@${platform})` : '';
+  if (user.firstName) {
+    id1 = user.firstName;
+  } else if (user.usernames && user.usernames.length) {
+    id1 = user.usernames[0].username;
+  }
+
+  return `${id1} ${id2}`;
+}
+
+function optionToAccount(accountMap: AccountMap, optionStr: string): ExtUser | undefined {
+  const re = /^(.+) \((.+)@(.+)\)$/;
+  const regResult = optionStr.match(re);
+  let nameStr: string = optionStr;
+  let extAccountStr: string | undefined;
+  let platformStr: string | undefined;
+  if (regResult) {
+    nameStr = regResult[1];
+    extAccountStr = regResult[2];
+    platformStr = regResult[3];
+  }
+
+  const id1Matches = new Array<string>();
+  const id2Matches = new Array<string>();
+  for (const [userId, user] of accountMap) {
+    if (user.firstName === nameStr) {
+      id1Matches.push(userId);
+    } else if (user.usernames && user.usernames.length && user.usernames[0].username === nameStr) {
+      id1Matches.push(userId);
+    } else if (userId === nameStr) {
+      id1Matches.push(userId);
+    }
+
+    if (extAccountStr && platformStr) {
+      if (user.extAccounts[platformStr] && user.extAccounts[platformStr] === extAccountStr) {
+        id2Matches.push(userId);
+      }
+    }
+  }
+
+  if (id1Matches.length === 1) {
+    if (id2Matches.length === 0 || (id2Matches.length === 1 && id2Matches[0] === id1Matches[0])) {
+      return accountMap.get(id1Matches[0]);
+    }
+  }
+
+  return undefined;
+}
+
+function getAccountOptions(
+  global: GlobalState,
+  platform?: string,
+): string[] | undefined {
+  const chat = selectCurrentChat(global);
+  const accountMap = chat && selectChatMemberAccountMap(global, chat, platform);
+  if (!accountMap) {
+    return undefined;
+  }
+
+  return constructAccountOptions(accountMap, platform);
+}
+
+function createPollWithAccounts(global: GlobalState, question: string, tabId: number, platform?: string): GlobalState {
+  const tab = selectTabState(global, tabId);
+  if (tab.pollModal.isOpen) {
+    return global;
+  }
+
+  // NOTE: This should not be called if there are a lot of users in the chat
+  const opt = getAccountOptions(global, platform);
+  assert(opt, 'Chat member list or messages not loaded');
+  const options = opt as string[];
+
+  const values: PollModalDefaults = {
+    isAnonymous: false,
+    pinned: true,
+    question,
+    options,
+  };
+
+  return openPollModal(global, tabId, false, values);
+}
+
+function getWinnerOption(poll: ApiPoll, accountMap: AccountMap, platform?: string): ConsensusResultOption | undefined {
+  const results = poll.results.results;
+  if (!results) {
+    return undefined;
+  }
+
+  let winnerVotes = 0;
+  let winnerCount = 0;
+  let winnerOption: ConsensusResultOption | undefined;
+  for (const result of results) {
+    if (result.votersCount > winnerVotes) {
+      const answer = poll.summary.answers.find((opt) => opt.option === result.option);
+      const refUser = answer && optionToAccount(accountMap, answer.text);
+      if (answer && refUser) {
+        const refreshedOption = constructAccountOption(refUser, platform);
+        winnerOption = {
+          option: refreshedOption,
+          votes: result.votersCount,
+          ofTotal: accountMap.size,
+          refUser,
+        };
+        winnerVotes = result.votersCount;
+        winnerCount = 1;
+      } else {
+        winnerCount = 0;
+        break;
+      }
+    } else if (result.votersCount === winnerVotes) {
+      winnerCount++;
+    }
+  }
+
+  return winnerCount === 1 && winnerVotes > 0 ? winnerOption : undefined;
+}
+
+function guessConsensusResults(
+  global: GlobalState,
+  platform?: string,
+  chat?: ApiChat,
+  accountMap?: AccountMap,
+): ConsensusResults | undefined {
+  chat = chat || selectCurrentChat(global);
+  const membersCount = chat?.membersCount;
+  if (!chat || !membersCount) {
+    return undefined;
+  }
+
+  accountMap = accountMap || selectChatMemberAccountMap(global, chat, platform);
+  if (!accountMap) {
+    return undefined;
+  }
+
+  const consensusResults: ConsensusResults = { rankings: {} };
+  const delegatePoll = selectLatestDelegatePoll(global, chat.id);
+  if (delegatePoll) {
+    consensusResults.delegate = getWinnerOption(delegatePoll, accountMap, platform);
+  }
+
+  const userIdsToRank = new Set<string>(accountMap.keys());
+  const leftToRank = new Set<Rank>([...ALLOWED_RANKS].slice(0, userIdsToRank.size));
+  for (const rank of ALLOWED_RANKS) {
+    const poll = selectLatestRankingPoll(global, chat.id, rank);
+    if (poll) {
+      const winner = getWinnerOption(poll, accountMap, platform);
+      if (winner?.refUser && userIdsToRank.has(winner.refUser.id)) {
+        consensusResults.rankings[rank] = winner;
+        userIdsToRank.delete(winner.refUser.id);
+        leftToRank.delete(rank);
+      }
+    }
+  }
+
+  if (userIdsToRank.size === 1 && leftToRank.size === 1) {
+    const rankRemaining = Array.from(leftToRank)[0];
+    const userIdRemaining = Array.from(userIdsToRank)[0];
+
+    consensusResults.rankings[rankRemaining] = {
+      option: constructAccountOption(accountMap.get(userIdRemaining)!, platform),
+      refUser: accountMap.get(userIdRemaining),
+    };
+  }
+
+  return consensusResults;
+}
+
+function getLatestPlatform(global: GlobalState): string | undefined {
+  const { chatId } = selectCurrentMessageList(global) ?? {};
+
+  const latestPromptStr = chatId && selectLatestPrompt(global, chatId)?.content.text?.text;
+  return latestPromptStr && promptStrToPlatform(latestPromptStr);
+}
 
 addActionHandler('checkVersionNotification', (global, actions): ActionReturnType => {
   if (RELEASE_DATETIME && Date.now() > Number(RELEASE_DATETIME) + VERSION_NOTIFICATION_DURATION) {

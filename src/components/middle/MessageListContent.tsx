@@ -20,6 +20,7 @@ import { preventMessageInputBlur } from './helpers/preventMessageInputBlur';
 import useScrollHooks from './hooks/useScrollHooks';
 import useMessageObservers from './hooks/useMessageObservers';
 
+// eslint-disable-next-line import/no-cycle
 import Message from './message/Message';
 import SponsoredMessage from './message/SponsoredMessage';
 import ActionMessage from './ActionMessage';

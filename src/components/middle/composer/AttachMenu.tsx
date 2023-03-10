@@ -3,7 +3,7 @@ import React, {
 } from '../../../lib/teact/teact';
 
 import type { FC } from '../../../lib/teact/teact';
-import type { GlobalState } from '../../../global/types';
+import type { ActionPayloads, GlobalState } from '../../../global/types';
 import type { ApiAttachMenuPeerType } from '../../../api/types';
 import type { ISettings } from '../../../types';
 
@@ -12,6 +12,7 @@ import {
   SUPPORTED_IMAGE_CONTENT_TYPES,
   SUPPORTED_VIDEO_CONTENT_TYPES,
 } from '../../../config';
+import type { Rank } from '../../../config';
 import { IS_TOUCH_ENV } from '../../../util/environment';
 import { openSystemFilesDialog } from '../../../util/systemFilesDialog';
 import { validateFiles } from '../../../util/files';
@@ -33,6 +34,10 @@ export type OwnProps = {
   isButtonVisible: boolean;
   canAttachMedia: boolean;
   canAttachPolls: boolean;
+  canAttachDelegatePolls: boolean;
+  canAttachRankingPolls: { [r in Rank]: boolean };
+  canAttachAccountPrompts: boolean;
+  canAttachResultReport: boolean;
   canSendPhotos: boolean;
   canSendVideos: boolean;
   canSendDocuments: boolean;
@@ -42,6 +47,7 @@ export type OwnProps = {
   peerType?: ApiAttachMenuPeerType;
   onFileSelect: (files: File[], shouldSuggestCompression?: boolean) => void;
   onPollCreate: () => void;
+  onConsensusMsg: (payload: ActionPayloads['composeConsensusMessage']) => void;
   theme: ISettings['theme'];
 };
 
@@ -51,6 +57,10 @@ const AttachMenu: FC<OwnProps> = ({
   isButtonVisible,
   canAttachMedia,
   canAttachPolls,
+  canAttachDelegatePolls,
+  canAttachRankingPolls,
+  canAttachResultReport,
+  canAttachAccountPrompts,
   canSendPhotos,
   canSendVideos,
   canSendDocuments,
@@ -60,6 +70,7 @@ const AttachMenu: FC<OwnProps> = ({
   isScheduled,
   onFileSelect,
   onPollCreate,
+  onConsensusMsg,
   theme,
 }) => {
   const [isAttachMenuOpen, openAttachMenu, closeAttachMenu] = useFlag();
@@ -108,6 +119,22 @@ const AttachMenu: FC<OwnProps> = ({
       ), (e) => handleFileSelect(e, false));
   }, [canSendAudios, canSendDocuments, handleFileSelect]);
 
+  const handleDelegatePoll = useCallback(() => {
+    onConsensusMsg({ type: 'delegatePoll' });
+  }, [onConsensusMsg]);
+
+  const handleRankingPoll = useCallback((rank: Rank) => {
+    onConsensusMsg({ type: 'rankingsPoll', rank });
+  }, [onConsensusMsg]);
+
+  const handleAccountPrompt = useCallback(() => {
+    onConsensusMsg({ type: 'accountPrompt' });
+  }, [onConsensusMsg]);
+
+  const handleResultReport = useCallback(() => {
+    onConsensusMsg({ type: 'resultsReport' });
+  }, [onConsensusMsg]);
+
   const bots = useMemo(() => {
     return Object.values(attachBots).filter((bot) => {
       if (!peerType) return false;
@@ -122,6 +149,15 @@ const AttachMenu: FC<OwnProps> = ({
 
   if (!isButtonVisible) {
     return undefined;
+  }
+
+  function renderRankingPoll(rank: Rank) {
+    return (
+      // eslint-disable-next-line react/jsx-no-bind
+      <MenuItem icon="poll" onClick={() => handleRankingPoll(rank)}>
+        {lang(`Level ${rank} poll`)}
+      </MenuItem>
+    );
   }
 
   return (
@@ -189,6 +225,32 @@ const AttachMenu: FC<OwnProps> = ({
             onMenuClosed={unmarkAttachmentBotMenuOpen}
           />
         ))}
+
+        {canAttachAccountPrompts && (
+          <MenuItem icon="poll" onClick={handleAccountPrompt}>
+            {lang('Account prompt')}
+          </MenuItem>
+        )}
+
+        {canAttachPolls && canAttachRankingPolls[6] && renderRankingPoll(6) }
+        {canAttachPolls && canAttachRankingPolls[5] && renderRankingPoll(5) }
+        {canAttachPolls && canAttachRankingPolls[4] && renderRankingPoll(4) }
+        {canAttachPolls && canAttachRankingPolls[3] && renderRankingPoll(3) }
+        {canAttachPolls && canAttachRankingPolls[2] && renderRankingPoll(2) }
+        {canAttachPolls && canAttachRankingPolls[1] && renderRankingPoll(1) }
+
+        {canAttachPolls && canAttachDelegatePolls && (
+          <MenuItem icon="poll" onClick={handleDelegatePoll}>
+            {lang('Delegate poll')}
+          </MenuItem>
+        )}
+
+        {canAttachResultReport && (
+          <MenuItem icon="poll" onClick={handleResultReport}>
+            {lang('Consensus results')}
+          </MenuItem>
+        )}
+
       </Menu>
     </div>
   );

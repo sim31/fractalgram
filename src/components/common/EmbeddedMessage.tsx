@@ -23,6 +23,7 @@ import useMedia from '../../hooks/useMedia';
 import useThumbnail from '../../hooks/useThumbnail';
 import useLang from '../../hooks/useLang';
 
+// eslint-disable-next-line import/no-cycle
 import ActionMessage from '../middle/ActionMessage';
 import MessageSummary from './MessageSummary';
 import MediaSpoiler from './MediaSpoiler';

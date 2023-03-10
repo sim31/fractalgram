@@ -28,6 +28,9 @@ import Notification from '../../ui/Notification';
 import PollOption from './PollOption';
 
 import './Poll.scss';
+import type { ChatConsensusMessages } from '../../../global/types';
+import { selectChat, selectChatConsensusMsgs } from '../../../global/selectors';
+import { isConsensusMsg } from '../../../global/helpers/consensusMessages';
 
 type OwnProps = {
   message: ApiMessage;
@@ -38,6 +41,8 @@ type OwnProps = {
 type StateProps = {
   recentVoterIds?: number[];
   usersById: Record<string, ApiUser>;
+  consensusMessages: ChatConsensusMessages;
+  memberCount?: number;
 };
 
 const SOLUTION_CONTAINER_ID = '#middle-column-portals';
@@ -50,6 +55,8 @@ const Poll: FC<OwnProps & StateProps> = ({
   recentVoterIds,
   usersById,
   onSendVote,
+  consensusMessages,
+  memberCount,
 }) => {
   const { loadMessage, openPollResults, requestConfetti } = getActions();
 
@@ -72,6 +79,7 @@ const Poll: FC<OwnProps & StateProps> = ({
   const canViewResult = !canVote && summary.isPublic && Number(results.totalVoters) > 0;
   const isMultiple = canVote && summary.multipleChoice;
   const maxVotersCount = voteResults ? Math.max(...voteResults.map((r) => r.votersCount)) : totalVoters;
+  const isConsensusPoll = consensusMessages && isConsensusMsg(consensusMessages, message.id);
   const correctResults = voteResults ? voteResults.reduce((answers: string[], r) => {
     if (r.isCorrect) {
       answers.push(r.option);
@@ -212,15 +220,22 @@ const Poll: FC<OwnProps & StateProps> = ({
   const lang = useLang();
 
   function renderResultOption(answer: ApiPollAnswer) {
+    let total = totalVoters;
+    let showFraction = false;
+    if (isConsensusPoll && memberCount) {
+      total = memberCount;
+      showFraction = true;
+    }
     return (
       <PollOption
         key={answer.option}
         shouldAnimate={wasSubmitted || !canVote}
         answer={answer}
         voteResults={voteResults}
-        totalVoters={totalVoters}
+        totalVoters={total}
         maxVotersCount={maxVotersCount}
         correctResults={correctResults}
+        showFraction={showFraction}
       />
     );
   }
@@ -303,8 +318,13 @@ const Poll: FC<OwnProps & StateProps> = ({
           {summary.answers.map(renderResultOption)}
         </div>
       )}
-      {!canViewResult && !isMultiple && (
+      {!isConsensusPoll && !canViewResult && !isMultiple && (
         <div className="poll-voters-count">{getReadableVotersCount(lang, summary.quiz, results.totalVoters)}</div>
+      )}
+      {isConsensusPoll && !!memberCount && !isMultiple && (
+        <div className="poll-voters-count">
+          {results.totalVoters}/{getReadableVotersCount(lang, summary.quiz, memberCount)}
+        </div>
       )}
       {isMultiple && (
         <Button
@@ -359,16 +379,21 @@ function stopPropagation(e: React.MouseEvent<HTMLDivElement>) {
 }
 
 export default memo(withGlobal<OwnProps>(
-  (global, { poll }) => {
+  (global, { message, poll }) => {
     const { recentVoterIds } = poll.results;
     const { users: { byId: usersById } } = global;
     if (!recentVoterIds || recentVoterIds.length === 0) {
       return {};
     }
 
+    const memberCount = selectChat(global, message.chatId)?.membersCount;
+    const consensusMessages = selectChatConsensusMsgs(global, message.chatId);
+
     return {
       recentVoterIds,
       usersById,
+      memberCount,
+      consensusMessages,
     };
   },
 )(Poll));

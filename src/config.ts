@@ -1,6 +1,6 @@
-import type { ApiLimitType } from './global/types';
+import type { ApiLimitType, ExtPlatformInfo } from './global/types';
 
-export const APP_NAME = process.env.APP_NAME || 'Telegram WebZ';
+export const APP_NAME = process.env.APP_NAME || 'Fractalgram';
 export const APP_VERSION = process.env.APP_VERSION!;
 export const RELEASE_DATETIME = process.env.RELEASE_DATETIME;
 
@@ -292,3 +292,42 @@ export const DEFAULT_LIMITS: Record<ApiLimitType, readonly [number, number]> = {
   channelsPublic: [10, 20],
   aboutLength: [70, 140],
 };
+
+export const RANK_POLL_REGEX = /^Who should be ranked as level ([1-6])\?$/;
+export const RANK_POLL_BASE_STR = 'Who should be ranked as level';
+export const RANK_POLL_STRS = [
+  `${RANK_POLL_BASE_STR} 1?`,
+  `${RANK_POLL_BASE_STR} 2?`,
+  `${RANK_POLL_BASE_STR} 3?`,
+  `${RANK_POLL_BASE_STR} 4?`,
+  `${RANK_POLL_BASE_STR} 5?`,
+  `${RANK_POLL_BASE_STR} 6?`,
+];
+export const SELECT_DELEGATE_REGEX = /^Who should be the delegate of this group\?$/;
+export const SELECT_DELEGATE_STR = 'Who should be the delegate of this group?';
+export const ALLOWED_RANKS: Rank[] = [6, 5, 4, 3, 2, 1];
+export type Rank = 6 | 5 | 4 | 3 | 2 | 1;
+
+export const DEFAULT_FRACTAL_NAME = 'EdenFractal';
+export const FRACTAL_INFO: Record<string, ExtPlatformInfo> = {
+  EdenFractal: {
+    fractalName: 'EdenFractal',
+    submitUrl: 'https://edenfracfront.web.app',
+    platform: 'EOS',
+    accountInfoUrl: 'https://bloks.io/account',
+  },
+};
+export const DEFAULT_PLATFORM = FRACTAL_INFO[DEFAULT_FRACTAL_NAME].platform;
+export const FRACTAL_INFO_BY_PLATFORM: Record<string, ExtPlatformInfo> = {
+  EOS: {
+    fractalName: 'EdenFractal',
+    submitUrl: 'https://edenfracfront.web.app',
+    platform: 'EOS',
+    accountInfoUrl: 'https://bloks.io/account',
+  },
+};
+
+export const ACCOUNT_PROMPT_RE = /^Please enter your (\w+) account as a reply to this message$/;
+export const PLATFORM_RE = /^\w+$/;
+export const ACCOUNT_PROMPT_TEMPLATE = 'Please enter your <PLATFORM> account as a reply to this message';
+export const ACCOUNT_PROMPT_REPLACE_RE = /<PLATFORM>/;

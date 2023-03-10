@@ -15,6 +15,7 @@ import type { LangFn } from '../../hooks/useLang';
 import {
   ARCHIVED_FOLDER_ID, GENERAL_TOPIC_ID, REPLIES_USER_ID, TME_LINK_PREFIX,
 } from '../../config';
+import type { Rank } from '../../config';
 import { orderBy } from '../../util/iteratees';
 import { getUserFirstOrLastName } from './users';
 import { formatDateToString, formatTime } from '../../util/dateFormat';
@@ -217,6 +218,10 @@ export interface IAllowedAttachmentOptions {
   canSendStickers: boolean;
   canSendGifs: boolean;
   canAttachEmbedLinks: boolean;
+  canAttachDelegatePolls: boolean;
+  canAttachRankingPolls: { [r in Rank]: boolean };
+  canAttachAccountPrompts: boolean;
+  canAttachResultReport: boolean;
   canSendPhotos: boolean;
   canSendVideos: boolean;
   canSendRoundVideos: boolean;
@@ -234,6 +239,17 @@ export function getAllowedAttachmentOptions(chat?: ApiChat, isChatWithBot = fals
       canSendStickers: false,
       canSendGifs: false,
       canAttachEmbedLinks: false,
+      canAttachDelegatePolls: false,
+      canAttachRankingPolls: {
+        1: false,
+        2: false,
+        3: false,
+        4: false,
+        5: false,
+        6: false,
+      },
+      canAttachAccountPrompts: false,
+      canAttachResultReport: false,
       canSendPhotos: false,
       canSendVideos: false,
       canSendRoundVideos: false,
@@ -245,6 +261,9 @@ export function getAllowedAttachmentOptions(chat?: ApiChat, isChatWithBot = fals
   }
 
   const isAdmin = isChatAdmin(chat);
+  // Need full info for creating polls as well
+  const memberCount = chat.fullInfo?.members?.length;
+  const canDoConsensus = memberCount ? memberCount > 2 && memberCount < 7 : false;
 
   return {
     canAttachMedia: isAdmin || !isUserRightBanned(chat, 'sendMedia'),
@@ -252,6 +271,17 @@ export function getAllowedAttachmentOptions(chat?: ApiChat, isChatWithBot = fals
     canSendStickers: isAdmin || !isUserRightBanned(chat, 'sendStickers'),
     canSendGifs: isAdmin || !isUserRightBanned(chat, 'sendGifs'),
     canAttachEmbedLinks: isAdmin || !isUserRightBanned(chat, 'embedLinks'),
+    canAttachAccountPrompts: canDoConsensus,
+    canAttachDelegatePolls: canDoConsensus,
+    canAttachResultReport: canDoConsensus,
+    canAttachRankingPolls: {
+      6: canDoConsensus,
+      5: canDoConsensus,
+      4: canDoConsensus && memberCount ? memberCount >= 3 : false,
+      3: canDoConsensus && memberCount ? memberCount >= 4 : false,
+      2: canDoConsensus && memberCount ? memberCount >= 5 : false,
+      1: canDoConsensus && memberCount ? memberCount >= 6 : false,
+    },
     canSendPhotos: isAdmin || !isUserRightBanned(chat, 'sendPhotos'),
     canSendVideos: isAdmin || !isUserRightBanned(chat, 'sendVideos'),
     canSendRoundVideos: isAdmin || !isUserRightBanned(chat, 'sendRoundvideos'),

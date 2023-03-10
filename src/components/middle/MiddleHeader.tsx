@@ -57,6 +57,7 @@ import GroupChatInfo from '../common/GroupChatInfo';
 import UnreadCounter from '../common/UnreadCounter';
 import Transition from '../ui/Transition';
 import Button from '../ui/Button';
+// eslint-disable-next-line import/no-cycle
 import HeaderActions from './HeaderActions';
 import HeaderPinnedMessage from './HeaderPinnedMessage';
 import AudioPlayer from './AudioPlayer';

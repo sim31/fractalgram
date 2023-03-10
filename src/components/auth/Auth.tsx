@@ -1,17 +1,17 @@
 import type { FC } from '../../lib/teact/teact';
 import React, { memo } from '../../lib/teact/teact';
-import { getActions, withGlobal } from '../../global';
+import { withGlobal } from '../../global';
 
 import type { GlobalState } from '../../global/types';
 
 import '../../global/actions/initial';
 import { PLATFORM_ENV } from '../../util/environment';
-import useHistoryBack from '../../hooks/useHistoryBack';
 import useCurrentOrPrev from '../../hooks/useCurrentOrPrev';
 
 import Transition from '../ui/Transition';
-import AuthPhoneNumber from './AuthPhoneNumber';
 import AuthCode from './AuthCode.async';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import AuthPhoneNumber from './AuthPhoneNumber';
 import AuthPassword from './AuthPassword.async';
 import AuthRegister from './AuthRegister.async';
 import AuthQrCode from './AuthQrCode';
@@ -23,25 +23,7 @@ type StateProps = Pick<GlobalState, 'authState'>;
 const Auth: FC<StateProps> = ({
   authState,
 }) => {
-  const {
-    returnToAuthPhoneNumber, goToAuthQrCode,
-  } = getActions();
-
   const isMobile = PLATFORM_ENV === 'iOS' || PLATFORM_ENV === 'Android';
-
-  const handleChangeAuthorizationMethod = () => {
-    if (!isMobile) {
-      goToAuthQrCode();
-    } else {
-      returnToAuthPhoneNumber();
-    }
-  };
-
-  useHistoryBack({
-    isActive: (!isMobile && authState === 'authorizationStateWaitPhoneNumber')
-      || (isMobile && authState === 'authorizationStateWaitQrCode'),
-    onBack: handleChangeAuthorizationMethod,
-  });
 
   // For animation purposes
   const renderingAuthState = useCurrentOrPrev(
@@ -57,12 +39,12 @@ const Auth: FC<StateProps> = ({
         return <AuthPassword />;
       case 'authorizationStateWaitRegistration':
         return <AuthRegister />;
-      case 'authorizationStateWaitPhoneNumber':
-        return <AuthPhoneNumber />;
       case 'authorizationStateWaitQrCode':
         return <AuthQrCode />;
       default:
-        return isMobile ? <AuthPhoneNumber /> : <AuthQrCode />;
+        // Hack to avoid a bug where clicks are triggered on hidden elements
+        // eslint-disable-next-line no-constant-condition
+        return true ? <AuthQrCode /> : <AuthPhoneNumber />;
     }
   }
 

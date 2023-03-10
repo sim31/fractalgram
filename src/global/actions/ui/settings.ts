@@ -12,6 +12,7 @@ import { getCurrentTabId } from '../../../util/establishMultitabRole';
 let prevGlobal: GlobalState | undefined;
 
 addCallback((global: GlobalState) => {
+  // eslint-disable-next-line eslint-multitab-tt/no-getactions-in-actions
   const { updatePageTitle } = getActions();
 
   const settings = global.settings.byKey;

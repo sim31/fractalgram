@@ -1,5 +1,6 @@
 import type {
   GlobalState, MessageListType, TabArgs, Thread, TabThread, ChatTranslatedMessages,
+  AccountMap, ChatConsensusMessages, ExtUser,
 } from '../types';
 import type {
   ApiChat,
@@ -8,14 +9,16 @@ import type {
   ApiMessageOutgoingStatus,
   ApiStickerSetInfo,
   ApiUser,
+  ApiPoll,
 } from '../../api/types';
 import { ApiMessageEntityTypes, MAIN_THREAD_ID } from '../../api/types';
 
+import type { Rank } from '../../config';
 import {
   GENERAL_TOPIC_ID, LOCAL_MESSAGE_MIN_ID, REPLIES_USER_ID, SERVICE_NOTIFICATIONS_USER_ID,
 } from '../../config';
 import {
-  selectChat, selectChatBot, selectIsChatWithSelf,
+  selectChat, selectChatBot, selectChatUsers, selectIsChatWithSelf,
 } from './chats';
 import {
   selectIsCurrentUserPremium, selectIsUserOrChatContact, selectUser, selectUserStatus,
@@ -79,6 +82,138 @@ export function selectCurrentChat<T extends GlobalState>(
 
 export function selectChatMessages<T extends GlobalState>(global: T, chatId: string) {
   return global.messages.byChatId[chatId]?.byId;
+}
+
+export function selectChatConsensusMsgs(global: GlobalState, chatId: string): ChatConsensusMessages | undefined {
+  return global.messages.byChatId[chatId]?.consensusMsgs;
+}
+
+export function selectChatDelegatePolls(global: GlobalState, chatId: string) {
+  return selectChatConsensusMsgs(global, chatId)?.delegatePolls;
+}
+
+export function selectChatRankingPolls(global: GlobalState, chatId: string) {
+  return selectChatConsensusMsgs(global, chatId)?.rankingPolls;
+}
+
+// Returns userId -> ExtUser on platform
+export function selectChatMemberAccountMap(
+  global: GlobalState, chat: ApiChat, platform?: string,
+): AccountMap | undefined {
+  const u = selectChatUsers(global, chat);
+  if (!u?.every((val) => val !== undefined)) {
+    return undefined;
+  }
+  const users = u.filter((user) => user !== undefined) as ApiUser[];
+
+  const accountMap = new Map<string, ExtUser>(users.map((user) => [user.id, { ...user, extAccounts: {} }]));
+
+  if (!platform) {
+    return accountMap;
+  }
+
+  const consensusMsgs = selectChatConsensusMsgs(global, chat.id);
+  if (!consensusMsgs) {
+    return accountMap;
+  }
+  const accountMsgs = consensusMsgs.extAccountReplies[platform];
+  if (!accountMsgs) {
+    return accountMap;
+  }
+  const byId = selectChatMessages(global, chat.id);
+  if (!byId) {
+    return undefined;
+  }
+
+  // userId -> date
+  const dateMap = new Map<string, number>();
+  for (const msgId of accountMsgs) {
+    const msg = byId[msgId];
+    const text = msg?.content.text?.text;
+    const senderId = msg?.senderId;
+    const sender = senderId ? accountMap.get(senderId) : undefined;
+    if (text && senderId && sender) {
+      const existingDate = dateMap.get(senderId);
+
+      if (!existingDate || msg.date >= existingDate) {
+        const newValue: ExtUser = { ...sender, extAccounts: { [platform]: text } };
+        accountMap.set(senderId, newValue);
+        dateMap.set(senderId, msg.date);
+      }
+    }
+  }
+
+  return accountMap;
+}
+
+export function selectLatestMessage(
+  global: GlobalState, chatId: string, ids: number[],
+): ApiMessage | undefined {
+  const byId = selectChatMessages(global, chatId);
+  if (!byId) {
+    return undefined;
+  }
+
+  let maxDate = 0;
+  let lmsg: ApiMessage | undefined;
+  for (const id of ids) {
+    const msg: ApiMessage | undefined = byId[id];
+    if (msg && msg.date > maxDate) {
+      maxDate = msg.date;
+      lmsg = msg;
+    }
+  }
+
+  return lmsg;
+}
+
+export function selectAccountPrompts(global: GlobalState, chatId: string): Record<number, string> | undefined {
+  const consensusMsgs: ChatConsensusMessages | undefined = global.messages.byChatId[chatId]?.consensusMsgs;
+  if (!consensusMsgs) {
+    return undefined;
+  }
+
+  return consensusMsgs.extAccountPrompts;
+}
+
+export function selectLatestPrompt(global: GlobalState, chatId: string): ApiMessage | undefined {
+  const prompts = selectAccountPrompts(global, chatId);
+  if (!prompts) {
+    return undefined;
+  }
+
+  return selectLatestMessage(global, chatId, (Object.keys(prompts) as unknown[]) as number[]);
+}
+
+export function selectLatestDelegatePoll(
+  global: GlobalState, chatId: string,
+): ApiPoll | undefined {
+  const delegatePollIds = selectChatDelegatePolls(global, chatId);
+  if (!delegatePollIds) {
+    return undefined;
+  }
+
+  const msg = selectLatestMessage(global, chatId, [...delegatePollIds]);
+
+  return msg?.content.poll;
+}
+
+export function selectLatestRankingPoll(
+  global: GlobalState, chatId: string, rank: Rank,
+): ApiPoll | undefined {
+  const rankingPolls = selectChatRankingPolls(global, chatId);
+  if (!rankingPolls) {
+    return undefined;
+  }
+
+  const pollIds = rankingPolls[rank];
+  if (!pollIds) {
+    return undefined;
+  }
+
+  const msg = selectLatestMessage(global, chatId, [...pollIds]);
+
+  return msg?.content.poll;
 }
 
 export function selectChatScheduledMessages<T extends GlobalState>(global: T, chatId: string) {
