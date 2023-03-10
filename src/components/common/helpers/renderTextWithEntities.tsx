@@ -10,7 +10,7 @@ import type { TextFilter } from './renderText';
 import buildClassName from '../../../util/buildClassName';
 import renderText from './renderText';
 import { copyTextToClipboard } from '../../../util/clipboard';
-import { getTranslation } from '../../../util/langProvider';
+import { translate } from '../../../util/langProvider';
 import { buildCustomEmojiHtmlFromEntity } from '../../middle/composer/helpers/customEmoji';
 
 import MentionLink from '../../middle/message/MentionLink';
@@ -41,6 +41,7 @@ export function renderTextWithEntities(
   withTranslucentThumbs?: boolean,
   sharedCanvasRef?: React.RefObject<HTMLCanvasElement>,
   sharedCanvasHqRef?: React.RefObject<HTMLCanvasElement>,
+  cacheBuster?: string,
 ) {
   if (!entities || !entities.length) {
     return renderMessagePart(text, highlight, emojiSize, shouldRenderAsHtml, isSimple);
@@ -129,6 +130,7 @@ export function renderTextWithEntities(
         emojiSize,
         sharedCanvasRef,
         sharedCanvasHqRef,
+        cacheBuster,
       );
 
     if (Array.isArray(newEntity)) {
@@ -311,6 +313,7 @@ function processEntity(
   emojiSize?: number,
   sharedCanvasRef?: React.RefObject<HTMLCanvasElement>,
   sharedCanvasHqRef?: React.RefObject<HTMLCanvasElement>,
+  cacheBuster?: string,
 ) {
   const entityText = typeof entityContent === 'string' && entityContent;
   const renderedContent = nestedEntityContent.length ? nestedEntityContent : entityContent;
@@ -334,6 +337,7 @@ function processEntity(
     if (entity.type === ApiMessageEntityTypes.CustomEmoji) {
       return (
         <CustomEmoji
+          key={cacheBuster ? `${cacheBuster}-${entity.offset}` : undefined}
           documentId={entity.documentId}
           size={emojiSize}
           withSharedAnimation
@@ -458,6 +462,7 @@ function processEntity(
     case ApiMessageEntityTypes.CustomEmoji:
       return (
         <CustomEmoji
+          key={cacheBuster ? `${cacheBuster}-${entity.offset}` : undefined}
           documentId={entity.documentId}
           size={emojiSize}
           withSharedAnimation
@@ -502,7 +507,7 @@ function processEntityAsHtml(
     case ApiMessageEntityTypes.Code:
       return `<code class="text-entity-code">${renderedContent}</code>`;
     case ApiMessageEntityTypes.Pre:
-      return `\`\`\`${entity.language || ''}<br/>${renderedContent}<br/>\`\`\`<br/>`;
+      return `\`\`\`${renderText(entity.language || '', ['escape_html'])}<br/>${renderedContent}<br/>\`\`\`<br/>`;
     case ApiMessageEntityTypes.Strike:
       return `<del>${renderedContent}</del>`;
     case ApiMessageEntityTypes.MentionName:
@@ -550,6 +555,6 @@ function handleHashtagClick(e: React.MouseEvent<HTMLAnchorElement>) {
 function handleCodeClick(e: React.MouseEvent<HTMLElement>) {
   copyTextToClipboard(e.currentTarget.innerText);
   getActions().showNotification({
-    message: getTranslation('TextCopied'),
+    message: translate('TextCopied'),
   });
 }

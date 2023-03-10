@@ -6,17 +6,21 @@ import { getActions, getGlobal, withGlobal } from '../../global';
 
 import type { AnimationLevel, LangCode } from '../../types';
 import type {
+  ApiAttachBot,
   ApiChat, ApiMessage, ApiUser,
 } from '../../api/types';
-import type { ApiLimitTypeWithModal, GlobalState } from '../../global/types';
+import type { ApiLimitTypeWithModal, TabState } from '../../global/types';
 
 import '../../global/actions/all';
 import {
-  BASE_EMOJI_KEYWORD_LANG, DEBUG, INACTIVE_MARKER, PAGE_TITLE,
+  BASE_EMOJI_KEYWORD_LANG, DEBUG, INACTIVE_MARKER,
 } from '../../config';
 import { IS_ANDROID } from '../../util/environment';
 import {
   selectChatMessage,
+  selectTabState,
+  selectCurrentMessageList,
+  selectIsCurrentUserPremium,
   selectIsForwardModalOpen,
   selectIsMediaViewerOpen,
   selectIsRightColumnShown,
@@ -26,20 +30,22 @@ import {
 import buildClassName from '../../util/buildClassName';
 import { waitForTransitionEnd } from '../../util/cssAnimationEndListeners';
 import { processDeepLink } from '../../util/deeplink';
-import windowSize from '../../util/windowSize';
-import { getAllNotificationsCount } from '../../util/folderManager';
+import { parseInitialLocationHash, parseLocationHash } from '../../util/routing';
 import { fastRaf } from '../../util/schedulers';
+import { Bundles, loadBundle } from '../../util/moduleLoader';
+import updateIcon from '../../util/updateIcon';
 
 import useEffectWithPrevDeps from '../../hooks/useEffectWithPrevDeps';
 import useBackgroundMode from '../../hooks/useBackgroundMode';
 import useBeforeUnload from '../../hooks/useBeforeUnload';
-import useOnChange from '../../hooks/useOnChange';
+import useSyncEffect from '../../hooks/useSyncEffect';
 import usePreventPinchZoomGesture from '../../hooks/usePreventPinchZoomGesture';
 import useForceUpdate from '../../hooks/useForceUpdate';
 import useShowTransition from '../../hooks/useShowTransition';
 import { dispatchHeavyAnimationEvent } from '../../hooks/useHeavyAnimationCheck';
 import useInterval from '../../hooks/useInterval';
-import { parseInitialLocationHash, parseLocationHash } from '../../util/routing';
+import useAppLayout from '../../hooks/useAppLayout';
+import useTimeout from '../../hooks/useTimeout';
 
 import StickerSetModal from '../common/StickerSetModal.async';
 import UnreadCount from '../common/UnreadCounter';
@@ -77,10 +83,16 @@ import AttachBotRecipientPicker from './AttachBotRecipientPicker.async';
 
 import './Main.scss';
 
+export interface OwnProps {
+  isMobile?: boolean;
+}
+
 type StateProps = {
+  isMasterTab?: boolean;
   chat?: ApiChat;
   lastSyncTime?: number;
   isLeftColumnOpen: boolean;
+  isMiddleColumnOpen: boolean;
   isRightColumnOpen: boolean;
   isMediaViewerOpen: boolean;
   isForwardModalOpen: boolean;
@@ -102,35 +114,36 @@ type StateProps = {
   addedCustomEmojiIds?: string[];
   newContactUserId?: string;
   newContactByPhoneNumber?: boolean;
-  openedGame?: GlobalState['openedGame'];
+  openedGame?: TabState['openedGame'];
   gameTitle?: string;
   isRatePhoneCallModalOpen?: boolean;
-  webApp?: GlobalState['webApp'];
+  webApp?: TabState['webApp'];
   isPremiumModalOpen?: boolean;
-  botTrustRequest?: GlobalState['botTrustRequest'];
+  botTrustRequest?: TabState['botTrustRequest'];
   botTrustRequestBot?: ApiUser;
-  attachBotToInstall?: ApiUser;
-  requestedAttachBotInChat?: GlobalState['requestedAttachBotInChat'];
-  requestedDraft?: GlobalState['requestedDraft'];
+  attachBotToInstall?: ApiAttachBot;
+  requestedAttachBotInChat?: TabState['requestedAttachBotInChat'];
+  requestedDraft?: TabState['requestedDraft'];
   currentUser?: ApiUser;
-  urlAuth?: GlobalState['urlAuth'];
+  urlAuth?: TabState['urlAuth'];
   limitReached?: ApiLimitTypeWithModal;
   deleteFolderDialogId?: number;
   isPaymentModalOpen?: boolean;
   isReceiptModalOpen?: boolean;
+  isCurrentUserPremium?: boolean;
 };
 
-const NOTIFICATION_INTERVAL = 1000;
 const APP_OUTDATED_TIMEOUT_MS = 5 * 60 * 1000; // 5 min
-
-let notificationInterval: number | undefined;
+const CALL_BUNDLE_LOADING_DELAY_MS = 5000; // 5 sec
 
 // eslint-disable-next-line @typescript-eslint/naming-convention
 let DEBUG_isLogged = false;
 
-const Main: FC<StateProps> = ({
+const Main: FC<OwnProps & StateProps> = ({
   lastSyncTime,
+  isMobile,
   isLeftColumnOpen,
+  isMiddleColumnOpen,
   isRightColumnOpen,
   isMediaViewerOpen,
   isForwardModalOpen,
@@ -167,21 +180,26 @@ const Main: FC<StateProps> = ({
   isPremiumModalOpen,
   isPaymentModalOpen,
   isReceiptModalOpen,
+  isCurrentUserPremium,
   deleteFolderDialogId,
+  isMasterTab,
 }) => {
   const {
     loadAnimatedEmojis,
     loadNotificationSettings,
     loadNotificationExceptions,
     updateIsOnline,
+    onTabFocusChange,
     loadTopInlineBots,
     loadEmojiKeywords,
     loadCountryList,
     loadAvailableReactions,
     loadStickerSets,
     loadPremiumGifts,
+    loadDefaultTopicIcons,
     loadAddedStickers,
     loadFavoriteStickers,
+    loadDefaultStatusIcons,
     ensureTimeFormat,
     closeStickerSetModal,
     closeCustomEmojiSets,
@@ -196,6 +214,9 @@ const Main: FC<StateProps> = ({
     clearReceipt,
     checkAppVersion,
     openChat,
+    toggleLeftColumn,
+    loadRecentEmojiStatuses,
+    updatePageTitle,
   } = getActions();
 
   if (DEBUG && !DEBUG_isLogged) {
@@ -204,11 +225,27 @@ const Main: FC<StateProps> = ({
     console.log('>>> RENDER MAIN');
   }
 
-  useInterval(checkAppVersion, APP_OUTDATED_TIMEOUT_MS, true);
+  // Preload Calls bundle to initialize sounds for iOS
+  useTimeout(() => {
+    void loadBundle(Bundles.Calls);
+  }, CALL_BUNDLE_LOADING_DELAY_MS);
+
+  const { isDesktop } = useAppLayout();
+  useEffect(() => {
+    if (!isLeftColumnOpen && !isMiddleColumnOpen && !isDesktop) {
+      // Always display at least one column
+      toggleLeftColumn();
+    } else if (isLeftColumnOpen && isMiddleColumnOpen && isMobile) {
+      // Can't have two active columns at the same time
+      toggleLeftColumn();
+    }
+  }, [isDesktop, isLeftColumnOpen, isMiddleColumnOpen, isMobile, toggleLeftColumn]);
+
+  useInterval(checkAppVersion, isMasterTab ? APP_OUTDATED_TIMEOUT_MS : undefined, true);
 
   // Initial API calls
   useEffect(() => {
-    if (lastSyncTime) {
+    if (lastSyncTime && isMasterTab) {
       updateIsOnline(true);
       loadConfig();
       loadAppConfig();
@@ -222,38 +259,44 @@ const Main: FC<StateProps> = ({
       loadAttachBots();
       loadContactList();
       loadPremiumGifts();
+      loadDefaultTopicIcons();
+      loadDefaultStatusIcons();
       checkAppVersion();
+      if (isCurrentUserPremium) {
+        loadRecentEmojiStatuses();
+      }
     }
   }, [
     lastSyncTime, loadAnimatedEmojis, loadEmojiKeywords, loadNotificationExceptions, loadNotificationSettings,
     loadTopInlineBots, updateIsOnline, loadAvailableReactions, loadAppConfig, loadAttachBots, loadContactList,
-    loadPremiumGifts, checkAppVersion, loadConfig, loadGenericEmojiEffects,
+    loadPremiumGifts, checkAppVersion, loadConfig, loadGenericEmojiEffects, loadDefaultTopicIcons,
+    loadDefaultStatusIcons, loadRecentEmojiStatuses, isCurrentUserPremium, isMasterTab,
   ]);
 
   // Language-based API calls
   useEffect(() => {
-    if (lastSyncTime) {
+    if (lastSyncTime && isMasterTab) {
       if (language !== BASE_EMOJI_KEYWORD_LANG) {
-        loadEmojiKeywords({ language });
+        loadEmojiKeywords({ language: language! });
       }
 
       loadCountryList({ langCode: language });
     }
-  }, [language, lastSyncTime, loadCountryList, loadEmojiKeywords]);
+  }, [language, lastSyncTime, loadCountryList, loadEmojiKeywords, isMasterTab]);
 
   // Re-fetch cached saved emoji for `localDb`
   useEffectWithPrevDeps(([prevLastSyncTime]) => {
-    if (!prevLastSyncTime && lastSyncTime) {
+    if (!prevLastSyncTime && lastSyncTime && isMasterTab) {
       loadCustomEmojis({
         ids: Object.keys(getGlobal().customEmojis.byId),
         ignoreCache: true,
       });
     }
-  }, [lastSyncTime] as const);
+  }, [lastSyncTime, isMasterTab, loadCustomEmojis]);
 
   // Sticker sets
   useEffect(() => {
-    if (lastSyncTime) {
+    if (lastSyncTime && isMasterTab) {
       if (!addedSetIds || !addedCustomEmojiIds) {
         loadStickerSets();
         loadFavoriteStickers();
@@ -263,14 +306,17 @@ const Main: FC<StateProps> = ({
         loadAddedStickers();
       }
     }
-  }, [lastSyncTime, addedSetIds, loadStickerSets, loadFavoriteStickers, loadAddedStickers, addedCustomEmojiIds]);
+  }, [
+    lastSyncTime, addedSetIds, loadStickerSets, loadFavoriteStickers, loadAddedStickers, addedCustomEmojiIds,
+    isMasterTab,
+  ]);
 
   // Check version when service chat is ready
   useEffect(() => {
-    if (lastSyncTime && isServiceChatReady) {
+    if (lastSyncTime && isServiceChatReady && isMasterTab) {
       checkVersionNotification();
     }
-  }, [lastSyncTime, isServiceChatReady, checkVersionNotification]);
+  }, [lastSyncTime, isServiceChatReady, checkVersionNotification, isMasterTab]);
 
   // Ensure time format
   useEffect(() => {
@@ -298,20 +344,7 @@ const Main: FC<StateProps> = ({
         type: parsedLocationHash.type,
       });
     }
-  }, [lastSyncTime] as const);
-
-  // Prevent refresh by accidentally rotating device when listening to a voice chat
-  useEffect(() => {
-    if (!activeGroupCallId && !isPhoneCallActive) {
-      return undefined;
-    }
-
-    windowSize.disableRefresh();
-
-    return () => {
-      windowSize.enableRefresh();
-    };
-  }, [activeGroupCallId, isPhoneCallActive]);
+  }, [lastSyncTime, openChat]);
 
   const leftColumnTransition = useShowTransition(
     isLeftColumnOpen, undefined, true, undefined, shouldSkipHistoryAnimations,
@@ -320,8 +353,8 @@ const Main: FC<StateProps> = ({
   const forceUpdate = useForceUpdate();
 
   // Handle opening middle column
-  useOnChange(([prevIsLeftColumnOpen]) => {
-    if (prevIsLeftColumnOpen === undefined || animationLevel === 0) {
+  useSyncEffect(([prevIsLeftColumnOpen]) => {
+    if (prevIsLeftColumnOpen === undefined || isLeftColumnOpen === prevIsLeftColumnOpen || animationLevel === 0) {
       return;
     }
 
@@ -340,7 +373,7 @@ const Main: FC<StateProps> = ({
       willAnimateLeftColumnRef.current = false;
       forceUpdate();
     });
-  }, [isLeftColumnOpen]);
+  }, [animationLevel, forceUpdate, isLeftColumnOpen]);
 
   const rightColumnTransition = useShowTransition(
     isRightColumnOpen, undefined, true, undefined, shouldSkipHistoryAnimations,
@@ -349,8 +382,8 @@ const Main: FC<StateProps> = ({
   const [isNarrowMessageList, setIsNarrowMessageList] = useState(isRightColumnOpen);
 
   // Handle opening right column
-  useOnChange(([prevIsRightColumnOpen]) => {
-    if (prevIsRightColumnOpen === undefined) {
+  useSyncEffect(([prevIsRightColumnOpen]) => {
+    if (prevIsRightColumnOpen === undefined || isRightColumnOpen === prevIsRightColumnOpen) {
       return;
     }
 
@@ -369,7 +402,7 @@ const Main: FC<StateProps> = ({
       forceUpdate();
       setIsNarrowMessageList(isRightColumnOpen);
     });
-  }, [isRightColumnOpen]);
+  }, [animationLevel, forceUpdate, isRightColumnOpen]);
 
   const className = buildClassName(
     leftColumnTransition.hasShownClass && 'left-column-shown',
@@ -383,45 +416,18 @@ const Main: FC<StateProps> = ({
   );
 
   const handleBlur = useCallback(() => {
-    updateIsOnline(false);
-
-    const initialUnread = getAllNotificationsCount();
-    let index = 0;
-
-    clearInterval(notificationInterval);
-    notificationInterval = window.setInterval(() => {
-      if (document.title.includes(INACTIVE_MARKER)) {
-        updateIcon(false);
-        return;
-      }
-
-      if (index % 2 === 0) {
-        const newUnread = getAllNotificationsCount() - initialUnread;
-        if (newUnread > 0) {
-          updatePageTitle(`${newUnread} notification${newUnread > 1 ? 's' : ''}`);
-          updateIcon(true);
-        }
-      } else {
-        updatePageTitle(PAGE_TITLE);
-        updateIcon(false);
-      }
-
-      index++;
-    }, NOTIFICATION_INTERVAL);
-  }, [updateIsOnline]);
+    onTabFocusChange({ isBlurred: true });
+  }, [onTabFocusChange]);
 
   const handleFocus = useCallback(() => {
-    updateIsOnline(true);
-
-    clearInterval(notificationInterval);
-    notificationInterval = undefined;
+    onTabFocusChange({ isBlurred: false });
 
     if (!document.title.includes(INACTIVE_MARKER)) {
-      updatePageTitle(PAGE_TITLE);
+      updatePageTitle();
     }
 
     updateIcon(false);
-  }, [updateIsOnline]);
+  }, [onTabFocusChange, updatePageTitle]);
 
   const handleStickerSetModalClose = useCallback(() => {
     closeStickerSetModal();
@@ -439,8 +445,8 @@ const Main: FC<StateProps> = ({
   return (
     <div id="Main" className={className}>
       <LeftColumn />
-      <MiddleColumn />
-      <RightColumn />
+      <MiddleColumn isMobile={isMobile} />
+      <RightColumn isMobile={isMobile} />
       <MediaViewer isOpen={isMediaViewerOpen} />
       <ForwardRecipientPicker isOpen={isForwardModalOpen} />
       <DraftRecipientPicker requestedDraft={requestedDraft} />
@@ -486,35 +492,18 @@ const Main: FC<StateProps> = ({
   );
 };
 
-function updateIcon(asUnread: boolean) {
-  document.querySelectorAll<HTMLLinkElement>('link[rel="icon"], link[rel="alternate icon"]')
-    .forEach((link) => {
-      if (asUnread) {
-        if (!link.href.includes('favicon-unread')) {
-          link.href = link.href.replace('favicon', 'favicon-unread');
-        }
-      } else {
-        link.href = link.href.replace('favicon-unread', 'favicon');
-      }
-    });
-}
-
-// For some reason setting `document.title` to the same value
-// causes increment of Chrome Dev Tools > Performance Monitor > DOM Nodes counter
-function updatePageTitle(nextTitle: string) {
-  if (document.title !== nextTitle) {
-    document.title = nextTitle;
-  }
-}
-
-export default memo(withGlobal(
-  (global): StateProps => {
+export default memo(withGlobal<OwnProps>(
+  (global, { isMobile }): StateProps => {
     const {
       settings: {
         byKey: {
           animationLevel, language, wasTimeFormatSetManually,
         },
       },
+      lastSyncTime,
+    } = global;
+
+    const {
       botTrustRequest,
       requestedAttachBotInstall,
       requestedAttachBotInChat,
@@ -522,59 +511,75 @@ export default memo(withGlobal(
       urlAuth,
       webApp,
       safeLinkModalUrl,
-      lastSyncTime,
       openedStickerSetShortName,
       openedCustomEmojiSetIds,
       shouldSkipHistoryAnimations,
-    } = global;
-    const { chatId: audioChatId, messageId: audioMessageId } = global.audioPlayer;
+      openedGame,
+      audioPlayer,
+      isLeftColumnShown,
+      historyCalendarSelectedAt,
+      notifications,
+      dialogs,
+      newContact,
+      ratingPhoneCall,
+      premiumModal,
+      isMasterTab,
+      payment,
+      limitReachedModal,
+      deleteFolderDialogModal,
+    } = selectTabState(global);
+
+    const { chatId: audioChatId, messageId: audioMessageId } = audioPlayer;
     const audioMessage = audioChatId && audioMessageId
       ? selectChatMessage(global, audioChatId, audioMessageId)
       : undefined;
-    const openedGame = global.openedGame;
     const gameMessage = openedGame && selectChatMessage(global, openedGame.chatId, openedGame.messageId);
     const gameTitle = gameMessage?.content.game?.title;
     const currentUser = global.currentUserId ? selectUser(global, global.currentUserId) : undefined;
+    const { chatId } = selectCurrentMessageList(global) || {};
 
     return {
       lastSyncTime,
-      isLeftColumnOpen: global.isLeftColumnShown,
-      isRightColumnOpen: selectIsRightColumnShown(global),
+      isLeftColumnOpen: isLeftColumnShown,
+      isMiddleColumnOpen: Boolean(chatId),
+      isRightColumnOpen: selectIsRightColumnShown(global, isMobile),
       isMediaViewerOpen: selectIsMediaViewerOpen(global),
       isForwardModalOpen: selectIsForwardModalOpen(global),
-      hasNotifications: Boolean(global.notifications.length),
-      hasDialogs: Boolean(global.dialogs.length),
+      hasNotifications: Boolean(notifications.length),
+      hasDialogs: Boolean(dialogs.length),
       audioMessage,
       safeLinkModalUrl,
-      isHistoryCalendarOpen: Boolean(global.historyCalendarSelectedAt),
+      isHistoryCalendarOpen: Boolean(historyCalendarSelectedAt),
       shouldSkipHistoryAnimations,
       openedStickerSetShortName,
       openedCustomEmojiSetIds,
       isServiceChatReady: selectIsServiceChatReady(global),
-      activeGroupCallId: global.groupCalls.activeGroupCallId,
+      activeGroupCallId: isMasterTab ? global.groupCalls.activeGroupCallId : undefined,
       animationLevel,
       language,
       wasTimeFormatSetManually,
-      isPhoneCallActive: Boolean(global.phoneCall),
+      isPhoneCallActive: isMasterTab ? Boolean(global.phoneCall) : undefined,
       addedSetIds: global.stickers.added.setIds,
       addedCustomEmojiIds: global.customEmojis.added.setIds,
-      newContactUserId: global.newContact?.userId,
-      newContactByPhoneNumber: global.newContact?.isByPhoneNumber,
+      newContactUserId: newContact?.userId,
+      newContactByPhoneNumber: newContact?.isByPhoneNumber,
       openedGame,
       gameTitle,
-      isRatePhoneCallModalOpen: Boolean(global.ratingPhoneCall),
+      isRatePhoneCallModalOpen: Boolean(ratingPhoneCall),
       botTrustRequest,
       botTrustRequestBot: botTrustRequest && selectUser(global, botTrustRequest.botId),
-      attachBotToInstall: requestedAttachBotInstall && selectUser(global, requestedAttachBotInstall.botId),
+      attachBotToInstall: requestedAttachBotInstall?.bot,
       requestedAttachBotInChat,
       webApp,
       currentUser,
       urlAuth,
-      isPremiumModalOpen: global.premiumModal?.isOpen,
-      limitReached: global.limitReachedModal?.limit,
-      isPaymentModalOpen: global.payment.isPaymentModalOpen,
-      isReceiptModalOpen: Boolean(global.payment.receipt),
-      deleteFolderDialogId: global.deleteFolderDialogModal,
+      isCurrentUserPremium: selectIsCurrentUserPremium(global),
+      isPremiumModalOpen: premiumModal?.isOpen,
+      limitReached: limitReachedModal?.limit,
+      isPaymentModalOpen: payment.isPaymentModalOpen,
+      isReceiptModalOpen: Boolean(payment.receipt),
+      deleteFolderDialogId: deleteFolderDialogModal,
+      isMasterTab,
       requestedDraft,
     };
   },

@@ -15,11 +15,13 @@ import './Reactions.scss';
 type OwnProps = {
   message: ApiMessage;
   isOutside?: boolean;
+  maxWidth?: number;
   activeReactions?: ActiveReaction[];
   availableReactions?: ApiAvailableReaction[];
   metaChildren?: React.ReactNode;
   genericEffects?: ApiStickerSet;
   observeIntersection?: ObserveFn;
+  noRecentReactors?: boolean;
 };
 
 const MAX_RECENT_AVATARS = 3;
@@ -27,18 +29,23 @@ const MAX_RECENT_AVATARS = 3;
 const Reactions: FC<OwnProps> = ({
   message,
   isOutside,
+  maxWidth,
   activeReactions,
   availableReactions,
   metaChildren,
   genericEffects,
   observeIntersection,
+  noRecentReactors,
 }) => {
   const totalCount = useMemo(() => (
     message.reactions!.results.reduce((acc, reaction) => acc + reaction.count, 0)
   ), [message]);
 
   return (
-    <div className={buildClassName('Reactions', isOutside && 'is-outside')}>
+    <div
+      className={buildClassName('Reactions', isOutside && 'is-outside')}
+      style={maxWidth ? `max-width: ${maxWidth}px` : undefined}
+    >
       {message.reactions!.results.map((reaction) => (
         <ReactionButton
           key={getReactionUniqueKey(reaction.reaction)}
@@ -46,7 +53,7 @@ const Reactions: FC<OwnProps> = ({
           message={message}
           activeReactions={activeReactions}
           availableReactions={availableReactions}
-          withRecentReactors={totalCount <= MAX_RECENT_AVATARS}
+          withRecentReactors={totalCount <= MAX_RECENT_AVATARS && !noRecentReactors}
           genericEffects={genericEffects}
           observeIntersection={observeIntersection}
         />

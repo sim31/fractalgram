@@ -1,2 +1,0 @@
-(self.webpackChunkfractalgram=self.webpackChunkfractalgram||[]).push([[1879],{57604:a=>{a.exports=function(a){return{name:"LDIF",contains:[{className:"attribute",match:"^dn(?=:)",relevance:10},{className:"attribute",match:"^\\w+(?=:)"},{className:"literal",match:"^-"},a.HASH_COMMENT_MODE]}}}}]);
-//# sourceMappingURL=1879.994e564897835f01f172.js.map

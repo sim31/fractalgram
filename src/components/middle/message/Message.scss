@@ -64,24 +64,19 @@
     left: 0;
 
     margin-right: 0.3125rem;
-
-    @media (max-width: 600px) {
-      width: 2.5rem;
-      height: 2.5rem;
-    }
   }
 
   .quick-reaction {
-    --custom-emoji-size: 2rem;
+    --custom-emoji-size: 1.75rem;
 
     cursor: pointer;
     position: absolute;
-    right: -0.5rem;
-    bottom: -0.375rem;
+    right: -0.875rem;
+    bottom: -0.5rem;
     display: flex;
     align-items: center;
     justify-content: center;
-    transform: scale(0.75);
+    transform: scale(0.7);
     opacity: 0;
     transition: transform 0.2s ease-out, opacity 0.2s ease-out;
     transition-delay: 0.2s;
@@ -102,7 +97,7 @@
 
   &.own .quick-reaction {
     right: auto;
-    left: -0.5rem;
+    left: -0.75rem;
   }
 
   &.last-in-group {
@@ -558,6 +553,7 @@
   }
 
   .message-content {
+    &.has-replies:not(.custom-shape):not(.has-reactions) .WebPage.with-square-photo .media-inner,
     &.has-replies:not(.custom-shape):not(.has-reactions) .WebPage.with-video .media-inner {
       margin-bottom: 1.5rem !important;
     }
@@ -571,7 +567,7 @@
       }
     }
 
-    &.is-reply .EmbeddedMessage {
+    &.has-subheader .EmbeddedMessage {
       & + .Album,
       & + .Audio,
       & + .File {
@@ -579,8 +575,8 @@
       }
     }
 
-    &:not(.custom-shape).is-reply .media-inner,
-    &:not(.custom-shape).is-reply .Album,
+    &:not(.custom-shape).has-subheader .media-inner,
+    &:not(.custom-shape).has-subheader .Album,
     &:not(.custom-shape).force-sender-name .Album,
     &:not(.is-forwarded) .message-title ~ .media-inner {
       --border-top-left-radius: 0;

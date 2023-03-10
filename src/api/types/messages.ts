@@ -28,6 +28,7 @@ export interface ApiPhoto {
   sizes: ApiPhotoSize[];
   videoSizes?: ApiVideoSize[];
   blobUrl?: string;
+  isSpoiler?: boolean;
 }
 
 export interface ApiSticker {
@@ -43,10 +44,11 @@ export interface ApiSticker {
   isPreloadedGlobally?: boolean;
   hasEffect?: boolean;
   isFree?: boolean;
+  shouldUseTextColor?: boolean;
 }
 
 export interface ApiStickerSet {
-  archived?: true;
+  isArchived?: true;
   isLottie?: true;
   isVideos?: true;
   isEmoji?: true;
@@ -87,8 +89,10 @@ export interface ApiVideo {
   supportsStreaming?: boolean;
   isRound?: boolean;
   isGif?: boolean;
+  isSpoiler?: boolean;
   thumbnail?: ApiThumbnail;
   blobUrl?: string;
+  previewBlobUrl?: string;
   size: number;
 }
 
@@ -259,7 +263,7 @@ export interface ApiAction {
   text: string;
   targetUserIds?: string[];
   targetChatId?: string;
-  type: 'historyClear' | 'contactSignUp' | 'chatCreate' | 'other';
+  type: 'historyClear' | 'contactSignUp' | 'chatCreate' | 'topicCreate' | 'suggestProfilePhoto' | 'other';
   photo?: ApiPhoto;
   amount?: number;
   currency?: string;
@@ -268,6 +272,8 @@ export interface ApiAction {
   phoneCall?: PhoneCallAction;
   score?: number;
   months?: number;
+  topicEmojiIconId?: string;
+  isTopicAction?: boolean;
 }
 
 export interface ApiWebPage {
@@ -390,6 +396,7 @@ export interface ApiMessage {
   replyToChatId?: string;
   replyToMessageId?: number;
   replyToTopMessageId?: number;
+  isTopicReply?: true;
   sendingState?: 'messageSendingStatePending' | 'messageSendingStateFailed';
   forwardInfo?: ApiMessageForwardInfo;
   isDeleting?: boolean;
@@ -407,11 +414,13 @@ export interface ApiMessage {
   keyboardButtons?: ApiKeyboardButtons;
   keyboardPlaceholder?: string;
   isKeyboardSingleUse?: boolean;
+  isKeyboardSelective?: boolean;
   viaBotId?: string;
-  threadInfo?: ApiThreadInfo;
+  repliesThreadInfo?: ApiThreadInfo;
   postAuthorTitle?: string;
   isScheduled?: boolean;
   shouldHideKeyboardButtons?: boolean;
+  isHideKeyboardSelective?: boolean;
   isFromScheduled?: boolean;
   isSilent?: boolean;
   seenByUserIds?: string[];
@@ -483,6 +492,7 @@ export type ApiReactionCustomEmoji = {
 export type ApiReaction = ApiReactionEmoji | ApiReactionCustomEmoji;
 
 export interface ApiThreadInfo {
+  isComments?: boolean;
   threadId: number;
   chatId: string;
   topMessageId?: number;
@@ -594,6 +604,7 @@ export type ApiKeyboardButtons = ApiKeyboardButton[][];
 export type ApiReplyKeyboard = {
   keyboardPlaceholder?: string;
   isKeyboardSingleUse?: boolean;
+  isKeyboardSelective?: boolean;
 } & {
   [K in 'inlineButtons' | 'keyboardButtons']?: ApiKeyboardButtons;
 };

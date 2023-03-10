@@ -1,6 +1,6 @@
 import type { ApiDocument, ApiPhoto, ApiReaction } from './messages';
 import type { ApiUser } from './users';
-import type { ApiLimitType } from '../../global/types';
+import type { ApiLimitType, CallbackAction } from '../../global/types';
 
 export interface ApiInitialArgs {
   userAgent: string;
@@ -12,6 +12,7 @@ export interface ApiInitialArgs {
   maxBufferSize?: number;
   webAuthToken?: string;
   dcId?: number;
+  mockScenario?: string;
 }
 
 export interface ApiOnProgress {
@@ -26,6 +27,7 @@ export interface ApiOnProgress {
 
 export interface ApiAttachment {
   blobUrl: string;
+  compressedBlobUrl?: string;
   filename: string;
   mimeType: string;
   size: number;
@@ -44,6 +46,11 @@ export interface ApiAttachment {
     performer?: string;
   };
   previewBlobUrl?: string;
+
+  shouldSendAsFile?: true;
+  shouldSendAsSpoiler?: true;
+
+  uniqueId?: string;
 }
 
 export interface ApiWallpaper {
@@ -100,7 +107,7 @@ export type ApiNotification = {
   title?: string;
   message: string;
   actionText?: string;
-  action: VoidFunction;
+  action?: CallbackAction;
   className?: string;
 };
 
@@ -174,9 +181,12 @@ export interface ApiAppConfig {
   premiumPromoOrder: string[];
   defaultEmojiStatusesStickerSetId: string;
   maxUniqueReactions: number;
+  topicsPinnedLimit: number;
   maxUserReactionsDefault: number;
   maxUserReactionsPremium: number;
+  hiddenMembersMinCount: number;
   limits: Record<ApiLimitType, readonly [number, number]>;
+  canDisplayAutoarchiveSetting: boolean;
 }
 
 export interface ApiConfig {

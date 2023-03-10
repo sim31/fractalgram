@@ -1,2 +1,0 @@
-"use strict";(self.webpackChunkfractalgram=self.webpackChunkfractalgram||[]).push([[3472],{23472:(a,r,c)=>{c.r(r),c.d(r,{default:()=>s});var e=c(35099);const s=c.n(e)()}}]);
-//# sourceMappingURL=3472.d23247fe2e7e6bbf2000.js.map

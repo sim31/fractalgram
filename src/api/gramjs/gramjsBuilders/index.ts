@@ -22,6 +22,7 @@ import type {
   ApiRequestInputInvoice,
   ApiChatReactions,
   ApiReaction,
+  ApiFormattedText,
 } from '../../types';
 import {
   ApiMessageEntityTypes,
@@ -29,6 +30,7 @@ import {
 import localDb from '../localDb';
 import { pick } from '../../../util/iteratees';
 import { deserializeBytes } from '../helpers';
+import { DEFAULT_STATUS_ICON_ID } from '../../../config';
 
 const CHANNEL_ID_MIN_LENGTH = 11; // Example: -1000000000
 
@@ -579,4 +581,28 @@ export function buildInputChatReactions(chatReactions?: ApiChatReactions) {
   }
 
   return new GramJs.ChatReactionsNone();
+}
+
+export function buildInputEmojiStatus(emojiStatus: ApiSticker, expires?: number) {
+  if (emojiStatus.id === DEFAULT_STATUS_ICON_ID) {
+    return new GramJs.EmojiStatusEmpty();
+  }
+
+  if (expires) {
+    return new GramJs.EmojiStatusUntil({
+      documentId: BigInt(emojiStatus.id),
+      until: expires,
+    });
+  }
+
+  return new GramJs.EmojiStatus({
+    documentId: BigInt(emojiStatus.id),
+  });
+}
+
+export function buildInputTextWithEntities(formatted: ApiFormattedText) {
+  return new GramJs.TextWithEntities({
+    text: formatted.text,
+    entities: formatted.entities?.map(buildMtpMessageEntity) || [],
+  });
 }

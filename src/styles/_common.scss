@@ -81,19 +81,30 @@
 .chat-list {
   background: var(--color-background);
   height: 100%;
-  padding: 0.5rem 0.125rem 0.5rem 0.4375rem;
+  padding: 0.5rem 0.4375rem 0.5rem 0.4375rem;
 
   overflow-y: auto;
-  body.is-android & {
-    @include overflow-y-overlay();
+  @include overflow-y-overlay();
+
+  &.forum-panel-open {
+    .info {
+      opacity: 0;
+      transform: translateX(-20%);
+    }
+
+    .Chat[dir="rtl"] .info {
+      transform: translateX(20%);
+    }
+
+    .Avatar {
+      transform: scale(0.9);
+    }
   }
 
-  .scroll-container {
-    position: relative;
-  }
-
-  .ListItem.chat-item-clickable {
-    margin: 0;
+  @media (min-width: 600px) {
+    &.forum-panel-open .selected-forum .Avatar {
+      transform: none;
+    }
   }
 
   @media (max-width: 600px) {
@@ -101,10 +112,38 @@
     padding-right: 0;
   }
 
+  .scroll-container {
+    position: relative;
+  }
+
   .no-results {
     color: var(--color-text-meta);
     margin-top: 2rem;
     text-align: center;
+  }
+
+  .Avatar {
+    transition: transform var(--layer-transition);
+  }
+
+  .ListItem {
+    &.chat-item-clickable {
+      margin: 0;
+    }
+  }
+
+  body.is-ios &,
+  body.is-android & {
+    .ListItem::after {
+      opacity: 1;
+      transition: opacity var(--layer-transition);
+    }
+
+    &.forum-panel-open {
+      .ListItem::after {
+        opacity: 0;
+      }
+    }
   }
 }
 
@@ -144,6 +183,6 @@
   }
 
   &.deleted-account {
-    --color-user: var(--color-gray);
+    --color-user: var(--color-deleted-account);
   }
 }

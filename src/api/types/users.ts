@@ -41,6 +41,8 @@ export interface ApiUserFullInfo {
   pinnedMessageId?: number;
   botInfo?: ApiBotInfo;
   profilePhoto?: ApiPhoto;
+  fallbackPhoto?: ApiPhoto;
+  personalPhoto?: ApiPhoto;
   noVoiceMessages?: boolean;
   premiumGifts?: ApiPremiumGiftOption[];
 }
@@ -70,6 +72,7 @@ export type ApiAttachMenuPeerType = 'self' | ApiChatType;
 export interface ApiAttachBot {
   id: string;
   hasSettings?: boolean;
+  shouldRequestWriteAccess?: boolean;
   shortName: string;
   peerTypes: ApiAttachMenuPeerType[];
   icons: ApiAttachBotIcon[];

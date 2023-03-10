@@ -123,7 +123,7 @@ export function buildPrivacyRules(rules: GramJs.TypePrivacyRule[]): ApiPrivacySe
 }
 
 export function buildApiNotifyException(
-  notifySettings: GramJs.TypePeerNotifySettings, peer: GramJs.TypePeer, serverTimeOffset: number,
+  notifySettings: GramJs.TypePeerNotifySettings, peer: GramJs.TypePeer,
 ) {
   const {
     silent, muteUntil, showPreviews, otherSound,
@@ -133,7 +133,25 @@ export function buildApiNotifyException(
 
   return {
     chatId: getApiChatIdFromMtpPeer(peer),
-    isMuted: silent || (typeof muteUntil === 'number' && getServerTime(serverTimeOffset) < muteUntil),
+    isMuted: silent || (typeof muteUntil === 'number' && getServerTime() < muteUntil),
+    ...(!hasSound && { isSilent: true }),
+    ...(showPreviews !== undefined && { shouldShowPreviews: Boolean(showPreviews) }),
+  };
+}
+
+export function buildApiNotifyExceptionTopic(
+  notifySettings: GramJs.TypePeerNotifySettings, peer: GramJs.TypePeer, topicId: number,
+) {
+  const {
+    silent, muteUntil, showPreviews, otherSound,
+  } = notifySettings;
+
+  const hasSound = Boolean(otherSound && !(otherSound instanceof GramJs.NotificationSoundNone));
+
+  return {
+    chatId: getApiChatIdFromMtpPeer(peer),
+    topicId,
+    isMuted: silent || (typeof muteUntil === 'number' && getServerTime() < muteUntil),
     ...(!hasSound && { isSilent: true }),
     ...(showPreviews !== undefined && { shouldShowPreviews: Boolean(showPreviews) }),
   };

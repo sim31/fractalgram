@@ -12,7 +12,7 @@ import { ApiMediaFormat } from '../../../api/types';
 import { getChatAvatarHash, getHasAdminRight, isChatPublic } from '../../../global/helpers';
 import useMedia from '../../../hooks/useMedia';
 import useLang from '../../../hooks/useLang';
-import { selectChat } from '../../../global/selectors';
+import { selectChat, selectTabState } from '../../../global/selectors';
 import useFlag from '../../../hooks/useFlag';
 import useHistoryBack from '../../../hooks/useHistoryBack';
 import { formatInteger } from '../../../util/textFormat';
@@ -74,7 +74,7 @@ const ManageChannel: FC<OwnProps & StateProps> = ({
     loadChatJoinRequests,
   } = getActions();
 
-  const currentTitle = chat ? (chat.title || '') : '';
+  const currentTitle = chat?.title || '';
   const currentAbout = chat?.fullInfo ? (chat.fullInfo.about || '') : '';
   const hasLinkedChat = chat?.fullInfo?.linkedChatId;
 
@@ -240,6 +240,7 @@ const ManageChannel: FC<OwnProps & StateProps> = ({
             maxLength={CHANNEL_MAX_DESCRIPTION}
             maxLengthIndicator={(CHANNEL_MAX_DESCRIPTION - about.length).toString()}
             disabled={!canChangeInfo}
+            noReplaceNewlines
           />
           {chat.isCreator && (
             <ListItem icon="lock" multiline onClick={handleClickEditType}>
@@ -360,9 +361,10 @@ const ManageChannel: FC<OwnProps & StateProps> = ({
 export default memo(withGlobal<OwnProps>(
   (global, { chatId }): StateProps => {
     const chat = selectChat(global, chatId)!;
-    const { progress } = global.management;
+    const { management } = selectTabState(global);
+    const { progress } = management;
     const isSignaturesShown = Boolean(chat?.isSignaturesShown);
-    const { invites } = global.management.byChatId[chatId] || {};
+    const { invites } = management.byChatId[chatId] || {};
 
     return {
       chat,

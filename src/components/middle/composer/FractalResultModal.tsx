@@ -6,13 +6,13 @@ import React, {
 import './PollModal.scss';
 import { FRACTAL_INFO } from '../../../config';
 import ExtPlatformSettings from './ExtPlatformSettings';
-import type { ExtPlatformInfo, GlobalState } from '../../../global/types';
+import type { ExtPlatformInfo, TabState } from '../../../global/types';
 import { createConsensusResultMsg } from '../../../global/helpers/consensusMessages';
 import GroupNumberEdit from './GroupNumberEdit';
 import SendMessageModal from './SendMessageModal';
 
 export type OwnProps = {
-  values: GlobalState['consensusResultsModal'];
+  values: TabState['consensusResultsModal'];
   onSend: (msg: string, pinned: boolean) => void;
   onClear: () => void;
 };

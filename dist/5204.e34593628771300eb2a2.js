@@ -1,2 +1,0 @@
-(self.webpackChunkfractalgram=self.webpackChunkfractalgram||[]).push([[5204],{62437:t=>{t.exports=function(t){return{name:"Plain text",aliases:["text","txt"],disableAutodetect:!0}}}}]);
-//# sourceMappingURL=5204.e34593628771300eb2a2.js.map

@@ -8,7 +8,7 @@ import type { ApiAvailableReaction, ApiMessage, ApiReaction } from '../../api/ty
 import type { AnimationLevel } from '../../types';
 import { LoadMoreDirection } from '../../types';
 
-import { selectChatMessage } from '../../global/selectors';
+import { selectChatMessage, selectTabState } from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
 import { formatIntegerCompact } from '../../util/textFormat';
 import { unique } from '../../util/iteratees';
@@ -97,8 +97,8 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
 
   const handleLoadMore = useCallback(() => {
     loadReactors({
-      chatId,
-      messageId,
+      chatId: chatId!,
+      messageId: messageId!,
     });
   }, [chatId, loadReactors, messageId]);
 
@@ -147,7 +147,7 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
             onClick={() => setChosenTab(undefined)}
           >
             <i className="icon-heart" />
-            {reactors?.count && formatIntegerCompact(reactors.count)}
+            {Boolean(reactors?.count) && formatIntegerCompact(reactors.count)}
           </Button>
           {allReactions.map((reaction) => {
             const count = reactions?.results
@@ -166,7 +166,7 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
                   className="reaction-filter-emoji"
                   availableReactions={availableReactions}
                 />
-                {count && formatIntegerCompact(count)}
+                {Boolean(count) && formatIntegerCompact(count)}
               </Button>
             );
           })}
@@ -225,7 +225,7 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
 
 export default memo(withGlobal<OwnProps>(
   (global): StateProps => {
-    const { chatId, messageId } = global.reactorModal || {};
+    const { chatId, messageId } = selectTabState(global).reactorModal || {};
     const message = chatId && messageId ? selectChatMessage(global, chatId, messageId) : undefined;
 
     return {
@@ -235,6 +235,7 @@ export default memo(withGlobal<OwnProps>(
       reactors: message?.reactors,
       seenByUserIds: message?.seenByUserIds,
       animationLevel: global.settings.byKey.animationLevel,
+      availableReactions: global.availableReactions,
     };
   },
 )(ReactorListModal));

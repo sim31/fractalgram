@@ -8,15 +8,15 @@ import React, {
 import { fastRaf } from '../../util/schedulers';
 import buildClassName from '../../util/buildClassName';
 import buildStyle from '../../util/buildStyle';
+import generateIdFor from '../../util/generateIdFor';
 
 import useHeavyAnimationCheck from '../../hooks/useHeavyAnimationCheck';
 import useBackgroundMode from '../../hooks/useBackgroundMode';
-import useOnChange from '../../hooks/useOnChange';
-import generateIdFor from '../../util/generateIdFor';
+import useSyncEffect from '../../hooks/useSyncEffect';
 
 export type OwnProps = {
   ref?: RefObject<HTMLDivElement>;
-  animationId?: string;
+  renderId?: string;
   className?: string;
   style?: string;
   tgsUrl?: string;
@@ -45,6 +45,7 @@ let RLottie: RLottieClass;
 // Time for the main interface to completely load
 const LOTTIE_LOAD_DELAY = 3000;
 const ID_STORE = {};
+const ANIMATION_END_TIMEOUT = 500;
 
 async function ensureLottie() {
   if (!lottiePromise) {
@@ -59,7 +60,7 @@ setTimeout(ensureLottie, LOTTIE_LOAD_DELAY);
 
 const AnimatedSticker: FC<OwnProps> = ({
   ref,
-  animationId,
+  renderId,
   className,
   style,
   tgsUrl,
@@ -85,9 +86,10 @@ const AnimatedSticker: FC<OwnProps> = ({
     containerRef = ref;
   }
 
-  const containerId = useMemo(() => generateIdFor(ID_STORE, true), []);
+  const viewId = useMemo(() => generateIdFor(ID_STORE, true), []);
 
   const [animation, setAnimation] = useState<RLottieInstance>();
+  const animationRef = useRef<RLottieInstance>();
   const wasPlaying = useRef(false);
   const isFrozen = useRef(false);
   const isFirstRender = useRef(true);
@@ -119,12 +121,17 @@ const AnimatedSticker: FC<OwnProps> = ({
         return;
       }
 
+      // Wait until element is properly mounted
+      if (sharedCanvas && !sharedCanvas.offsetParent) {
+        setTimeout(exec, ANIMATION_END_TIMEOUT);
+        return;
+      }
+
       const newAnimation = RLottie.init(
-        containerId,
-        container,
-        onLoad,
-        animationId || generateIdFor(ID_STORE, true),
         tgsUrl,
+        container,
+        renderId || generateIdFor(ID_STORE, true),
+        viewId,
         {
           noLoop,
           size,
@@ -133,6 +140,7 @@ const AnimatedSticker: FC<OwnProps> = ({
           coords: sharedCanvasCoords,
         },
         color,
+        onLoad,
         onEnded,
         onLoop,
       );
@@ -142,6 +150,7 @@ const AnimatedSticker: FC<OwnProps> = ({
       }
 
       setAnimation(newAnimation);
+      animationRef.current = newAnimation;
     };
 
     if (RLottie) {
@@ -156,8 +165,8 @@ const AnimatedSticker: FC<OwnProps> = ({
       });
     }
   }, [
-    animation, animationId, tgsUrl, color, isLowPriority, noLoop, onLoad, quality, size, speed, onEnded, onLoop,
-    containerId, sharedCanvas, sharedCanvasCoords,
+    animation, renderId, tgsUrl, color, isLowPriority, noLoop, onLoad, quality, size, speed, onEnded, onLoop,
+    viewId, sharedCanvas, sharedCanvasCoords,
   ]);
 
   useEffect(() => {
@@ -168,29 +177,27 @@ const AnimatedSticker: FC<OwnProps> = ({
 
   useEffect(() => {
     return () => {
-      if (animation) {
-        animation.removeContainer(containerId);
-      }
+      animationRef.current?.removeView(viewId);
     };
-  }, [animation, containerId]);
+  }, [viewId]);
 
   const playAnimation = useCallback((shouldRestart = false) => {
     if (animation && (playRef.current || playSegmentRef.current)) {
       if (playSegmentRef.current) {
         animation.playSegment(playSegmentRef.current);
       } else {
-        animation.play(shouldRestart, containerId);
+        animation.play(shouldRestart, viewId);
       }
     }
-  }, [animation, containerId]);
+  }, [animation, viewId]);
 
   const pauseAnimation = useCallback(() => {
     if (!animation) {
       return;
     }
 
-    animation.pause(containerId);
-  }, [animation, containerId]);
+    animation.pause(viewId);
+  }, [animation, viewId]);
 
   const freezeAnimation = useCallback(() => {
     isFrozen.current = true;
@@ -219,17 +226,17 @@ const AnimatedSticker: FC<OwnProps> = ({
     fastRaf(unfreezeAnimation);
   }, [unfreezeAnimation]);
 
-  useOnChange(([prevNoLoop]) => {
+  useSyncEffect(([prevNoLoop]) => {
     if (prevNoLoop !== undefined && noLoop !== prevNoLoop) {
       animation?.setNoLoop(noLoop);
     }
   }, [noLoop, animation]);
 
-  useOnChange(([prevSharedCanvasCoords]) => {
+  useSyncEffect(([prevSharedCanvasCoords]) => {
     if (prevSharedCanvasCoords !== undefined && sharedCanvasCoords !== prevSharedCanvasCoords) {
-      animation?.setSharedCanvasCoords(containerId, sharedCanvasCoords);
+      animation?.setSharedCanvasCoords(viewId, sharedCanvasCoords);
     }
-  }, [sharedCanvasCoords, containerId, animation]);
+  }, [sharedCanvasCoords, viewId, animation]);
 
   useEffect(() => {
     if (!animation) {

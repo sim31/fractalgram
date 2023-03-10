@@ -4,6 +4,7 @@ import {
 import RLottie from '../../../../lib/rlottie/RLottie';
 
 import type { ApiSticker } from '../../../../api/types';
+import type { Signal } from '../../../../util/signals';
 
 import { getGlobal } from '../../../../global';
 import { selectIsAlwaysHighPriorityEmoji } from '../../../../global/selectors';
@@ -17,10 +18,14 @@ import { fastRaf } from '../../../../util/schedulers';
 import AbsoluteVideo from '../../../../util/AbsoluteVideo';
 import { REM } from '../../../common/helpers/mediaDimensions';
 
-import { useResizeObserver } from '../../../../hooks/useResizeObserver';
+import useResizeObserver from '../../../../hooks/useResizeObserver';
 import useBackgroundMode from '../../../../hooks/useBackgroundMode';
+import useThrottledCallback from '../../../../hooks/useThrottledCallback';
+import useDynamicColorListener from '../../../../hooks/useDynamicColorListener';
+import useEffectWithPrevDeps from '../../../../hooks/useEffectWithPrevDeps';
 
 const SIZE = 1.25 * REM;
+const THROTTLE_MS = 300;
 
 type CustomEmojiPlayer = {
   play: () => void;
@@ -30,20 +35,23 @@ type CustomEmojiPlayer = {
 };
 
 export default function useInputCustomEmojis(
-  html: string,
+  getHtml: Signal<string>,
   inputRef: React.RefObject<HTMLDivElement>,
   sharedCanvasRef: React.RefObject<HTMLCanvasElement>,
   sharedCanvasHqRef: React.RefObject<HTMLCanvasElement>,
   absoluteContainerRef: React.RefObject<HTMLElement>,
+  prefixId: string,
+  isActive?: boolean,
 ) {
-  const mapRef = useRef<Map<string, CustomEmojiPlayer>>(new Map());
+  const { rgbColor: textColor } = useDynamicColorListener(inputRef);
+  const playersById = useRef<Map<string, CustomEmojiPlayer>>(new Map());
 
-  const removeContainers = useCallback((ids: string[]) => {
+  const clearPlayers = useCallback((ids: string[]) => {
     ids.forEach((id) => {
-      const player = mapRef.current.get(id);
+      const player = playersById.current.get(id);
       if (player) {
         player.destroy();
-        mapRef.current.delete(id);
+        playersById.current.delete(id);
       }
     });
   }, []);
@@ -51,16 +59,17 @@ export default function useInputCustomEmojis(
   const synchronizeElements = useCallback(() => {
     if (!inputRef.current || !sharedCanvasRef.current || !sharedCanvasHqRef.current) return;
     const global = getGlobal();
-    const removedContainers = new Set(mapRef.current.keys());
-    const customEmojies = Array.from(inputRef.current.querySelectorAll<HTMLElement>('.custom-emoji'));
+    const playerIdsToClear = new Set(playersById.current.keys());
+    const customEmojis = Array.from(inputRef.current.querySelectorAll<HTMLElement>('.custom-emoji'));
 
-    customEmojies.forEach((element) => {
-      const id = element.dataset.uniqueId!;
-      const documentId = element.dataset.documentId!;
-      if (!id) {
+    customEmojis.forEach((element) => {
+      if (!element.dataset.uniqueId) {
         return;
       }
-      removedContainers.delete(id);
+      const playerId = `${prefixId}${element.dataset.uniqueId}${textColor?.join(',') || ''}`;
+      const documentId = element.dataset.documentId!;
+
+      playerIdsToClear.delete(playerId);
 
       const mediaUrl = getCustomEmojiMediaDataForInput(documentId);
       if (!mediaUrl) {
@@ -72,8 +81,8 @@ export default function useInputCustomEmojis(
       const x = round((elementBounds.left - canvasBounds.left) / canvasBounds.width, 4);
       const y = round((elementBounds.top - canvasBounds.top) / canvasBounds.height, 4);
 
-      if (mapRef.current.has(id)) {
-        const player = mapRef.current.get(id)!;
+      if (playersById.current.has(playerId)) {
+        const player = playersById.current.get(playerId)!;
         player.updatePosition(x, y);
         return;
       }
@@ -83,24 +92,29 @@ export default function useInputCustomEmojis(
         return;
       }
       const isHq = customEmoji?.stickerSetInfo && selectIsAlwaysHighPriorityEmoji(global, customEmoji.stickerSetInfo);
+      const renderId = [
+        prefixId, documentId, textColor?.join(','),
+      ].filter(Boolean).join('_');
 
       const animation = createPlayer({
         customEmoji,
         sharedCanvasRef,
         sharedCanvasHqRef,
         absoluteContainerRef,
-        uniqueId: id,
+        renderId,
+        viewId: playerId,
         mediaUrl,
         isHq,
         position: { x, y },
+        textColor,
       });
       animation.play();
 
-      mapRef.current.set(id, animation);
+      playersById.current.set(playerId, animation);
     });
 
-    removeContainers(Array.from(removedContainers));
-  }, [absoluteContainerRef, inputRef, removeContainers, sharedCanvasHqRef, sharedCanvasRef]);
+    clearPlayers(Array.from(playerIdsToClear));
+  }, [absoluteContainerRef, textColor, inputRef, prefixId, clearPlayers, sharedCanvasHqRef, sharedCanvasRef]);
 
   useEffect(() => {
     addCustomEmojiInputRenderCallback(synchronizeElements);
@@ -111,24 +125,39 @@ export default function useInputCustomEmojis(
   }, [synchronizeElements]);
 
   useEffect(() => {
-    if (!html || !inputRef.current || !sharedCanvasRef.current) {
-      removeContainers(Array.from(mapRef.current.keys()));
+    if (!getHtml() || !inputRef.current || !sharedCanvasRef.current || !isActive) {
+      clearPlayers(Array.from(playersById.current.keys()));
       return;
     }
 
-    synchronizeElements();
-  }, [html, inputRef, removeContainers, sharedCanvasRef, synchronizeElements]);
+    // Wait one frame for DOM to update
+    fastRaf(() => {
+      synchronizeElements();
+    });
+  }, [getHtml, synchronizeElements, inputRef, clearPlayers, sharedCanvasRef, isActive]);
 
-  useResizeObserver(sharedCanvasRef, synchronizeElements, true);
+  useEffectWithPrevDeps(([prevTextColor]) => {
+    if (textColor !== prevTextColor) {
+      synchronizeElements();
+    }
+  }, [textColor, synchronizeElements]);
+
+  const throttledSynchronizeElements = useThrottledCallback(
+    synchronizeElements,
+    [synchronizeElements],
+    THROTTLE_MS,
+    false,
+  );
+  useResizeObserver(sharedCanvasRef, throttledSynchronizeElements);
 
   const freezeAnimation = useCallback(() => {
-    mapRef.current.forEach((player) => {
+    playersById.current.forEach((player) => {
       player.pause();
     });
   }, []);
 
   const unfreezeAnimation = useCallback(() => {
-    mapRef.current.forEach((player) => {
+    playersById.current.forEach((player) => {
       player.play();
     });
   }, []);
@@ -148,38 +177,45 @@ function createPlayer({
   sharedCanvasRef,
   sharedCanvasHqRef,
   absoluteContainerRef,
-  uniqueId,
+  renderId,
+  viewId,
   mediaUrl,
   position,
   isHq,
-} : {
+  textColor,
+}: {
   customEmoji: ApiSticker;
   sharedCanvasRef: React.RefObject<HTMLCanvasElement>;
   sharedCanvasHqRef: React.RefObject<HTMLCanvasElement>;
   absoluteContainerRef: React.RefObject<HTMLElement>;
-  uniqueId: string;
+  renderId: string;
+  viewId: string;
   mediaUrl: string;
   position: { x: number; y: number };
   isHq?: boolean;
+  textColor?: [number, number, number];
 }): CustomEmojiPlayer {
   if (customEmoji.isLottie) {
     const lottie = RLottie.init(
-      uniqueId,
-      isHq ? sharedCanvasHqRef.current! : sharedCanvasRef.current!,
-      undefined,
-      customEmoji.id,
       mediaUrl,
+      isHq ? sharedCanvasHqRef.current! : sharedCanvasRef.current!,
+      renderId,
+      viewId,
       {
         size: SIZE,
         coords: position,
         isLowPriority: !isHq,
       },
+      customEmoji.shouldUseTextColor ? textColor : undefined,
     );
+
     return {
       play: () => lottie.play(),
       pause: () => lottie.pause(),
-      destroy: () => lottie.removeContainer(uniqueId),
-      updatePosition: (x: number, y: number) => lottie.setSharedCanvasCoords(uniqueId, { x, y }),
+      destroy: () => lottie.removeView(viewId),
+      updatePosition: (x: number, y: number) => {
+        return lottie.setSharedCanvasCoords(viewId, { x, y });
+      },
     };
   }
 

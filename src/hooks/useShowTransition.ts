@@ -9,6 +9,7 @@ const useShowTransition = (
   noOpenTransition = false,
   className: string | false = 'fast',
   noCloseTransition = false,
+  closeDuration = CLOSE_DURATION,
 ) => {
   const [isClosed, setIsClosed] = useState(!isOpen);
   const closeTimeoutRef = useRef<number>();
@@ -40,13 +41,13 @@ const useShowTransition = (
       if (noCloseTransition) {
         exec();
       } else {
-        closeTimeoutRef.current = window.setTimeout(exec, CLOSE_DURATION);
+        closeTimeoutRef.current = window.setTimeout(exec, closeDuration);
       }
     }
   }
 
   // `noCloseTransition`, when set to true, should remove the open class immediately
-  const shouldHaveOpenClassName = hasOpenClassName && !(noCloseTransition && !isOpen);
+  const shouldHaveOpenClassName = (hasOpenClassName && !(noCloseTransition && !isOpen)) || (noOpenTransition && isOpen);
   const isClosing = Boolean(closeTimeoutRef.current);
   const shouldRender = isOpen || isClosing;
   const transitionClassNames = buildClassName(

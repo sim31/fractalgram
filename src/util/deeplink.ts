@@ -35,11 +35,12 @@ export const processDeepLink = (url: string) => {
   switch (method) {
     case 'resolve': {
       const {
-        domain, phone, post, comment, voicechat, livestream, start, startattach, attach,
+        domain, phone, post, comment, voicechat, livestream, start, startattach, attach, thread, topic,
       } = params;
 
       const startAttach = params.hasOwnProperty('startattach') && !startattach ? true : startattach;
       const choose = parseChooseParameter(params.choose);
+      const threadId = Number(thread) || Number(topic) || undefined;
 
       if (domain !== 'telegrampassport') {
         if (startAttach && choose) {
@@ -54,15 +55,16 @@ export const processDeepLink = (url: string) => {
             inviteHash: voicechat || livestream,
           });
         } else if (phone) {
-          openChatByPhoneNumber({ phone, startAttach, attach });
+          openChatByPhoneNumber({ phoneNumber: phone, startAttach, attach });
         } else {
           openChatByUsername({
             username: domain,
-            messageId: Number(post),
-            commentId: Number(comment),
+            messageId: post ? Number(post) : undefined,
+            commentId: comment ? Number(comment) : undefined,
             startParam: start,
             startAttach,
             attach,
+            threadId,
           });
         }
       }
@@ -75,7 +77,7 @@ export const processDeepLink = (url: string) => {
 
       focusMessage({
         chatId: `-${channel}`,
-        id: post,
+        messageId: Number(post),
       });
       break;
     }

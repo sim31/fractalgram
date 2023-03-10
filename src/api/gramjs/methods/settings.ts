@@ -7,7 +7,7 @@ import type {
   ApiError,
   ApiLangString,
   ApiLanguage,
-  ApiNotifyException, ApiPhoto,
+  ApiNotifyException, ApiPhoto, ApiUser,
 } from '../../types';
 import type { ApiPrivacyKey, InputPrivacyRules, LangCode } from '../../../types';
 import type { LANG_PACKS } from '../../../config';
@@ -82,23 +82,77 @@ export function updateUsername(username: string) {
   return invokeRequest(new GramJs.account.UpdateUsername({ username }), true);
 }
 
-export async function updateProfilePhoto(photo?: ApiPhoto) {
+export async function updateProfilePhoto(photo?: ApiPhoto, isFallback?: boolean) {
   const photoId = photo ? buildInputPhoto(photo) : new GramJs.InputPhotoEmpty();
   const result = await invokeRequest(new GramJs.photos.UpdateProfilePhoto({
     id: photoId,
+    ...(isFallback ? { fallback: true } : undefined),
   }));
-  if (result?.photo instanceof GramJs.Photo) {
+  if (!result) return undefined;
+
+  addEntitiesWithPhotosToLocalDb(result.users);
+  if (result.photo instanceof GramJs.Photo) {
     addPhotoToLocalDb(result.photo);
-    return buildApiPhoto(result.photo);
+    return {
+      users: result.users.map(buildApiUser).filter(Boolean),
+      photo: buildApiPhoto(result.photo),
+    };
   }
   return undefined;
 }
 
-export async function uploadProfilePhoto(file: File) {
+export async function uploadProfilePhoto(file: File, isFallback?: boolean, isVideo = false, videoTs = 0) {
   const inputFile = await uploadFile(file);
-  return invokeRequest(new GramJs.photos.UploadProfilePhoto({
+  const result = await invokeRequest(new GramJs.photos.UploadProfilePhoto({
+    ...(isVideo ? { video: inputFile, videoStartTs: videoTs } : { file: inputFile }),
+    ...(isFallback ? { fallback: true } : undefined),
+  }));
+
+  if (!result) return undefined;
+
+  addEntitiesWithPhotosToLocalDb(result.users);
+  if (result.photo instanceof GramJs.Photo) {
+    addPhotoToLocalDb(result.photo);
+    return {
+      users: result.users.map(buildApiUser).filter(Boolean),
+      photo: buildApiPhoto(result.photo),
+    };
+  }
+  return undefined;
+}
+
+export async function uploadContactProfilePhoto({
+  file, isSuggest, user,
+}: {
+  file?: File;
+  isSuggest?: boolean;
+  user: ApiUser;
+}) {
+  const inputFile = file ? await uploadFile(file) : undefined;
+  const result = await invokeRequest(new GramJs.photos.UploadContactProfilePhoto({
+    userId: buildInputEntity(user.id, user.accessHash) as GramJs.InputUser,
     file: inputFile,
-  }), true);
+    ...(isSuggest ? { suggest: true } : { save: true }),
+  }));
+
+  if (!result) return undefined;
+
+  addEntitiesWithPhotosToLocalDb(result.users);
+
+  const users = result.users.map(buildApiUser).filter(Boolean);
+
+  if (result.photo instanceof GramJs.Photo) {
+    addPhotoToLocalDb(result.photo);
+    return {
+      users,
+      photo: buildApiPhoto(result.photo),
+    };
+  }
+
+  return {
+    users,
+    photo: undefined,
+  };
 }
 
 export async function deleteProfilePhotos(photos: ApiPhoto[]) {
@@ -217,8 +271,12 @@ export async function fetchWebAuthorizations() {
   if (!result) {
     return undefined;
   }
+  addEntitiesWithPhotosToLocalDb(result.users);
 
-  return buildCollectionByKey(result.authorizations.map(buildApiWebSession), 'hash');
+  return {
+    users: result.users.map(buildApiUser).filter(Boolean),
+    webAuthorizations: buildCollectionByKey(result.authorizations.map(buildApiWebSession), 'hash'),
+  };
 }
 
 export function terminateWebAuthorization(hash: string) {
@@ -229,9 +287,7 @@ export function terminateAllWebAuthorizations() {
   return invokeRequest(new GramJs.account.ResetWebAuthorizations());
 }
 
-export async function fetchNotificationExceptions({
-  serverTimeOffset,
-}: { serverTimeOffset: number }) {
+export async function fetchNotificationExceptions() {
   const result = await invokeRequest(new GramJs.account.GetNotifyExceptions({
     compareSound: true,
   }), undefined, undefined, true);
@@ -247,15 +303,13 @@ export async function fetchNotificationExceptions({
       return acc;
     }
 
-    acc.push(buildApiNotifyException(update.notifySettings, update.peer.peer, serverTimeOffset));
+    acc.push(buildApiNotifyException(update.notifySettings, update.peer.peer));
 
     return acc;
   }, [] as ApiNotifyException[]);
 }
 
-export async function fetchNotificationSettings({
-  serverTimeOffset,
-}: { serverTimeOffset: number }) {
+export async function fetchNotificationSettings() {
   const [
     isMutedContactSignUpNotification,
     privateContactNotificationsSettings,
@@ -292,17 +346,17 @@ export async function fetchNotificationSettings({
     hasContactJoinedNotifications: !isMutedContactSignUpNotification,
     hasPrivateChatsNotifications: !(
       privateSilent
-      || (typeof privateMuteUntil === 'number' && getServerTime(serverTimeOffset) < privateMuteUntil)
+      || (typeof privateMuteUntil === 'number' && getServerTime() < privateMuteUntil)
     ),
     hasPrivateChatsMessagePreview: privateShowPreviews,
     hasGroupNotifications: !(
       groupSilent || (typeof groupMuteUntil === 'number'
-        && getServerTime(serverTimeOffset) < groupMuteUntil)
+        && getServerTime() < groupMuteUntil)
     ),
     hasGroupMessagePreview: groupShowPreviews,
     hasBroadcastNotifications: !(
       broadcastSilent || (typeof broadcastMuteUntil === 'number'
-        && getServerTime(serverTimeOffset) < broadcastMuteUntil)
+        && getServerTime() < broadcastMuteUntil)
     ),
     hasBroadcastMessagePreview: broadcastShowPreviews,
   };
@@ -316,8 +370,8 @@ export function updateNotificationSettings(peerType: 'contact' | 'group' | 'broa
   isSilent,
   shouldShowPreviews,
 }: {
-  isSilent: boolean;
-  shouldShowPreviews: boolean;
+  isSilent?: boolean;
+  shouldShowPreviews?: boolean;
 }) {
   let peer: GramJs.TypeInputNotifyPeer;
   if (peerType === 'contact') {
@@ -401,7 +455,10 @@ export async function fetchPrivacySettings(privacyKey: ApiPrivacyKey) {
 
   updateLocalDb(result);
 
-  return buildPrivacyRules(result.rules);
+  return {
+    users: result.users.map(buildApiUser).filter(Boolean),
+    rules: buildPrivacyRules(result.rules),
+  };
 }
 
 export function registerDevice(token: string) {
@@ -476,7 +533,10 @@ export async function setPrivacySettings(
 
   updateLocalDb(result);
 
-  return buildPrivacyRules(result.rules);
+  return {
+    users: result.users.map(buildApiUser).filter(Boolean),
+    rules: buildPrivacyRules(result.rules),
+  };
 }
 
 export async function updateIsOnline(isOnline: boolean) {

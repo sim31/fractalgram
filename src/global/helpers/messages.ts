@@ -45,6 +45,7 @@ export function getMessageOriginalId(message: ApiMessage) {
 
 export function getMessageTranscription(message: ApiMessage) {
   const { transcriptionId } = message;
+  // eslint-disable-next-line eslint-multitab-tt/no-immediate-global
   const global = getGlobal();
 
   return transcriptionId && global.transcriptions[transcriptionId]?.text;
@@ -193,7 +194,11 @@ export function getSendingState(message: ApiMessage) {
 }
 
 export function isMessageLocal(message: ApiMessage) {
-  return message.id > LOCAL_MESSAGE_MIN_ID;
+  return isLocalMessageId(message.id);
+}
+
+export function isLocalMessageId(id: number) {
+  return id > LOCAL_MESSAGE_MIN_ID;
 }
 
 export function isHistoryClearMessage(message: ApiMessage) {

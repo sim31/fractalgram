@@ -1,13 +1,11 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { useEffect, memo } from '../../lib/teact/teact';
-import { getActions, withGlobal } from '../../global';
+import React, { memo } from '../../lib/teact/teact';
+import { withGlobal } from '../../global';
 
 import type { GlobalState } from '../../global/types';
 
 import '../../global/actions/initial';
-import { pick } from '../../util/iteratees';
 import { PLATFORM_ENV } from '../../util/environment';
-import windowSize from '../../util/windowSize';
 import useCurrentOrPrev from '../../hooks/useCurrentOrPrev';
 
 import Transition from '../ui/Transition';
@@ -20,36 +18,12 @@ import AuthQrCode from './AuthQrCode';
 
 import './Auth.scss';
 
-type OwnProps = {
-  isActive: boolean;
-};
+type StateProps = Pick<GlobalState, 'authState'>;
 
-type StateProps = Pick<GlobalState, 'authState' | 'hasWebAuthTokenPasswordRequired'>;
-
-const Auth: FC<OwnProps & StateProps> = ({
-  isActive, authState, hasWebAuthTokenPasswordRequired,
+const Auth: FC<StateProps> = ({
+  authState,
 }) => {
-  const {
-    reset, initApi,
-  } = getActions();
-
-  useEffect(() => {
-    if (isActive && !hasWebAuthTokenPasswordRequired) {
-      reset();
-      initApi();
-    }
-  }, [isActive, reset, initApi, hasWebAuthTokenPasswordRequired]);
-
   const isMobile = PLATFORM_ENV === 'iOS' || PLATFORM_ENV === 'Android';
-
-  // Prevent refresh when rotating device
-  useEffect(() => {
-    windowSize.disableRefresh();
-
-    return () => {
-      windowSize.enableRefresh();
-    };
-  }, []);
 
   // For animation purposes
   const renderingAuthState = useCurrentOrPrev(
@@ -98,6 +72,10 @@ const Auth: FC<OwnProps & StateProps> = ({
   );
 };
 
-export default memo(withGlobal<OwnProps>(
-  (global): StateProps => pick(global, ['authState', 'hasWebAuthTokenPasswordRequired']),
+export default memo(withGlobal(
+  (global): StateProps => {
+    return {
+      authState: global.authState,
+    };
+  },
 )(Auth));

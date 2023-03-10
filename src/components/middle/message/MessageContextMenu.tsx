@@ -5,7 +5,14 @@ import { getActions } from '../../../global';
 
 import type { FC } from '../../../lib/teact/teact';
 import type {
-  ApiAvailableReaction, ApiChatReactions, ApiMessage, ApiReaction, ApiSponsoredMessage, ApiStickerSet, ApiUser,
+  ApiAvailableReaction,
+  ApiChatReactions,
+  ApiMessage,
+  ApiReaction,
+  ApiSponsoredMessage,
+  ApiStickerSet,
+  ApiThreadInfo,
+  ApiUser,
 } from '../../../api/types';
 import type { IAnchorPosition } from '../../../types';
 
@@ -13,12 +20,12 @@ import { getMessageCopyOptions } from './helpers/copyOptions';
 import { disableScrolling, enableScrolling } from '../../../util/scrollLock';
 import { getUserFullName } from '../../../global/helpers';
 import buildClassName from '../../../util/buildClassName';
-import { IS_SINGLE_COLUMN_LAYOUT } from '../../../util/environment';
 import renderText from '../../common/helpers/renderText';
 
 import useFlag from '../../../hooks/useFlag';
 import useContextMenuPosition from '../../../hooks/useContextMenuPosition';
 import useLang from '../../../hooks/useLang';
+import useAppLayout from '../../../hooks/useAppLayout';
 
 import Menu from '../../ui/Menu';
 import MenuItem from '../../ui/MenuItem';
@@ -39,6 +46,7 @@ type OwnProps = {
   maxUniqueReactions?: number;
   canReschedule?: boolean;
   canReply?: boolean;
+  repliesThreadInfo?: ApiThreadInfo;
   canPin?: boolean;
   canUnpin?: boolean;
   canDelete?: boolean;
@@ -53,6 +61,9 @@ type OwnProps = {
   canCopy?: boolean;
   canCopyLink?: boolean;
   canSelect?: boolean;
+  canTranslate?: boolean;
+  canShowOriginal?: boolean;
+  canSelectLanguage?: boolean;
   isPrivate?: boolean;
   isCurrentUserPremium?: boolean;
   canDownload?: boolean;
@@ -62,9 +73,11 @@ type OwnProps = {
   isDownloading?: boolean;
   canShowSeenBy?: boolean;
   seenByRecentUsers?: ApiUser[];
+  noReplies?: boolean;
   hasCustomEmoji?: boolean;
   customEmojiSets?: ApiStickerSet[];
   onReply?: () => void;
+  onOpenThread?: VoidFunction;
   onEdit?: () => void;
   onPin?: () => void;
   onUnpin?: () => void;
@@ -89,6 +102,9 @@ type OwnProps = {
   onShowReactors?: () => void;
   onAboutAds?: () => void;
   onSponsoredHide?: () => void;
+  onTranslate?: () => void;
+  onShowOriginal?: () => void;
+  onSelectLanguage?: () => void;
   onToggleReaction?: (reaction: ApiReaction) => void;
 };
 
@@ -110,6 +126,7 @@ const MessageContextMenu: FC<OwnProps> = ({
   canBuyPremium,
   canReply,
   canEdit,
+  noReplies,
   canPin,
   canUnpin,
   canDelete,
@@ -124,7 +141,11 @@ const MessageContextMenu: FC<OwnProps> = ({
   canSaveGif,
   canRevote,
   canClosePoll,
+  canTranslate,
+  canShowOriginal,
+  canSelectLanguage,
   isDownloading,
+  repliesThreadInfo,
   canShowSeenBy,
   canShowReactionsCount,
   canShowReactionList,
@@ -132,6 +153,7 @@ const MessageContextMenu: FC<OwnProps> = ({
   hasCustomEmoji,
   customEmojiSets,
   onReply,
+  onOpenThread,
   onEdit,
   onPin,
   onUnpin,
@@ -157,6 +179,9 @@ const MessageContextMenu: FC<OwnProps> = ({
   onCopyMessages,
   onAboutAds,
   onSponsoredHide,
+  onTranslate,
+  onShowOriginal,
+  onSelectLanguage,
 }) => {
   const { showNotification, openStickerSet, openCustomEmojiSets } = getActions();
   // eslint-disable-next-line no-null/no-null
@@ -170,6 +195,7 @@ const MessageContextMenu: FC<OwnProps> = ({
   const messageId = !isSponsoredMessage ? message.id : '';
 
   const [isReady, markIsReady, unmarkIsReady] = useFlag();
+  const { isMobile } = useAppLayout();
 
   const handleAfterCopy = useCallback(() => {
     showNotification({
@@ -217,11 +243,11 @@ const MessageContextMenu: FC<OwnProps> = ({
   );
 
   const getLayout = useCallback(() => {
-    const extraHeightAudioPlayer = (IS_SINGLE_COLUMN_LAYOUT
+    const extraHeightAudioPlayer = (isMobile
       && (document.querySelector<HTMLElement>('.AudioPlayer-content'))?.offsetHeight) || 0;
     const pinnedElement = document.querySelector<HTMLElement>('.HeaderPinnedMessage-wrapper');
-    const extraHeightPinned = (((IS_SINGLE_COLUMN_LAYOUT && !extraHeightAudioPlayer)
-      || (!IS_SINGLE_COLUMN_LAYOUT && pinnedElement?.classList.contains('full-width')))
+    const extraHeightPinned = (((isMobile && !extraHeightAudioPlayer)
+      || (!isMobile && pinnedElement?.classList.contains('full-width')))
       && pinnedElement?.offsetHeight) || 0;
 
     return {
@@ -230,7 +256,7 @@ const MessageContextMenu: FC<OwnProps> = ({
       marginSides: withReactions ? REACTION_BUBBLE_EXTRA_WIDTH : undefined,
       extraMarginTop: extraHeightPinned + extraHeightAudioPlayer,
     };
-  }, [withReactions]);
+  }, [isMobile, withReactions]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -293,12 +319,22 @@ const MessageContextMenu: FC<OwnProps> = ({
           <MenuItem icon="schedule" onClick={onReschedule}>{lang('MessageScheduleEditTime')}</MenuItem>
         )}
         {canReply && <MenuItem icon="reply" onClick={onReply}>{lang('Reply')}</MenuItem>}
+        {!noReplies && Boolean(repliesThreadInfo?.messagesCount) && (
+          <MenuItem icon="replies" onClick={onOpenThread}>
+            {lang('Conversation.ContextViewReplies', repliesThreadInfo!.messagesCount, 'i')}
+          </MenuItem>
+        )}
         {canEdit && <MenuItem icon="edit" onClick={onEdit}>{lang('Edit')}</MenuItem>}
         {canFaveSticker && (
           <MenuItem icon="favorite" onClick={onFaveSticker}>{lang('AddToFavorites')}</MenuItem>
         )}
         {canUnfaveSticker && (
           <MenuItem icon="favorite" onClick={onUnfaveSticker}>{lang('Stickers.RemoveFromFavorites')}</MenuItem>
+        )}
+        {canTranslate && <MenuItem icon="language" onClick={onTranslate}>{lang('TranslateMessage')}</MenuItem>}
+        {canShowOriginal && <MenuItem icon="language" onClick={onShowOriginal}>{lang('ShowOriginalButton')}</MenuItem>}
+        {canSelectLanguage && (
+          <MenuItem icon="web" onClick={onSelectLanguage}>{lang('lng_settings_change_lang')}</MenuItem>
         )}
         {canCopy && copyOptions.map((option) => (
           <MenuItem key={option.label} icon={option.icon} onClick={option.handler}>{lang(option.label)}</MenuItem>

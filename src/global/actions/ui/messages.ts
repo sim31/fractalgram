@@ -1,10 +1,14 @@
 import {
-  addActionHandler, getGlobal, setGlobal, getActions,
+  addActionHandler, getGlobal, setGlobal,
 } from '../../index';
 
 import type { ApiChat, ApiMessage, ApiPoll } from '../../../api/types';
 import { MAIN_THREAD_ID } from '../../../api/types';
 import { FocusDirection } from '../../../types';
+import type {
+  TabState, GlobalState, ActionReturnType, ExtPlatformInfo, ConsensusResults,
+  PollModalDefaults, ExtUser, AccountMap, ConsensusResultOption,
+} from '../../types';
 
 import {
   ANIMATION_END_DELAY,
@@ -25,8 +29,9 @@ import {
   toggleMessageSelection,
   exitMessageSelectMode,
   replaceThreadParam,
+  replaceTabThreadParam,
   updateFocusDirection,
-  updateFocusedMessage,
+  updateFocusedMessage, updateFocusedMessageReached,
 } from '../../reducers';
 import {
   selectCurrentChat,
@@ -43,7 +48,9 @@ import {
   selectReplyingToId,
   selectReplyStack,
   selectSender,
-  selectScheduledMessages,
+  selectChatScheduledMessages,
+  selectTabState,
+  selectRequestedTranslationLanguage,
   selectChatMemberAccountMap,
   selectLatestDelegatePoll,
   selectLatestRankingPoll,
@@ -52,7 +59,7 @@ import {
   // selectChatRankingPolls,
   // selectLatestRankingPoll,
 } from '../../selectors';
-import { findLast } from '../../../util/iteratees';
+import { compact, findLast } from '../../../util/iteratees';
 import { getServerTime } from '../../../util/serverTime';
 
 import versionNotification from '../../../versionNotification.txt';
@@ -60,11 +67,10 @@ import parseMessageInput from '../../../util/parseMessageInput';
 import { getMessageSummaryText, getSenderTitle } from '../../helpers';
 import * as langProvider from '../../../util/langProvider';
 import { copyHtmlToClipboard } from '../../../util/clipboard';
-import type {
-  AccountMap, ConsensusResultOption, ConsensusResults, ExtPlatformInfo, ExtUser,
-  GlobalState, PollModalDefaults,
-} from '../../types';
 import { renderMessageSummaryHtml } from '../../helpers/renderMessageSummaryHtml';
+import { updateTabState } from '../../reducers/tabs';
+import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import { getIsMobile } from '../../../hooks/useAppLayout';
 import assert from '../../../util/assert';
 import { promptStrToPlatform } from '../../helpers/consensusMessages';
 import { loadRemainingMessages } from '../api/messages';
@@ -77,15 +83,19 @@ const SERVICE_NOTIFICATIONS_MAX_AMOUNT = 1e3;
 
 let blurTimeout: number | undefined;
 
-addActionHandler('setScrollOffset', (global, actions, payload) => {
-  const { chatId, threadId, scrollOffset } = payload!;
+addActionHandler('setScrollOffset', (global, actions, payload): ActionReturnType => {
+  const {
+    chatId, threadId, scrollOffset, tabId = getCurrentTabId(),
+  } = payload;
 
-  return replaceThreadParam(global, chatId, threadId, 'scrollOffset', scrollOffset);
+  global = replaceThreadParam(global, chatId, threadId, 'lastScrollOffset', scrollOffset);
+
+  return replaceTabThreadParam(global, chatId, threadId, 'scrollOffset', scrollOffset, tabId);
 });
 
-addActionHandler('setReplyingToId', (global, actions, payload) => {
-  const { messageId } = payload!;
-  const currentMessageList = selectCurrentMessageList(global);
+addActionHandler('setReplyingToId', (global, actions, payload): ActionReturnType => {
+  const { messageId, tabId = getCurrentTabId() } = payload;
+  const currentMessageList = selectCurrentMessageList(global, tabId);
   if (!currentMessageList) {
     return undefined;
   }
@@ -94,9 +104,9 @@ addActionHandler('setReplyingToId', (global, actions, payload) => {
   return replaceThreadParam(global, chatId, threadId, 'replyingToId', messageId);
 });
 
-addActionHandler('setEditingId', (global, actions, payload) => {
-  const { messageId } = payload!;
-  const currentMessageList = selectCurrentMessageList(global);
+addActionHandler('setEditingId', (global, actions, payload): ActionReturnType => {
+  const { messageId, tabId = getCurrentTabId() } = payload;
+  const currentMessageList = selectCurrentMessageList(global, tabId);
   if (!currentMessageList) {
     return undefined;
   }
@@ -107,7 +117,7 @@ addActionHandler('setEditingId', (global, actions, payload) => {
   return replaceThreadParam(global, chatId, threadId, paramName, messageId);
 });
 
-addActionHandler('setEditingDraft', (global, actions, payload) => {
+addActionHandler('setEditingDraft', (global, actions, payload): ActionReturnType => {
   const {
     text, chatId, threadId, type,
   } = payload;
@@ -117,14 +127,15 @@ addActionHandler('setEditingDraft', (global, actions, payload) => {
   return replaceThreadParam(global, chatId, threadId, paramName, text);
 });
 
-addActionHandler('editLastMessage', (global) => {
-  const { chatId, threadId } = selectCurrentMessageList(global) || {};
+addActionHandler('editLastMessage', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+  const { chatId, threadId } = selectCurrentMessageList(global, tabId) || {};
   if (!chatId || !threadId) {
     return undefined;
   }
 
   const chatMessages = selectChatMessages(global, chatId);
-  const viewportIds = selectViewportIds(global, chatId, threadId);
+  const viewportIds = selectViewportIds(global, chatId, threadId, tabId);
   if (!chatMessages || !viewportIds) {
     return undefined;
   }
@@ -140,21 +151,21 @@ addActionHandler('editLastMessage', (global) => {
   return replaceThreadParam(global, chatId, threadId, 'editingId', lastOwnEditableMessageId);
 });
 
-addActionHandler('replyToNextMessage', (global, actions, payload) => {
-  const { targetIndexDelta } = payload;
-  const { chatId, threadId } = selectCurrentMessageList(global) || {};
+addActionHandler('replyToNextMessage', (global, actions, payload): ActionReturnType => {
+  const { targetIndexDelta, tabId = getCurrentTabId() } = payload;
+  const { chatId, threadId } = selectCurrentMessageList(global, tabId) || {};
   if (!chatId || !threadId) {
     return;
   }
 
   const chatMessages = selectChatMessages(global, chatId);
-  const viewportIds = selectViewportIds(global, chatId, threadId);
+  const viewportIds = selectViewportIds(global, chatId, threadId, tabId);
   if (!chatMessages || !viewportIds) {
     return;
   }
 
   const replyingToId = selectReplyingToId(global, chatId, threadId);
-  const isLatest = selectIsViewportNewest(global, chatId, threadId);
+  const isLatest = selectIsViewportNewest(global, chatId, threadId, tabId);
 
   let messageId: number | undefined;
 
@@ -176,140 +187,156 @@ addActionHandler('replyToNextMessage', (global, actions, payload) => {
       ? Number(chatMessageKeys[newIndex])
       : undefined;
   }
-  actions.setReplyingToId({ messageId });
+  actions.setReplyingToId({ messageId, tabId });
   actions.focusMessage({
-    chatId, threadId, messageId,
+    chatId,
+    threadId,
+    messageId: messageId!,
+    tabId,
   });
 });
 
-addActionHandler('openAudioPlayer', (global, actions, payload) => {
+addActionHandler('openAudioPlayer', (global, actions, payload): ActionReturnType => {
   const {
     chatId, threadId, messageId, origin, volume, playbackRate, isMuted,
+    tabId = getCurrentTabId(),
   } = payload;
 
-  return {
-    ...global,
+  const tabState = selectTabState(global, tabId);
+  return updateTabState(global, {
     audioPlayer: {
       chatId,
       threadId,
       messageId,
-      origin: origin ?? global.audioPlayer.origin,
-      volume: volume ?? global.audioPlayer.volume,
-      playbackRate: playbackRate || global.audioPlayer.playbackRate,
-      isMuted: isMuted || global.audioPlayer.isMuted,
+      origin: origin ?? tabState.audioPlayer.origin,
+      volume: volume ?? tabState.audioPlayer.volume,
+      playbackRate: playbackRate || tabState.audioPlayer.playbackRate || global.audioPlayer.lastPlaybackRate,
+      isPlaybackRateActive: (tabState.audioPlayer.isPlaybackRateActive === undefined
+        ? global.audioPlayer.isLastPlaybackRateActive
+        : tabState.audioPlayer.isPlaybackRateActive),
+      isMuted: isMuted || tabState.audioPlayer.isMuted,
     },
-  };
+  }, tabId);
 });
 
-addActionHandler('setAudioPlayerVolume', (global, actions, payload) => {
+addActionHandler('setAudioPlayerVolume', (global, actions, payload): ActionReturnType => {
   const {
-    volume,
+    volume, tabId = getCurrentTabId(),
   } = payload;
 
-  return {
-    ...global,
+  return updateTabState(global, {
     audioPlayer: {
-      ...global.audioPlayer,
+      ...selectTabState(global, tabId).audioPlayer,
       volume,
       isMuted: false,
     },
-  };
+  }, tabId);
 });
 
-addActionHandler('setAudioPlayerPlaybackRate', (global, actions, payload) => {
+addActionHandler('setAudioPlayerPlaybackRate', (global, actions, payload): ActionReturnType => {
   const {
-    playbackRate,
+    playbackRate, isPlaybackRateActive, tabId = getCurrentTabId(),
   } = payload;
 
-  return {
+  global = {
     ...global,
     audioPlayer: {
       ...global.audioPlayer,
-      playbackRate,
+      lastPlaybackRate: playbackRate,
+      isLastPlaybackRateActive: isPlaybackRateActive,
     },
   };
+
+  return updateTabState(global, {
+    audioPlayer: {
+      ...selectTabState(global, tabId).audioPlayer,
+      playbackRate,
+      isPlaybackRateActive,
+    },
+  }, tabId);
 });
 
-addActionHandler('setAudioPlayerMuted', (global, actions, payload) => {
+addActionHandler('setAudioPlayerMuted', (global, actions, payload): ActionReturnType => {
   const {
-    isMuted,
+    isMuted, tabId = getCurrentTabId(),
   } = payload;
 
-  return {
-    ...global,
+  return updateTabState(global, {
     audioPlayer: {
-      ...global.audioPlayer,
+      ...selectTabState(global, tabId).audioPlayer,
       isMuted,
     },
-  };
+  }, tabId);
 });
 
-addActionHandler('setAudioPlayerOrigin', (global, actions, payload) => {
+addActionHandler('setAudioPlayerOrigin', (global, actions, payload): ActionReturnType => {
   const {
-    origin,
+    origin, tabId = getCurrentTabId(),
   } = payload;
 
-  return {
-    ...global,
+  return updateTabState(global, {
     audioPlayer: {
-      ...global.audioPlayer,
+      ...selectTabState(global, tabId).audioPlayer,
       origin,
     },
-  };
+  }, tabId);
 });
 
-addActionHandler('closeAudioPlayer', (global) => {
-  return {
-    ...global,
+addActionHandler('closeAudioPlayer', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+  const tabState = selectTabState(global, tabId);
+  return updateTabState(global, {
     audioPlayer: {
-      volume: global.audioPlayer.volume,
-      playbackRate: global.audioPlayer.playbackRate,
-      isMuted: global.audioPlayer.isMuted,
+      volume: tabState.audioPlayer.volume,
+      playbackRate: tabState.audioPlayer.playbackRate,
+      isPlaybackRateActive: tabState.audioPlayer.isPlaybackRateActive,
+      isMuted: tabState.audioPlayer.isMuted,
     },
-  };
+  }, tabId);
 });
 
-addActionHandler('openPollResults', (global, actions, payload) => {
-  const { chatId, messageId } = payload!;
+addActionHandler('openPollResults', (global, actions, payload): ActionReturnType => {
+  const { chatId, messageId, tabId = getCurrentTabId() } = payload;
 
-  const shouldOpenInstantly = selectIsRightColumnShown(global);
+  const shouldOpenInstantly = selectIsRightColumnShown(global, getIsMobile(), tabId);
+  const tabState = selectTabState(global, tabId);
 
   if (!shouldOpenInstantly) {
     window.setTimeout(() => {
       global = getGlobal();
 
-      setGlobal({
-        ...global,
+      global = updateTabState(global, {
         pollResults: {
           chatId,
           messageId,
           voters: {},
         },
-      });
+      }, tabId);
+      setGlobal(global);
     }, POLL_RESULT_OPEN_DELAY_MS);
-  } else if (chatId !== global.pollResults.chatId || messageId !== global.pollResults.messageId) {
-    return {
-      ...global,
+  } else if (chatId !== tabState.pollResults.chatId || messageId !== tabState.pollResults.messageId) {
+    return updateTabState(global, {
       pollResults: {
         chatId,
         messageId,
         voters: {},
       },
-    };
+    }, tabId);
   }
 
   return undefined;
 });
 
-addActionHandler('closePollResults', (global) => {
-  return {
-    ...global,
+addActionHandler('closePollResults', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+  return updateTabState(global, {
     pollResults: {},
-  };
+  }, tabId);
 });
 
-addActionHandler('focusLastMessage', (global, actions) => {
-  const currentMessageList = selectCurrentMessageList(global);
+addActionHandler('focusLastMessage', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+  const currentMessageList = selectCurrentMessageList(global, tabId);
   if (!currentMessageList) {
     return;
   }
@@ -332,55 +359,70 @@ addActionHandler('focusLastMessage', (global, actions) => {
   }
 
   actions.focusMessage({
-    chatId, threadId, messageId: lastMessageId, noHighlight: true,
+    chatId,
+    threadId,
+    messageId: lastMessageId,
+    noHighlight: true,
+    noForumTopicPanel: true,
+    tabId,
   });
 });
 
-addActionHandler('focusNextReply', (global, actions) => {
-  const currentMessageList = selectCurrentMessageList(global);
+addActionHandler('focusNextReply', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+  const currentMessageList = selectCurrentMessageList(global, tabId);
   if (!currentMessageList) {
     return undefined;
   }
 
   const { chatId, threadId } = currentMessageList;
 
-  const replyStack = selectReplyStack(global, chatId, threadId);
+  const replyStack = selectReplyStack(global, chatId, threadId, tabId);
 
   if (!replyStack || replyStack.length === 0) {
-    actions.focusLastMessage();
+    actions.focusLastMessage({ tabId });
   } else {
     const messageId = replyStack.pop();
 
-    global = replaceThreadParam(global, chatId, threadId, 'replyStack', [...replyStack]);
+    global = replaceTabThreadParam(global, chatId, threadId, 'replyStack', [...replyStack], tabId);
 
     setGlobal(global);
 
     actions.focusMessage({
       chatId,
       threadId,
-      messageId,
+      messageId: messageId!,
+      tabId,
+      noForumTopicPanel: true,
     });
   }
 
   return undefined;
 });
 
-addActionHandler('focusMessage', (global, actions, payload) => {
+addActionHandler('setReachedFocusedMessage', (global, actions, payload): ActionReturnType => {
+  const { hasReached = false, tabId = getCurrentTabId() } = payload;
+
+  return updateFocusedMessageReached(global, hasReached, tabId);
+});
+
+addActionHandler('focusMessage', (global, actions, payload): ActionReturnType => {
   const {
     chatId, threadId = MAIN_THREAD_ID, messageListType = 'thread', noHighlight, groupedId, groupedChatId,
-    replyMessageId, isResizingContainer, shouldReplaceHistory,
-  } = payload!;
+    replyMessageId, isResizingContainer, shouldReplaceHistory, noForumTopicPanel,
+    tabId = getCurrentTabId(),
+  } = payload;
 
-  let { messageId } = payload!;
+  let { messageId } = payload;
 
   if (groupedId !== undefined) {
-    const ids = selectForwardedMessageIdsByGroupId(global, groupedChatId, groupedId);
+    const ids = selectForwardedMessageIdsByGroupId(global, groupedChatId!, groupedId);
     if (ids?.length) {
-      ([messageId] = ids);
+      ([messageId] = compact(ids));
     }
   }
 
-  const currentMessageList = selectCurrentMessageList(global);
+  const currentMessageList = selectCurrentMessageList(global, tabId);
   const shouldSwitchChat = !currentMessageList || (
     chatId !== currentMessageList.chatId
     || threadId !== currentMessageList.threadId
@@ -392,200 +434,223 @@ addActionHandler('focusMessage', (global, actions, payload) => {
     blurTimeout = undefined;
   }
   blurTimeout = window.setTimeout(() => {
-    let newGlobal = getGlobal();
-    newGlobal = updateFocusedMessage(newGlobal);
-    newGlobal = updateFocusDirection(newGlobal);
-    setGlobal(newGlobal);
+    global = getGlobal();
+    global = updateFocusedMessage(global, undefined, undefined, undefined, undefined, tabId);
+    global = updateFocusDirection(global, undefined, tabId);
+    setGlobal(global);
   }, noHighlight ? FOCUS_NO_HIGHLIGHT_DURATION : FOCUS_DURATION);
 
-  global = updateFocusedMessage(global, chatId, messageId, noHighlight, isResizingContainer);
-  global = updateFocusDirection(global, undefined);
+  global = updateFocusedMessage(global, chatId, messageId, noHighlight, isResizingContainer, tabId);
+  global = updateFocusDirection(global, undefined, tabId);
 
   if (replyMessageId) {
-    const replyStack = selectReplyStack(global, chatId, threadId) || [];
-    global = replaceThreadParam(global, chatId, threadId, 'replyStack', [...replyStack, replyMessageId]);
+    const replyStack = selectReplyStack(global, chatId, threadId, tabId) || [];
+    global = replaceTabThreadParam(global, chatId, threadId, 'replyStack', [...replyStack, replyMessageId], tabId);
   }
 
   if (shouldSwitchChat) {
-    global = updateFocusDirection(global, FocusDirection.Static);
+    global = updateFocusDirection(global, FocusDirection.Static, tabId);
   }
 
-  const viewportIds = selectViewportIds(global, chatId, threadId);
+  const viewportIds = selectViewportIds(global, chatId, threadId, tabId);
   if (viewportIds && viewportIds.includes(messageId)) {
     setGlobal(global);
-    actions.openChat({ id: chatId, threadId, shouldReplaceHistory });
+    actions.openChat({
+      id: chatId,
+      threadId,
+      shouldReplaceHistory,
+      noForumTopicPanel,
+      tabId,
+    });
     return undefined;
   }
 
   if (shouldSwitchChat) {
-    global = replaceThreadParam(global, chatId, threadId, 'viewportIds', undefined);
+    global = replaceTabThreadParam(global, chatId, threadId, 'viewportIds', undefined, tabId);
   }
 
-  global = replaceThreadParam(global, chatId, threadId, 'outlyingIds', undefined);
+  global = replaceTabThreadParam(global, chatId, threadId, 'outlyingIds', undefined, tabId);
 
   if (viewportIds && !shouldSwitchChat) {
     const direction = messageId > viewportIds[0] ? FocusDirection.Down : FocusDirection.Up;
-    global = updateFocusDirection(global, direction);
+    global = updateFocusDirection(global, direction, tabId);
   }
 
   setGlobal(global);
 
-  actions.openChat({ id: chatId, threadId, shouldReplaceHistory });
-  actions.loadViewportMessages();
+  actions.openChat({
+    id: chatId,
+    threadId,
+    shouldReplaceHistory,
+    noForumTopicPanel,
+    tabId,
+  });
+  actions.loadViewportMessages({
+    tabId,
+  });
   return undefined;
 });
 
-addActionHandler('openForwardMenu', (global, actions, payload) => {
+addActionHandler('openForwardMenu', (global, actions, payload): ActionReturnType => {
   const {
-    fromChatId, messageIds, groupedId, withMyScore,
+    fromChatId, messageIds, groupedId, withMyScore, tabId = getCurrentTabId(),
   } = payload;
   let groupedMessageIds;
   if (groupedId) {
     groupedMessageIds = selectMessageIdsByGroupId(global, fromChatId, groupedId);
   }
-  return {
-    ...global,
+  return updateTabState(global, {
     forwardMessages: {
       fromChatId,
       messageIds: groupedMessageIds || messageIds,
       isModalShown: true,
       withMyScore,
     },
-  };
+  }, tabId);
 });
 
-addActionHandler('changeForwardRecipient', (global) => {
-  return {
-    ...global,
+addActionHandler('changeForwardRecipient', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+  return updateTabState(global, {
     forwardMessages: {
-      ...global.forwardMessages,
+      ...selectTabState(global, tabId).forwardMessages,
       toChatId: undefined,
       isModalShown: true,
       noAuthors: false,
       noCaptions: false,
     },
-  };
+  }, tabId);
 });
 
-addActionHandler('setForwardNoAuthors', (global, actions, payload) => {
-  return {
-    ...global,
+addActionHandler('setForwardNoAuthors', (global, actions, payload): ActionReturnType => {
+  const { noAuthors, tabId = getCurrentTabId() } = payload;
+  const tabState = selectTabState(global, tabId);
+  return updateTabState(global, {
     forwardMessages: {
-      ...global.forwardMessages,
-      noAuthors: payload,
-      noCaptions: payload && global.forwardMessages.noCaptions, // `noCaptions` cannot be true when `noAuthors` is false
+      ...tabState.forwardMessages,
+      noAuthors,
+      // `noCaptions` cannot be true when `noAuthors` is false
+      noCaptions: noAuthors && tabState.forwardMessages.noCaptions,
     },
-  };
+  }, tabId);
 });
 
-addActionHandler('setForwardNoCaptions', (global, actions, payload) => {
-  return {
-    ...global,
+addActionHandler('setForwardNoCaptions', (global, actions, payload): ActionReturnType => {
+  const { noCaptions, tabId = getCurrentTabId() } = payload;
+  return updateTabState(global, {
     forwardMessages: {
-      ...global.forwardMessages,
-      noCaptions: payload,
-      noAuthors: payload, // On other clients `noAuthors` updates together with `noCaptions`
+      ...selectTabState(global, tabId).forwardMessages,
+      noCaptions,
+      noAuthors: noCaptions, // On other clients `noAuthors` updates together with `noCaptions`
     },
-  };
+  }, tabId);
 });
 
-addActionHandler('exitForwardMode', (global) => {
-  setGlobal({
-    ...global,
+addActionHandler('exitForwardMode', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+
+  global = updateTabState(global, {
     forwardMessages: {},
-  });
+  }, tabId);
+  setGlobal(global);
 });
 
-addActionHandler('openForwardMenuForSelectedMessages', (global, actions) => {
-  if (!global.selectedMessages) {
+addActionHandler('openForwardMenuForSelectedMessages', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+  const tabState = selectTabState(global, tabId);
+  if (!tabState.selectedMessages) {
     return;
   }
 
-  const { chatId: fromChatId, messageIds } = global.selectedMessages;
+  const { chatId: fromChatId, messageIds } = tabState.selectedMessages;
 
-  actions.openForwardMenu({ fromChatId, messageIds });
+  actions.openForwardMenu({ fromChatId, messageIds, tabId });
 });
 
-addActionHandler('cancelMessageMediaDownload', (global, actions, payload) => {
-  const { message } = payload;
+addActionHandler('cancelMessageMediaDownload', (global, actions, payload): ActionReturnType => {
+  const { message, tabId = getCurrentTabId() } = payload;
 
-  const byChatId = global.activeDownloads.byChatId[message.chatId];
+  const tabState = selectTabState(global, tabId);
+  const byChatId = tabState.activeDownloads.byChatId[message.chatId];
   if (!byChatId || !byChatId.length) return;
 
-  setGlobal({
-    ...global,
+  global = updateTabState(global, {
     activeDownloads: {
       byChatId: {
-        ...global.activeDownloads.byChatId,
+        ...tabState.activeDownloads.byChatId,
         [message.chatId]: byChatId.filter((id) => id !== message.id),
       },
     },
-  });
+  }, tabId);
+  setGlobal(global);
 });
 
-addActionHandler('cancelMessagesMediaDownload', (global, actions, payload) => {
-  const { messages } = payload;
+addActionHandler('cancelMessagesMediaDownload', (global, actions, payload): ActionReturnType => {
+  const { messages, tabId = getCurrentTabId() } = payload;
 
-  const byChatId = global.activeDownloads.byChatId;
-  const newByChatId: GlobalState['activeDownloads']['byChatId'] = {};
+  const byChatId = selectTabState(global, tabId).activeDownloads.byChatId;
+  const newByChatId: TabState['activeDownloads']['byChatId'] = {};
   Object.keys(byChatId).forEach((chatId) => {
     newByChatId[chatId] = byChatId[chatId].filter((id) => !messages.find((message) => message.id === id));
   });
-  return {
-    ...global,
+  return updateTabState(global, {
     activeDownloads: {
       byChatId: newByChatId,
     },
-  };
+  }, tabId);
 });
 
-addActionHandler('downloadMessageMedia', (global, actions, payload) => {
-  const { message } = payload;
+addActionHandler('downloadMessageMedia', (global, actions, payload): ActionReturnType => {
+  const { message, tabId = getCurrentTabId() } = payload;
 
-  setGlobal({
-    ...global,
+  const tabState = selectTabState(global, tabId);
+  global = updateTabState(global, {
     activeDownloads: {
       byChatId: {
-        ...global.activeDownloads.byChatId,
-        [message.chatId]: [...(global.activeDownloads.byChatId[message.chatId] || []), message.id],
+        ...tabState.activeDownloads.byChatId,
+        [message.chatId]: [...(tabState.activeDownloads.byChatId[message.chatId] || []), message.id],
       },
     },
-  });
+  }, tabId);
+  setGlobal(global);
 });
 
-addActionHandler('downloadSelectedMessages', (global, actions) => {
-  if (!global.selectedMessages) {
+addActionHandler('downloadSelectedMessages', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+  const tabState = selectTabState(global, tabId);
+  if (!tabState.selectedMessages) {
     return;
   }
 
-  const { chatId, messageIds } = global.selectedMessages;
-  const { threadId } = selectCurrentMessageList(global) || {};
+  const { chatId, messageIds } = tabState.selectedMessages;
+  const { threadId } = selectCurrentMessageList(global, tabId) || {};
 
   const chatMessages = selectChatMessages(global, chatId);
   if (!chatMessages || !threadId) return;
   const messages = messageIds.map((id) => chatMessages[id])
     .filter((message) => selectAllowedMessageActions(global, message, threadId).canDownload);
-  messages.forEach((message) => actions.downloadMessageMedia({ message }));
+  messages.forEach((message) => actions.downloadMessageMedia({ message, tabId }));
 });
 
-addActionHandler('enterMessageSelectMode', (global, actions, payload) => {
-  const { messageId } = payload || {};
-  const openChat = selectCurrentChat(global);
+addActionHandler('enterMessageSelectMode', (global, actions, payload): ActionReturnType => {
+  const { messageId, tabId = getCurrentTabId() } = payload || {};
+  const openChat = selectCurrentChat(global, tabId);
   if (!openChat) {
     return global;
   }
 
-  return enterMessageSelectMode(global, openChat.id, messageId);
+  return enterMessageSelectMode(global, openChat.id, messageId, tabId);
 });
 
-addActionHandler('toggleMessageSelection', (global, actions, payload) => {
+addActionHandler('toggleMessageSelection', (global, actions, payload): ActionReturnType => {
   const {
     messageId,
     groupedId,
     childMessageIds,
     withShift,
-  } = payload!;
-  const currentMessageList = selectCurrentMessageList(global);
+    tabId = getCurrentTabId(),
+  } = payload;
+  const currentMessageList = selectCurrentMessageList(global, tabId);
   if (!currentMessageList) {
     return;
   }
@@ -593,138 +658,287 @@ addActionHandler('toggleMessageSelection', (global, actions, payload) => {
   const { chatId, threadId, type: messageListType } = currentMessageList;
 
   global = toggleMessageSelection(
-    global, chatId, threadId, messageListType, messageId, groupedId, childMessageIds, withShift,
+    global, chatId, threadId, messageListType, messageId, groupedId, childMessageIds, withShift, tabId,
   );
 
   setGlobal(global);
 
-  if (global.shouldShowContextMenuHint) {
-    actions.disableContextMenuHint();
+  if (selectTabState(global, tabId).shouldShowContextMenuHint) {
+    actions.disableContextMenuHint({ tabId });
     actions.showNotification({
       // eslint-disable-next-line max-len
       message: `To **edit** or **reply**, close this menu. Then ${IS_TOUCH_ENV ? 'long tap' : 'right click'} on a message.`,
+      tabId,
     });
   }
 });
 
-addActionHandler('disableContextMenuHint', (global) => {
-  if (!global.shouldShowContextMenuHint) {
+addActionHandler('disableContextMenuHint', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+
+  if (!selectTabState(global, tabId).shouldShowContextMenuHint) {
     return undefined;
   }
 
-  return {
-    ...global,
+  return updateTabState(global, {
     shouldShowContextMenuHint: false,
-  };
+  }, tabId);
 });
 
-addActionHandler('exitMessageSelectMode', exitMessageSelectMode);
+addActionHandler('exitMessageSelectMode', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+  return exitMessageSelectMode(global, tabId);
+});
 
-function openPollModal(global: GlobalState, isQuiz?: boolean, defaultValues?: PollModalDefaults): GlobalState {
-  return {
-    ...global,
+function openPollModal(
+  global: GlobalState,
+  tabId: number,
+  isQuiz?: boolean,
+  defaultValues?: PollModalDefaults,
+): GlobalState {
+  return updateTabState(global, {
     pollModal: {
       isOpen: true,
       isQuiz,
       defaultValues,
     },
-  };
+  }, tabId);
 }
 
 function openAccountPromptModal(
-  global: GlobalState, platform: string,
+  global: GlobalState, platform: string, tabId: number,
 ): GlobalState {
-  return {
-    ...global,
+  return updateTabState(global, {
     accountPromptModal: {
       isOpen: true,
       defaultValues: { platform },
     },
-  };
+  }, tabId);
 }
 
-function closeAccountPromptModal(global: GlobalState): GlobalState {
-  return {
-    ...global,
+function closeAccountPromptModal(global: GlobalState, tabId: number): GlobalState {
+  const tabState = selectTabState(global, tabId);
+  return updateTabState(global, {
     accountPromptModal: {
-      ...global.accountPromptModal,
+      ...tabState.accountPromptModal,
       isOpen: false,
     },
-  };
+  }, tabId);
 }
 
 function openResultsReportModal(
   global: GlobalState,
-  page: GlobalState['consensusResultsModal']['page'],
+  page: TabState['consensusResultsModal']['page'],
+  tabId: number,
   extPlatformInfo?: ExtPlatformInfo,
   guessedResults?: ConsensusResults,
 ): GlobalState {
-  return {
-    ...global,
+  return updateTabState(global, {
     consensusResultsModal: {
       isOpen: true,
       page,
       extPlatformInfo,
       guessedResults,
     },
-  };
+  }, tabId);
 }
 
-function closeResultsReportModal(global: GlobalState): GlobalState {
-  return {
-    ...global,
+function closeResultsReportModal(global: GlobalState, tabId: number): GlobalState {
+  return updateTabState(global, {
     consensusResultsModal: {
       isOpen: false,
       page: 'extPlatform',
     },
-  };
+  }, tabId);
 }
 
-function openLoadingModal(global: GlobalState, title: string): GlobalState {
-  return {
-    ...global,
+function openLoadingModal(global: GlobalState, title: string, tabId: number): GlobalState {
+  return updateTabState(global, {
     loadingModal: {
       isOpen: true,
       title,
     },
-  };
+  }, tabId);
 }
 
-function closeLoadingModal(global: GlobalState): GlobalState {
-  return {
-    ...global,
+function closeLoadingModal(global: GlobalState, tabId: number): GlobalState {
+  return updateTabState(global, {
     loadingModal: {
       isOpen: false,
       title: '',
     },
-  };
+  }, tabId);
 }
 
-addActionHandler('closeLoadingModal', (global) => {
-  return closeLoadingModal(global);
+addActionHandler('closeLoadingModal', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+  return closeLoadingModal(global, tabId);
 });
 
-addActionHandler('closeResultsReportModal', (global) => {
-  return closeResultsReportModal(global);
+addActionHandler('closeResultsReportModal', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+  return closeResultsReportModal(global, tabId);
 });
 
-addActionHandler('closeAccountPromptModal', (global) => {
-  return closeAccountPromptModal(global);
+addActionHandler('closeAccountPromptModal', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+  return closeAccountPromptModal(global, tabId);
 });
 
-addActionHandler('openPollModal', (global, actions, payload) => {
-  const { isQuiz, defaultValues } = payload || {};
+addActionHandler('openPollModal', (global, actions, payload): ActionReturnType => {
+  const { isQuiz, defaultValues, tabId = getCurrentTabId() } = payload || {};
 
-  return openPollModal(global, isQuiz, defaultValues);
+  return openPollModal(global, tabId, isQuiz, defaultValues);
 });
 
-addActionHandler('closePollModal', (global) => {
-  return {
-    ...global,
+addActionHandler('closePollModal', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+
+  return updateTabState(global, {
     pollModal: {
       isOpen: false,
     },
-  };
+  }, tabId);
+});
+
+function constructAccountOptions(accountMap: AccountMap, platform?: string) {
+  const optionStrs = Array.from(accountMap).map(([, user]) => {
+    return constructAccountOption(user, platform);
+  });
+
+  return optionStrs;
+}
+
+addActionHandler('composeConsensusMessage', async (gl, actions, payload): Promise<void> => {
+  const { sendPinnedMessage, sendMessage } = actions;
+  const { tabId = getCurrentTabId() } = payload || {};
+  switch (payload.type) {
+    case 'delegatePoll': {
+      let global = openLoadingModal(gl, 'NewPoll', tabId);
+      setGlobal(global);
+      global = getGlobal();
+      await loadRemainingMessages(global);
+      global = getGlobal();
+      // TODO: Are we sure tabId did not change?
+      const tab = selectTabState(global, tabId);
+      if (tab.loadingModal.isOpen) {
+        // If modal wasn't canceled
+        global = closeLoadingModal(global, tabId);
+
+        const platform = getLatestPlatform(global);
+        global = createPollWithAccounts(global, SELECT_DELEGATE_STR, tabId, platform);
+        setGlobal(global);
+      }
+      break;
+    }
+    case 'rankingsPoll': {
+      let global = openLoadingModal(gl, 'NewPoll', tabId);
+      setGlobal(global);
+      global = getGlobal();
+      await loadRemainingMessages(global);
+      global = getGlobal();
+      const tab = selectTabState(global, tabId);
+      if (tab.loadingModal.isOpen) {
+        global = closeLoadingModal(global, tabId);
+
+        const { rank } = payload;
+        const question = RANK_POLL_STRS[rank as number - 1];
+        const platform = getLatestPlatform(global);
+        global = createPollWithAccounts(global, question, tabId, platform);
+        setGlobal(global);
+      }
+      break;
+    }
+    case 'accountPrompt': {
+      let { platform } = payload;
+      if (!platform) {
+        platform = DEFAULT_PLATFORM;
+      }
+      const global = openAccountPromptModal(gl, platform, tabId);
+      setGlobal(global);
+      break;
+    }
+    case 'accountPromptSubmit': {
+      const { value } = payload;
+      const { platform, promptMessage } = value;
+      if (!platform.length || !promptMessage.length) {
+        return;
+      }
+
+      const { text, entities } = parseMessageInput(promptMessage);
+      sendPinnedMessage({ text, entities, tabId });
+
+      const global = closeAccountPromptModal(gl, tabId);
+      setGlobal(global);
+      break;
+    }
+    case 'resultsReport': {
+      let global = openLoadingModal(gl, 'Consensus results', tabId);
+      setGlobal(global);
+      global = getGlobal();
+      await loadRemainingMessages(global);
+      global = getGlobal();
+      const tab = selectTabState(global, tabId);
+      if (tab.loadingModal.isOpen) {
+        global = closeLoadingModal(global, tabId);
+
+        const platform = getLatestPlatform(global);
+
+        const extPlatformInfo = platform ? FRACTAL_INFO_BY_PLATFORM[platform] : undefined;
+
+        global = openResultsReportModal(global, 'extPlatform', tabId, extPlatformInfo);
+        setGlobal(global);
+      }
+      break;
+    }
+    case 'resultsReportPlatformSelect': {
+      const { extPlatformInfo } = payload;
+      const platform = extPlatformInfo?.platform;
+      const results = guessConsensusResults(gl, platform);
+      // TODO: signal error
+      if (!results) {
+        return;
+      }
+
+      const nextPage = extPlatformInfo ? 'editGroupNumber' : 'editText';
+
+      const global = openResultsReportModal(gl, nextPage, tabId, extPlatformInfo, results);
+      setGlobal(global);
+      break;
+    }
+
+    case 'resultsReportGroupNumSelect': {
+      const { groupNum } = payload;
+      const tab = selectTabState(gl, tabId);
+      const { extPlatformInfo, guessedResults } = tab.consensusResultsModal;
+
+      assert(extPlatformInfo && guessedResults, 'Platform info and guessedResults have to be defined at this point');
+
+      const results = { ...(guessedResults as ConsensusResults), groupNum };
+      const global = openResultsReportModal(gl, 'editText', tabId, extPlatformInfo, results);
+      setGlobal(global);
+      break;
+    }
+    case 'resultsReportSubmit': {
+      const { message, pinMessage } = payload;
+
+      const { text, entities } = parseMessageInput(message, true);
+
+      if (pinMessage) {
+        sendPinnedMessage({ text, entities, tabId });
+      } else {
+        sendMessage({ text, entities, tabId });
+      }
+
+      const global = closeResultsReportModal(gl, tabId);
+      setGlobal(global);
+      break;
+    }
+    default: {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const p: never = payload;
+    }
+  }
 });
 
 function constructAccountOption(user: ExtUser, platform?: string) {
@@ -738,14 +952,6 @@ function constructAccountOption(user: ExtUser, platform?: string) {
   }
 
   return `${id1} ${id2}`;
-}
-
-function constructAccountOptions(accountMap: AccountMap, platform?: string) {
-  const optionStrs = Array.from(accountMap).map(([, user]) => {
-    return constructAccountOption(user, platform);
-  });
-
-  return optionStrs;
 }
 
 function optionToAccount(accountMap: AccountMap, optionStr: string): ExtUser | undefined {
@@ -800,8 +1006,9 @@ function getAccountOptions(
   return constructAccountOptions(accountMap, platform);
 }
 
-function createPollWithAccounts(global: GlobalState, question: string, platform?: string): GlobalState {
-  if (global.pollModal.isOpen) {
+function createPollWithAccounts(global: GlobalState, question: string, tabId: number, platform?: string): GlobalState {
+  const tab = selectTabState(global, tabId);
+  if (tab.pollModal.isOpen) {
     return global;
   }
 
@@ -817,7 +1024,7 @@ function createPollWithAccounts(global: GlobalState, question: string, platform?
     options,
   };
 
-  return openPollModal(global, false, values);
+  return openPollModal(global, tabId, false, values);
 }
 
 function getWinnerOption(poll: ApiPoll, accountMap: AccountMap, platform?: string): ConsensusResultOption | undefined {
@@ -912,119 +1119,7 @@ function getLatestPlatform(global: GlobalState): string | undefined {
   return latestPromptStr && promptStrToPlatform(latestPromptStr);
 }
 
-addActionHandler('composeConsensusMessage', async (global, actions, payload) => {
-  const { sendPinnedMessage, sendMessage } = getActions();
-  switch (payload.type) {
-    case 'delegatePoll': {
-      setGlobal(openLoadingModal(global, 'NewPoll'));
-      await loadRemainingMessages(getGlobal());
-      global = getGlobal();
-      if (global.loadingModal.isOpen) {
-        // If modal wasn't canceled
-        global = closeLoadingModal(global);
-
-        const platform = getLatestPlatform(global);
-        setGlobal(createPollWithAccounts(global, SELECT_DELEGATE_STR, platform));
-      }
-      break;
-    }
-    case 'rankingsPoll': {
-      setGlobal(openLoadingModal(global, 'NewPoll'));
-      await loadRemainingMessages(getGlobal());
-      global = getGlobal();
-      if (global.loadingModal.isOpen) {
-        global = closeLoadingModal(global);
-
-        const { rank } = payload;
-        const question = RANK_POLL_STRS[rank as number - 1];
-        const platform = getLatestPlatform(global);
-        setGlobal(createPollWithAccounts(global, question, platform));
-      }
-      break;
-    }
-    case 'accountPrompt': {
-      let { platform } = payload;
-      if (!platform) {
-        platform = DEFAULT_PLATFORM;
-      }
-      setGlobal(openAccountPromptModal(global, platform));
-      break;
-    }
-    case 'accountPromptSubmit': {
-      const { value } = payload;
-      const { platform, promptMessage } = value;
-      if (!platform.length || !promptMessage.length) {
-        return;
-      }
-
-      const { text, entities } = parseMessageInput(promptMessage);
-      sendPinnedMessage({ text, entities });
-
-      setGlobal(closeAccountPromptModal(global));
-      break;
-    }
-    case 'resultsReport': {
-      setGlobal(openLoadingModal(global, 'Consensus results'));
-      await loadRemainingMessages(getGlobal());
-      global = getGlobal();
-      if (global.loadingModal.isOpen) {
-        global = closeLoadingModal(global);
-
-        const platform = getLatestPlatform(global);
-
-        const extPlatformInfo = platform ? FRACTAL_INFO_BY_PLATFORM[platform] : undefined;
-
-        setGlobal(openResultsReportModal(global, 'extPlatform', extPlatformInfo));
-      }
-      break;
-    }
-    case 'resultsReportPlatformSelect': {
-      const { extPlatformInfo } = payload;
-      const platform = extPlatformInfo?.platform;
-      const results = guessConsensusResults(global, platform);
-      // TODO: signal error
-      if (!results) {
-        return;
-      }
-
-      const nextPage = extPlatformInfo ? 'editGroupNumber' : 'editText';
-
-      setGlobal(openResultsReportModal(global, nextPage, extPlatformInfo, results));
-      break;
-    }
-
-    case 'resultsReportGroupNumSelect': {
-      const { groupNum } = payload;
-      const { extPlatformInfo, guessedResults } = global.consensusResultsModal;
-
-      assert(extPlatformInfo && guessedResults, 'Platform info and guessedResults have to be defined at this point');
-
-      const results = { ...(guessedResults as ConsensusResults), groupNum };
-      setGlobal(openResultsReportModal(global, 'editText', extPlatformInfo, results));
-      break;
-    }
-    case 'resultsReportSubmit': {
-      const { message, pinMessage } = payload;
-
-      const { text, entities } = parseMessageInput(message, true);
-
-      if (pinMessage) {
-        sendPinnedMessage({ text, entities });
-      } else {
-        sendMessage({ text, entities });
-      }
-
-      setGlobal(closeResultsReportModal(global));
-      break;
-    }
-    default: {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const p: never = payload;
-    }
-  }
-});
-
-addActionHandler('checkVersionNotification', (global, actions) => {
+addActionHandler('checkVersionNotification', (global, actions): ActionReturnType => {
   if (RELEASE_DATETIME && Date.now() > Number(RELEASE_DATETIME) + VERSION_NOTIFICATION_DURATION) {
     return;
   }
@@ -1038,7 +1133,7 @@ addActionHandler('checkVersionNotification', (global, actions) => {
 
   const message: Omit<ApiMessage, 'id'> = {
     chatId: SERVICE_NOTIFICATIONS_USER_ID,
-    date: getServerTime(global.serverTimeOffset),
+    date: getServerTime(),
     content: {
       text: parseMessageInput(versionNotification, true),
     },
@@ -1046,12 +1141,12 @@ addActionHandler('checkVersionNotification', (global, actions) => {
   };
 
   actions.createServiceNotification({
-    message,
+    message: message as ApiMessage,
     version: currentVersion,
   });
 });
 
-addActionHandler('createServiceNotification', (global, actions, payload) => {
+addActionHandler('createServiceNotification', (global, actions, payload): ActionReturnType => {
   const { message, version } = payload;
   const { serviceNotifications } = global;
   const serviceChat = selectChat(global, SERVICE_NOTIFICATIONS_USER_ID)!;
@@ -1074,13 +1169,14 @@ addActionHandler('createServiceNotification', (global, actions, payload) => {
     isUnread: true,
   };
 
-  setGlobal({
+  global = {
     ...global,
     serviceNotifications: [
       ...serviceNotifications.slice(-SERVICE_NOTIFICATIONS_MAX_AMOUNT),
       serviceNotification,
     ],
-  });
+  };
+  setGlobal(global);
 
   actions.apiUpdate({
     '@type': 'newMessage',
@@ -1090,50 +1186,70 @@ addActionHandler('createServiceNotification', (global, actions, payload) => {
   });
 });
 
-addActionHandler('openReactorListModal', (global, actions, payload) => {
-  const { chatId, messageId } = payload!;
+addActionHandler('openReactorListModal', (global, actions, payload): ActionReturnType => {
+  const { chatId, messageId, tabId = getCurrentTabId() } = payload;
 
-  return {
-    ...global,
+  return updateTabState(global, {
     reactorModal: { chatId, messageId },
-  };
+  }, tabId);
 });
 
-addActionHandler('closeReactorListModal', (global) => {
-  return {
-    ...global,
+addActionHandler('closeReactorListModal', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+
+  return updateTabState(global, {
     reactorModal: undefined,
-  };
+  }, tabId);
 });
 
-addActionHandler('openSeenByModal', (global, actions, payload) => {
-  const { chatId, messageId } = payload!;
+addActionHandler('openSeenByModal', (global, actions, payload): ActionReturnType => {
+  const { chatId, messageId, tabId = getCurrentTabId() } = payload;
 
-  return {
-    ...global,
+  return updateTabState(global, {
     seenByModal: { chatId, messageId },
-  };
+  }, tabId);
 });
 
-addActionHandler('closeSeenByModal', (global) => {
-  return {
-    ...global,
+addActionHandler('closeSeenByModal', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+
+  return updateTabState(global, {
     seenByModal: undefined,
-  };
+  }, tabId);
 });
 
-addActionHandler('copySelectedMessages', (global) => {
-  if (!global.selectedMessages) {
+addActionHandler('openMessageLanguageModal', (global, actions, payload): ActionReturnType => {
+  const { chatId, id, tabId = getCurrentTabId() } = payload;
+
+  const activeLanguage = selectRequestedTranslationLanguage(global, chatId, id, tabId);
+
+  return updateTabState(global, {
+    messageLanguageModal: { chatId, messageId: id, activeLanguage },
+  }, tabId);
+});
+
+addActionHandler('closeMessageLanguageModal', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+
+  return updateTabState(global, {
+    messageLanguageModal: undefined,
+  }, tabId);
+});
+
+addActionHandler('copySelectedMessages', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload;
+  const tabState = selectTabState(global, tabId);
+  if (!tabState.selectedMessages) {
     return;
   }
 
-  const { chatId, messageIds } = global.selectedMessages;
+  const { chatId, messageIds } = tabState.selectedMessages;
   copyTextForMessages(global, chatId, messageIds);
 });
 
-addActionHandler('copyMessagesByIds', (global, actions, payload: { messageIds?: number[] }) => {
-  const { messageIds } = payload;
-  const chat = selectCurrentChat(global);
+addActionHandler('copyMessagesByIds', (global, actions, payload): ActionReturnType => {
+  const { messageIds, tabId = getCurrentTabId() } = payload;
+  const chat = selectCurrentChat(global, tabId);
   if (!messageIds || messageIds.length === 0 || !chat) {
     return;
   }
@@ -1143,10 +1259,10 @@ addActionHandler('copyMessagesByIds', (global, actions, payload: { messageIds?: 
 
 function copyTextForMessages(global: GlobalState, chatId: string, messageIds: number[]) {
   const { type: messageListType, threadId } = selectCurrentMessageList(global) || {};
-  const lang = langProvider.getTranslation;
+  const lang = langProvider.translate;
 
   const chatMessages = messageListType === 'scheduled'
-    ? selectScheduledMessages(global, chatId)
+    ? selectChatScheduledMessages(global, chatId)
     : selectChatMessages(global, chatId);
   if (!chatMessages || !threadId) return;
   const messages = messageIds
@@ -1165,7 +1281,6 @@ function copyTextForMessages(global: GlobalState, chatId: string, messageIds: nu
 
   const resultText = messages.reduce((acc, message) => {
     const sender = selectSender(global, message);
-
     acc.push(`> ${sender ? getSenderTitle(lang, sender) : ''}:`);
     acc.push(`${getMessageSummaryText(lang, message, false, 0, undefined, true)}\n`);
 

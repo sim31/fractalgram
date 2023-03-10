@@ -53,6 +53,8 @@
     "account.reportProfilePhoto",
     "account.changeAuthorizationSettings",
     "account.setAuthorizationTTL",
+    "account.updateEmojiStatus",
+    "account.getRecentEmojiStatuses",
     "account.reorderUsernames",
     "account.toggleUsername",
     "users.getUsers",
@@ -241,6 +243,7 @@
     "messages.setChatAvailableReactions",
     "messages.getAvailableReactions",
     "messages.setDefaultReaction",
+    "messages.translateText",
     "help.getAppConfig",
     "stats.getBroadcastStats",
     "stats.getMegagroupStats",
@@ -263,5 +266,15 @@
     "messages.getUnreadReactions",
     "messages.readMentions",
     "messages.getUnreadMentions",
-    "help.getPremiumPromo"
+    "help.getPremiumPromo",
+    "channels.toggleForum",
+    "channels.createForumTopic",
+    "channels.getForumTopics",
+    "channels.getForumTopicsByID",
+    "channels.editForumTopic",
+    "channels.updatePinnedForumTopic",
+    "channels.deleteTopicHistory",
+    "channels.toggleParticipantsHidden",
+    "photos.uploadContactProfilePhoto",
+    "messages.getMessagesViews"
 ]

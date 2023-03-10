@@ -6,11 +6,19 @@
     "airbnb-typescript"
   ],
   "plugins": [
+    "jsx-expressions",
     "no-async-without-await",
     "teactn",
-    "no-null"
+    "no-null",
+    "react-hooks-static-deps",
+    "eslint-multitab-tt"
   ],
   "rules": {
+    "eslint-multitab-tt/no-immediate-global": "error",
+    "eslint-multitab-tt/must-update-global-after-await": "off",
+    "eslint-multitab-tt/set-global-only-variable": "error",
+    "eslint-multitab-tt/no-getactions-in-actions": "error",
+    "eslint-multitab-tt/must-specify-action-handler-return-type": "error",
     "indent": [
       "error",
       2,
@@ -33,7 +41,19 @@
     "no-console": "error",
     "semi": "error",
     "no-implicit-coercion": "error",
-    "react-hooks/exhaustive-deps": "error",
+    "react-hooks/exhaustive-deps": "off",
+    "react-hooks-static-deps/exhaustive-deps": [
+      "error",
+      {
+        "additionalHooks": "(useSyncEffect|useAsync|useDebouncedCallback|useThrottledCallback|useEffectWithPrevDeps|useLayoutEffectWithPrevDeps|useDerivedState|useDerivedSignal|useThrottledResolver|useDebouncedResolver)$",
+        "staticHooks": {
+          "getActions": true,
+          "useFlag": [false, true, true],
+          "useForceUpdate": true,
+          "useReducer": [false, true]
+        }
+      }
+    ],
     "arrow-body-style": "off",
     "no-else-return": "off",
     "no-plusplus": "off",
@@ -86,6 +106,12 @@
         "allowFunctions": false,
         "allowBind": false,
         "ignoreDOMComponents": true
+      }
+    ],
+    "jsx-expressions/strict-logical-expressions": [
+      "error",
+      {
+        "allowString": true
       }
     ],
     "jsx-a11y/click-events-have-key-events": "off",

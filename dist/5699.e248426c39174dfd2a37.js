@@ -1,2 +1,0 @@
-(self.webpackChunkfractalgram=self.webpackChunkfractalgram||[]).push([[5699],{25850:a=>{a.exports=function(a){return{name:"Julia REPL",contains:[{className:"meta.prompt",begin:/^julia>/,relevance:10,starts:{end:/^(?![ ]{6})/,subLanguage:"julia"}}],aliases:["jldoctest"]}}}}]);
-//# sourceMappingURL=5699.e248426c39174dfd2a37.js.map

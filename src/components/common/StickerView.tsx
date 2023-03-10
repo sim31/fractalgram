@@ -115,13 +115,13 @@ const StickerView: FC<OwnProps> = ({
   const noTransition = isLottie && preloadedPreviewData;
 
   const bounds = useBoundsInSharedCanvas(containerRef, sharedCanvasRef);
-  const realSize = bounds.size || size;
+  const realSize = size || bounds.size;
 
   // Preload preview for Message Input and local message
   useMedia(previewMediaHash, !shouldLoad || !shouldPreloadPreview, undefined, cacheBuster);
 
   const randomIdPrefix = useMemo(() => generateIdFor(ID_STORE, true), []);
-  const idKey = [
+  const renderId = [
     (withSharedAnimation ? SHARED_PREFIX : randomIdPrefix), id, realSize, customColor?.join(','),
   ].filter(Boolean).join('_');
 
@@ -132,16 +132,17 @@ const StickerView: FC<OwnProps> = ({
         className={buildClassName(
           styles.thumb,
           noTransition && styles.noTransition,
-          isThumbOpaque && styles.thumb_opaque,
+          isThumbOpaque && styles.thumbOpaque,
           thumbClassName,
           thumbClassNames,
         )}
         alt=""
+        draggable={false}
       />
       {isLottie ? (
         <AnimatedSticker
-          key={idKey}
-          animationId={idKey}
+          key={renderId}
+          renderId={renderId}
           size={realSize}
           className={buildClassName(
             styles.media,
@@ -178,6 +179,7 @@ const StickerView: FC<OwnProps> = ({
           className={buildClassName(styles.media, fullMediaClassName, fullMediaClassNames)}
           src={fullMediaData}
           alt={emoji}
+          draggable={false}
         />
       )}
     </>

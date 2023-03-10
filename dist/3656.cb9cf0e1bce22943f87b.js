@@ -1,2 +1,0 @@
-(self.webpackChunkfractalgram=self.webpackChunkfractalgram||[]).push([[3656],{7874:s=>{s.exports=function(s){return{name:"Shell Session",aliases:["console","shellsession"],contains:[{className:"meta.prompt",begin:/^\s{0,3}[/~\w\d[\]()@-]*[>%$#][ ]?/,starts:{end:/[^\\](?=\s*$)/,subLanguage:"bash"}}]}}}}]);
-//# sourceMappingURL=3656.cb9cf0e1bce22943f87b.js.map

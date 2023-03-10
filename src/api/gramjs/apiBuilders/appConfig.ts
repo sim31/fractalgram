@@ -14,7 +14,7 @@ type Limit = 'upload_max_fileparts' | 'stickers_faved_limit' | 'saved_gifs_limit
 type LimitKey = `${Limit}_${LimitType}`;
 type LimitsConfig = Record<LimitKey, number>;
 
-interface GramJsAppConfig extends LimitsConfig {
+export interface GramJsAppConfig extends LimitsConfig {
   emojies_sounds: Record<string, {
     id: string;
     access_hash: string;
@@ -35,6 +35,10 @@ interface GramJsAppConfig extends LimitsConfig {
   premium_invoice_slug: string;
   premium_promo_order: string[];
   default_emoji_statuses_stickerset_id: string;
+  hidden_members_group_size_min: number;
+  autoarchive_setting_available: boolean;
+  // Forums
+  topics_pinned_limit: number;
 }
 
 function buildEmojiSounds(appConfig: GramJsAppConfig) {
@@ -79,8 +83,11 @@ export function buildAppConfig(json: GramJs.TypeJSONValue): ApiAppConfig {
     premiumPromoOrder: appConfig.premium_promo_order,
     isPremiumPurchaseBlocked: appConfig.premium_purchase_blocked,
     defaultEmojiStatusesStickerSetId: appConfig.default_emoji_statuses_stickerset_id,
+    topicsPinnedLimit: appConfig.topics_pinned_limit,
     maxUserReactionsDefault: appConfig.reactions_user_max_default,
     maxUserReactionsPremium: appConfig.reactions_user_max_premium,
+    hiddenMembersMinCount: appConfig.hidden_members_group_size_min,
+    canDisplayAutoarchiveSetting: appConfig.autoarchive_setting_available,
     limits: {
       uploadMaxFileparts: getLimit(appConfig, 'upload_max_fileparts', 'uploadMaxFileparts'),
       stickersFaved: getLimit(appConfig, 'stickers_faved_limit', 'stickersFaved'),

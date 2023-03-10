@@ -1,7 +1,7 @@
 import React from '../../../lib/teact/teact';
 
 import type {
-  ApiChat, ApiMessage, ApiUser, ApiGroupCall,
+  ApiChat, ApiMessage, ApiUser, ApiGroupCall, ApiTopic,
 } from '../../../api/types';
 import type { TextPart } from '../../../types';
 import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
@@ -21,6 +21,8 @@ import MessageLink from '../MessageLink';
 import ChatLink from '../ChatLink';
 import GroupCallLink from '../GroupCallLink';
 import MessageSummary from '../MessageSummary';
+import CustomEmoji from '../CustomEmoji';
+import TopicDefaultIcon from '../TopicDefaultIcon';
 
 interface RenderOptions {
   asPlainText?: boolean;
@@ -38,6 +40,7 @@ export function renderActionMessageText(
   targetUsers?: ApiUser[],
   targetMessage?: ApiMessage,
   targetChatId?: string,
+  topic?: ApiTopic,
   options: RenderOptions = {},
   observeIntersectionForLoading?: ObserveFn,
   observeIntersectionForPlaying?: ObserveFn,
@@ -47,13 +50,14 @@ export function renderActionMessageText(
   }
 
   const {
-    text, translationValues, amount, currency, call, score,
+    text, translationValues, amount, currency, call, score, topicEmojiIconId,
   } = message.content.action;
   const content: TextPart[] = [];
   const noLinks = options.asPlainText || options.isEmbedded;
   const translationKey = text === 'Chat.Service.Group.UpdatedPinnedMessage1' && !targetMessage
     ? 'Message.PinnedGenericMessage'
     : text;
+
   let unprocessed = lang(translationKey, translationValues?.length ? translationValues : undefined);
   if (translationKey.includes('ScoredInGame')) { // Translation hack for games
     unprocessed = unprocessed.replace('un1', '%action_origin%').replace('un2', '%message%');
@@ -91,6 +95,32 @@ export function renderActionMessageText(
 
   unprocessed = processed.pop() as string;
   content.push(...processed);
+
+  if (unprocessed.includes('%action_topic%')) {
+    const topicEmoji = topic?.iconEmojiId ? <CustomEmoji documentId={topic.iconEmojiId} /> : '';
+    const topicString = topic ? `${topic.title}` : 'a topic';
+    processed = processPlaceholder(
+      unprocessed,
+      '%action_topic%',
+      [topicEmoji, topicString],
+      '',
+    );
+    unprocessed = processed.pop() as string;
+    content.push(...processed);
+  }
+
+  if (unprocessed.includes('%action_topic_icon%')) {
+    const topicIcon = topicEmojiIconId || topic?.iconEmojiId;
+    const hasIcon = topicIcon && topicIcon !== '0';
+    processed = processPlaceholder(
+      unprocessed,
+      '%action_topic_icon%',
+      hasIcon ? <CustomEmoji documentId={topicIcon!} />
+        : topic ? <TopicDefaultIcon topicId={topic!.id} title={topic!.title} /> : '...',
+    );
+    unprocessed = processed.pop() as string;
+    content.push(...processed);
+  }
 
   if (unprocessed.includes('%gift_payment_amount%')) {
     processed = processPlaceholder(
@@ -244,7 +274,9 @@ function renderMigratedContent(chatId: string, noLinks?: boolean): string | Text
   return <ChatLink className="action-link underlined-link" chatId={chatId}>{text}</ChatLink>;
 }
 
-function processPlaceholder(text: string, placeholder: string, replaceValue?: TextPart | TextPart[]): TextPart[] {
+function processPlaceholder(
+  text: string, placeholder: string, replaceValue?: TextPart | TextPart[], separator = ',',
+): TextPart[] {
   const placeholderPosition = text.indexOf(placeholder);
   if (placeholderPosition < 0 || !replaceValue) {
     return [text];
@@ -256,7 +288,7 @@ function processPlaceholder(text: string, placeholder: string, replaceValue?: Te
     replaceValue.forEach((value, index) => {
       content.push(value);
       if (index + 1 < replaceValue.length) {
-        content.push(', ');
+        content.push(`${separator} `);
       }
     });
   } else {

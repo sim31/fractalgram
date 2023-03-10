@@ -1,2 +1,0 @@
-(self.webpackChunkfractalgram=self.webpackChunkfractalgram||[]).push([[8709],{48704:a=>{a.exports=function(a){return{name:"VBScript in HTML",subLanguage:"xml",contains:[{begin:"<%",end:"%>",subLanguage:"vbscript"}]}}}}]);
-//# sourceMappingURL=8709.7f1f3f6fed08ceac5001.js.map

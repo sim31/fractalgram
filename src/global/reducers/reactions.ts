@@ -6,11 +6,12 @@ import {
   MIN_LEFT_COLUMN_WIDTH,
   SIDE_COLUMN_MAX_WIDTH,
 } from '../../components/middle/helpers/calculateMiddleFooterTransforms';
-import { IS_SINGLE_COLUMN_LAYOUT } from '../../util/environment';
 import windowSize from '../../util/windowSize';
 import { updateChat } from './chats';
 import { isSameReaction, isReactionChosen } from '../helpers';
 import { updateChatMessage } from './messages';
+import { selectTabState } from '../selectors';
+import { getIsMobile } from '../../hooks/useAppLayout';
 
 function getLeftColumnWidth(windowWidth: number) {
   if (windowWidth > MIN_SCREEN_WIDTH_FOR_STATIC_RIGHT_COLUMN) {
@@ -31,14 +32,15 @@ function getLeftColumnWidth(windowWidth: number) {
 }
 
 export function subtractXForEmojiInteraction(global: GlobalState, x: number) {
-  return x - ((global.isLeftColumnShown && !IS_SINGLE_COLUMN_LAYOUT)
+  const tabState = selectTabState(global);
+  return x - ((tabState.isLeftColumnShown && !getIsMobile())
     ? global.leftColumnWidth || getLeftColumnWidth(windowSize.get().width)
     : 0);
 }
 
-export function addMessageReaction(
-  global: GlobalState, message: ApiMessage, userReactions: ApiReaction[],
-) {
+export function addMessageReaction<T extends GlobalState>(
+  global: T, message: ApiMessage, userReactions: ApiReaction[],
+): T {
   const currentReactions = message.reactions || { results: [] };
 
   // Update UI without waiting for server response
@@ -90,8 +92,8 @@ export function addMessageReaction(
   });
 }
 
-export function updateUnreadReactions(
-  global: GlobalState, chatId: string, update: Pick<ApiChat, 'unreadReactionsCount' | 'unreadReactions'>,
-) {
+export function updateUnreadReactions<T extends GlobalState>(
+  global: T, chatId: string, update: Pick<ApiChat, 'unreadReactionsCount' | 'unreadReactions'>,
+): T {
   return updateChat(global, chatId, update, undefined, true);
 }

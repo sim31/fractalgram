@@ -1,11 +1,11 @@
 import type { ChangeEvent } from 'react';
 import type { FC } from '../../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useMemo, useState, useRef,
+  memo, useCallback, useEffect, useMemo, useRef, useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import { ManagementScreens, ManagementProgress } from '../../../types';
+import { ManagementProgress, ManagementScreens } from '../../../types';
 import type {
   ApiAvailableReaction, ApiChat, ApiChatBannedRights, ApiExportedInvite,
 } from '../../../api/types';
@@ -17,12 +17,13 @@ import {
   isChatBasicGroup,
   isChatPublic,
 } from '../../../global/helpers';
+import { debounce } from '../../../util/schedulers';
+import { selectChat, selectTabState } from '../../../global/selectors';
+import { formatInteger } from '../../../util/textFormat';
+import renderText from '../../common/helpers/renderText';
 import useMedia from '../../../hooks/useMedia';
 import useLang from '../../../hooks/useLang';
 import useFlag from '../../../hooks/useFlag';
-import { selectChat } from '../../../global/selectors';
-import { formatInteger } from '../../../util/textFormat';
-import renderText from '../../common/helpers/renderText';
 import useHistoryBack from '../../../hooks/useHistoryBack';
 
 import AvatarEditable from '../../ui/AvatarEditable';
@@ -33,6 +34,7 @@ import Spinner from '../../ui/Spinner';
 import FloatingActionButton from '../../ui/FloatingActionButton';
 import ConfirmDialog from '../../ui/ConfirmDialog';
 import TextArea from '../../ui/TextArea';
+import Switcher from '../../ui/Switcher';
 
 import './Management.scss';
 
@@ -51,6 +53,7 @@ type StateProps = {
   canChangeInfo?: boolean;
   canBanUsers?: boolean;
   canInvite?: boolean;
+  canEditForum?: boolean;
   exportedInvites?: ApiExportedInvite[];
   lastSyncTime?: number;
   isChannelsPremiumLimitReached: boolean;
@@ -60,9 +63,26 @@ type StateProps = {
 const GROUP_TITLE_EMPTY = 'Group title can\'t be empty';
 const GROUP_MAX_DESCRIPTION = 255;
 
+const ALL_PERMISSIONS: Array<keyof ApiChatBannedRights> = [
+  'sendMessages',
+  'embedLinks',
+  'sendPolls',
+  'changeInfo',
+  'inviteUsers',
+  'pinMessages',
+  'manageTopics',
+  'sendPhotos',
+  'sendVideos',
+  'sendRoundvideos',
+  'sendVoices',
+  'sendAudios',
+  'sendDocs',
+];
 // Some checkboxes control multiple rights, and some rights are not controlled from Permissions screen,
 // so we need to define the amount manually
-const TOTAL_PERMISSIONS_COUNT = 8;
+const TOTAL_PERMISSIONS_COUNT = ALL_PERMISSIONS.length + 1;
+
+const runDebounced = debounce((cb) => cb(), 500, false);
 
 const ManageGroup: FC<OwnProps & StateProps> = ({
   chatId,
@@ -73,6 +93,7 @@ const ManageGroup: FC<OwnProps & StateProps> = ({
   canChangeInfo,
   canBanUsers,
   canInvite,
+  canEditForum,
   isActive,
   exportedInvites,
   lastSyncTime,
@@ -91,6 +112,7 @@ const ManageGroup: FC<OwnProps & StateProps> = ({
     openChat,
     loadExportedChatInvites,
     loadChatJoinRequests,
+    toggleForum,
   } = getActions();
 
   const [isDeleteDialogOpen, openDeleteDialog, closeDeleteDialog] = useFlag();
@@ -98,10 +120,11 @@ const ManageGroup: FC<OwnProps & StateProps> = ({
   const currentAbout = chat.fullInfo ? (chat.fullInfo.about || '') : '';
 
   const [isProfileFieldsTouched, setIsProfileFieldsTouched] = useState(false);
-  const [title, setTitle] = useState(currentTitle || '');
+  const [title, setTitle] = useState(currentTitle);
   const [about, setAbout] = useState(currentAbout);
   const [photo, setPhoto] = useState<File | undefined>();
   const [error, setError] = useState<string | undefined>();
+  const [isForumEnabled, setIsForumEnabled] = useState(chat.isForum);
   const imageHash = getChatAvatarHash(chat);
   const currentAvatarBlobUrl = useMedia(imageHash, false, ApiMediaFormat.BlobUrl);
   const isPublicGroup = useMemo(() => hasLinkedChannel || isChatPublic(chat), [chat, hasLinkedChannel]);
@@ -121,6 +144,11 @@ const ManageGroup: FC<OwnProps & StateProps> = ({
       loadChatJoinRequests({ chatId });
     }
   }, [chatId, loadExportedChatInvites, lastSyncTime, canInvite, loadChatJoinRequests]);
+
+  // Resetting `isForum` switch on flood wait error
+  useEffect(() => {
+    setIsForumEnabled(Boolean(chat.isForum));
+  }, [chat.isForum]);
 
   useEffect(() => {
     if (progress === ManagementProgress.Complete) {
@@ -203,6 +231,18 @@ const ManageGroup: FC<OwnProps & StateProps> = ({
     togglePreHistoryHidden({ chatId: chat.id, isEnabled: !isPreHistoryHidden });
   }, [chat, togglePreHistoryHidden]);
 
+  const handleForumToggle = useCallback(() => {
+    setIsForumEnabled((current) => {
+      const newIsForumEnabled = !current;
+
+      runDebounced(() => {
+        toggleForum({ chatId, isEnabled: newIsForumEnabled });
+      });
+
+      return newIsForumEnabled;
+    });
+  }, [chatId, toggleForum]);
+
   useEffect(() => {
     if (!isChannelsPremiumLimitReached) {
       return;
@@ -226,8 +266,9 @@ const ManageGroup: FC<OwnProps & StateProps> = ({
     const enabledLength = chat.fullInfo.enabledReactions.allowed.length;
     const totalLength = availableReactions?.filter((reaction) => !reaction.isInactive).length || 0;
 
-    const text = totalLength ? `${enabledLength} / ${totalLength}` : `${enabledLength}`;
-    return text;
+    return totalLength
+      ? `${enabledLength} / ${totalLength}`
+      : `${enabledLength}`;
   }, [availableReactions, chat, lang]);
 
   const enabledPermissionsCount = useMemo(() => {
@@ -235,15 +276,7 @@ const ManageGroup: FC<OwnProps & StateProps> = ({
       return 0;
     }
 
-    let totalCount = [
-      'sendMessages',
-      'sendMedia',
-      'embedLinks',
-      'sendPolls',
-      'changeInfo',
-      'inviteUsers',
-      'pinMessages',
-    ].filter(
+    let totalCount = ALL_PERMISSIONS.filter(
       (key) => !chat.defaultBannedRights![key as keyof ApiChatBannedRights],
     ).length;
 
@@ -288,6 +321,7 @@ const ManageGroup: FC<OwnProps & StateProps> = ({
       <div className="custom-scroll">
         <div className="section">
           <AvatarEditable
+            isForForum={isForumEnabled}
             currentAvatarBlobUrl={currentAvatarBlobUrl}
             onChange={handleSetPhoto}
             disabled={!canChangeInfo}
@@ -309,6 +343,7 @@ const ManageGroup: FC<OwnProps & StateProps> = ({
             onChange={handleAboutChange}
             value={about}
             disabled={!canChangeInfo}
+            noReplaceNewlines
           />
           {chat.isCreator && (
             <ListItem icon="lock" multiline onClick={handleClickEditType}>
@@ -334,10 +369,9 @@ const ManageGroup: FC<OwnProps & StateProps> = ({
           >
             <span className="title">{lang('ChannelPermissions')}</span>
             <span className="subtitle" dir="auto">
-              {enabledPermissionsCount}/{TOTAL_PERMISSIONS_COUNT}
+              {enabledPermissionsCount}/{TOTAL_PERMISSIONS_COUNT - (isForumEnabled ? 0 : 1)}
             </span>
           </ListItem>
-
           <ListItem
             icon="heart-outline"
             multiline
@@ -381,6 +415,20 @@ const ManageGroup: FC<OwnProps & StateProps> = ({
                 {formatInteger(chat.joinRequests!.length)}
               </span>
             </ListItem>
+          )}
+          {canEditForum && (
+            <>
+              <ListItem icon="forums" ripple onClick={handleForumToggle}>
+                <span>{lang('ChannelTopics')}</span>
+                <Switcher
+                  id="group-notifications"
+                  label={lang('ChannelTopics')}
+                  checked={isForumEnabled}
+                  inactive
+                />
+              </ListItem>
+              <div className="section-info section-info_push">{lang('ForumToggleDescription')}</div>
+            </>
           )}
         </div>
         <div className="section">
@@ -438,10 +486,12 @@ const ManageGroup: FC<OwnProps & StateProps> = ({
 export default memo(withGlobal<OwnProps>(
   (global, { chatId }): StateProps => {
     const chat = selectChat(global, chatId)!;
-    const { progress } = global.management;
+    const { management, limitReachedModal } = selectTabState(global);
+    const { progress } = management;
     const hasLinkedChannel = Boolean(chat.fullInfo?.linkedChatId);
     const isBasicGroup = isChatBasicGroup(chat);
-    const { invites } = global.management.byChatId[chatId] || {};
+    const { invites } = management.byChatId[chatId] || {};
+    const canEditForum = !hasLinkedChannel && (getHasAdminRight(chat, 'changeInfo') || chat.isCreator);
 
     return {
       chat,
@@ -453,8 +503,9 @@ export default memo(withGlobal<OwnProps>(
       canInvite: isBasicGroup ? chat.isCreator : getHasAdminRight(chat, 'inviteUsers'),
       exportedInvites: invites,
       lastSyncTime: global.lastSyncTime,
-      isChannelsPremiumLimitReached: global.limitReachedModal?.limit === 'channels',
+      isChannelsPremiumLimitReached: limitReachedModal?.limit === 'channels',
       availableReactions: global.availableReactions,
+      canEditForum,
     };
   },
 )(ManageGroup));

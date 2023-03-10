@@ -4,14 +4,15 @@
   width: var(--custom-emoji-size);
   height: var(--custom-emoji-size);
   position: relative;
+  flex: 0 0 var(--custom-emoji-size);
 
   &.with-grid-fix .media, &.with-grid-fix .thumb {
     width: calc(100% + 1px) !important;
     height: calc(100% + 1px) !important;
   }
 
-  &:global(.custom-color) {
-    --emoji-status-color: var(--color-primary);
+  canvas {
+    display: block;
   }
 }
 
@@ -32,15 +33,12 @@
   border-radius: var(--custom-emoji-border-radius) !important;
 }
 
-.highlightCatch {
+.highlight-catch {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
   user-select: auto !important;
-}
-
-.altEmoji {
-  opacity: 0;
+  z-index: 1;
 }

@@ -121,6 +121,7 @@ export type ApiUpdateChatInbox = {
 export type ApiUpdateChatTypingStatus = {
   '@type': 'updateChatTypingStatus';
   id: string;
+  threadId?: number;
   typingStatus: ApiTypingStatus | undefined;
 };
 
@@ -184,7 +185,7 @@ export type ApiUpdateNewScheduledMessage = {
   '@type': 'newScheduledMessage';
   chatId: string;
   id: number;
-  message: Partial<ApiMessage>;
+  message: ApiMessage;
   providedId?: string;
 };
 
@@ -244,9 +245,7 @@ export type ApiUpdateMessageSendFailed = {
   '@type': 'updateMessageSendFailed';
   chatId: string;
   localId: number;
-  sendingState: {
-    '@type': 'messageSendingStateFailed';
-  };
+  error: string;
 };
 
 export type ApiUpdateCommonBoxMessages = {
@@ -311,6 +310,7 @@ export type ApiUpdateResetMessages = {
 export type ApiUpdateDraftMessage = {
   '@type': 'draftMessage';
   chatId: string;
+  threadId?: number;
   formattedText?: ApiFormattedText;
   date?: number;
   replyingToId?: number;
@@ -342,6 +342,11 @@ export type ApiUpdateUser = {
   user: Partial<ApiUser>;
 };
 
+export type ApiUpdateRequestUserUpdate = {
+  '@type': 'updateRequestUserUpdate';
+  id: string;
+};
+
 export type ApiUpdateUserStatus = {
   '@type': 'updateUserStatus';
   userId: string;
@@ -352,6 +357,10 @@ export type ApiUpdateUserEmojiStatus = {
   '@type': 'updateUserEmojiStatus';
   userId: string;
   emojiStatus?: ApiEmojiStatus;
+};
+
+export type ApiUpdateRecentEmojiStatuses = {
+  '@type': 'updateRecentEmojiStatuses';
 };
 
 export type ApiUpdateUserFullInfo = {
@@ -433,6 +442,11 @@ export type ApiUpdateNotifySettings = {
 
 export type ApiUpdateNotifyExceptions = {
   '@type': 'updateNotifyExceptions';
+} & ApiNotifyException;
+
+export type ApiUpdateTopicNotifyExceptions = {
+  '@type': 'updateTopicNotifyExceptions';
+  topicId: number;
 } & ApiNotifyException;
 
 export type ApiUpdateTwoFaStateWaitCode = {
@@ -565,8 +579,40 @@ export type ApiUpdateTranscribedAudio = {
   isPending?: boolean;
 };
 
+export type ApiUpdatePinnedTopic = {
+  '@type': 'updatePinnedTopic';
+  topicId: number;
+  chatId: string;
+  isPinned: boolean;
+};
+
+export type ApiUpdatePinnedTopicsOrder = {
+  '@type': 'updatePinnedTopicsOrder';
+  chatId: string;
+  order: number[];
+};
+
+export type ApiUpdateTopic = {
+  '@type': 'updateTopic';
+  chatId: string;
+  topicId: number;
+};
+
+export type ApiUpdateTopics = {
+  '@type': 'updateTopics';
+  chatId: string;
+};
+
+export type ApiUpdateMessageTranslations = {
+  '@type': 'updateMessageTranslations';
+  chatId: string;
+  messageIds: number[];
+  translations: ApiFormattedText[];
+  toLanguageCode: string;
+};
+
 export type ApiUpdate = (
-  ApiUpdateReady | ApiUpdateSession | ApiUpdateWebAuthTokenFailed |
+  ApiUpdateReady | ApiUpdateSession | ApiUpdateWebAuthTokenFailed | ApiUpdateRequestUserUpdate |
   ApiUpdateAuthorizationState | ApiUpdateAuthorizationError | ApiUpdateConnectionState | ApiUpdateCurrentUser |
   ApiUpdateChat | ApiUpdateChatInbox | ApiUpdateChatTypingStatus | ApiUpdateChatFullInfo | ApiUpdatePinnedChatIds |
   ApiUpdateChatMembers | ApiUpdateChatJoin | ApiUpdateChatLeave | ApiUpdateChatPinned | ApiUpdatePinnedMessageIds |
@@ -580,7 +626,7 @@ export type ApiUpdate = (
   ApiUpdateFavoriteStickers | ApiUpdateStickerSet | ApiUpdateStickerSets | ApiUpdateStickerSetsOrder |
   ApiUpdateRecentStickers | ApiUpdateSavedGifs | ApiUpdateNewScheduledMessage | ApiUpdateMoveStickerSetToTop |
   ApiUpdateScheduledMessageSendSucceeded | ApiUpdateScheduledMessage |
-  ApiUpdateDeleteScheduledMessages | ApiUpdateResetMessages |
+  ApiUpdateDeleteScheduledMessages | ApiUpdateResetMessages | ApiUpdateMessageTranslations |
   ApiUpdateTwoFaError | ApiUpdateTwoFaStateWaitCode | ApiUpdateWebViewResultSent |
   ApiUpdateNotifySettings | ApiUpdateNotifyExceptions | ApiUpdatePeerBlocked | ApiUpdatePrivacy |
   ApiUpdateServerTimeOffset | ApiUpdateShowInvite | ApiUpdateMessageReactions |
@@ -589,7 +635,8 @@ export type ApiUpdate = (
   ApiUpdatePendingJoinRequests | ApiUpdatePaymentVerificationNeeded | ApiUpdatePaymentStateCompleted |
   ApiUpdatePhoneCall | ApiUpdatePhoneCallSignalingData | ApiUpdatePhoneCallMediaState |
   ApiUpdatePhoneCallConnectionState | ApiUpdateBotMenuButton | ApiUpdateTranscribedAudio | ApiUpdateUserEmojiStatus |
-  ApiUpdateMessageExtendedMedia | ApiUpdateConfig
+  ApiUpdateMessageExtendedMedia | ApiUpdateConfig | ApiUpdateTopicNotifyExceptions | ApiUpdatePinnedTopic |
+  ApiUpdatePinnedTopicsOrder | ApiUpdateTopic | ApiUpdateTopics | ApiUpdateRecentEmojiStatuses
 );
 
 export type OnApiUpdate = (update: ApiUpdate) => void;

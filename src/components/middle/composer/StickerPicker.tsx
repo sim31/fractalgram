@@ -44,7 +44,7 @@ type OwnProps = {
   threadId?: number;
   className: string;
   loadAndPlay: boolean;
-  canSendStickers: boolean;
+  canSendStickers?: boolean;
   onStickerSelect: (
     sticker: ApiSticker, isSilent?: boolean, shouldSchedule?: boolean, shouldUpdateStickerSetsOrder?: boolean,
   ) => void;
@@ -145,6 +145,7 @@ const StickerPicker: FC<OwnProps & StateProps> = ({
     if (favoriteStickers.length) {
       defaultSets.push({
         id: FAVORITE_SYMBOL_SET_ID,
+        accessHash: '0',
         title: lang('FavoriteStickers'),
         stickers: favoriteStickers,
         count: favoriteStickers.length,
@@ -154,6 +155,7 @@ const StickerPicker: FC<OwnProps & StateProps> = ({
     if (recentStickers.length) {
       defaultSets.push({
         id: RECENT_SYMBOL_SET_ID,
+        accessHash: '0',
         title: lang('RecentStickers'),
         stickers: recentStickers,
         count: recentStickers.length,
@@ -171,6 +173,7 @@ const StickerPicker: FC<OwnProps & StateProps> = ({
       if (totalPremiumStickers.length) {
         defaultSets.push({
           id: PREMIUM_STICKER_SET_ID,
+          accessHash: '0',
           title: lang('PremiumStickers'),
           stickers: totalPremiumStickers,
           count: totalPremiumStickers.length,
@@ -183,6 +186,7 @@ const StickerPicker: FC<OwnProps & StateProps> = ({
       if (fullSet) {
         defaultSets.push({
           id: CHAT_STICKER_SET_ID,
+          accessHash: fullSet.accessHash,
           title: lang('GroupStickers'),
           stickers: fullSet.stickers,
           count: fullSet.stickers!.length,
@@ -210,7 +214,10 @@ const StickerPicker: FC<OwnProps & StateProps> = ({
     sendMessageAction({ type: 'chooseSticker' });
   }, [canSendStickers, loadAndPlay, loadRecentStickers, sendMessageAction]);
 
-  useHorizontalScroll(headerRef.current);
+  const canRenderContents = useAsyncRendering([], SLIDE_TRANSITION_DURATION);
+  const shouldRenderContents = areAddedLoaded && canRenderContents && !noPopulatedSets && canSendStickers;
+
+  useHorizontalScroll(headerRef, !shouldRenderContents);
 
   // Scroll container and header when active set changes
   useEffect(() => {
@@ -255,8 +262,6 @@ const StickerPicker: FC<OwnProps & StateProps> = ({
   const handleRemoveRecentSticker = useCallback((sticker: ApiSticker) => {
     removeRecentSticker({ sticker });
   }, [removeRecentSticker]);
-
-  const canRenderContents = useAsyncRendering([], SLIDE_TRANSITION_DURATION);
 
   function renderCover(stickerSet: StickerSetOrRecent, index: number) {
     const firstSticker = stickerSet.stickers?.[0];
@@ -325,7 +330,7 @@ const StickerPicker: FC<OwnProps & StateProps> = ({
 
   const fullClassName = buildClassName('StickerPicker', className);
 
-  if (!areAddedLoaded || !canRenderContents || noPopulatedSets || !canSendStickers) {
+  if (!shouldRenderContents) {
     return (
       <div className={fullClassName}>
         {!canSendStickers ? (
