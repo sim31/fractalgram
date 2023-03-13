@@ -45,10 +45,12 @@ function ensureQrCodeStyling() {
 
 const AuthCode: FC<StateProps> = ({
   connectionState,
+  authState,
   authQrCode,
   language,
 }) => {
   const {
+    returnToAuthPhoneNumber,
     setSettingOption,
   } = getActions();
 
@@ -127,6 +129,12 @@ const AuthCode: FC<StateProps> = ({
     });
   }, [markIsLoading, setSettingOption, suggestedLanguage, unmarkIsLoading]);
 
+  const habdleReturnToAuthPhoneNumber = useCallback(() => {
+    returnToAuthPhoneNumber();
+  }, [returnToAuthPhoneNumber]);
+
+  const isAuthReady = authState === 'authorizationStateWaitQrCode';
+
   return (
     <div id="auth-qr-form" className="custom-scroll">
       <div className="auth-form qr">
@@ -157,6 +165,9 @@ const AuthCode: FC<StateProps> = ({
           <li><span>{renderText(lang('Login.QR2.Help2'), ['simple_markdown'])}</span></li>
           <li><span>{lang('Login.QR.Help3')}</span></li>
         </ol>
+        {isAuthReady && (
+          <Button isText onClick={habdleReturnToAuthPhoneNumber}>{lang('Login.QR.Cancel')}</Button>
+        )}
         {suggestedLanguage && suggestedLanguage !== language && continueText && (
           <Button isText isLoading={isLoading} onClick={handleLangChange}>{continueText}</Button>
         )}
