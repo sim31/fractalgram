@@ -11,3 +11,4 @@ dev/perf/screenshot*
 .firebase
 .firebaserc
 .github
+dist/
