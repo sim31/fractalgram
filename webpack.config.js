@@ -23,7 +23,7 @@ const {
 
 dotenv.config();
 
-const DEFAULT_APP_TITLE = `Telegram${APP_ENV !== 'production' ? ' Beta' : ''}`;
+const DEFAULT_APP_TITLE = `Fractalgram${APP_ENV !== 'production' ? ' Beta' : ''}`;
 
 const {
   BASE_URL = 'https://web.telegram.org/z/',
