@@ -17,13 +17,14 @@ import Checkbox from '../../ui/Checkbox';
 import RadioGroup from '../../ui/RadioGroup';
 
 import './PollModal.scss';
-import type { PollModalDefaults } from '../../../global/types';
+import type { ConsensusResults, PollModalDefaults } from '../../../global/types';
 
 export type OwnProps = {
   isOpen: boolean;
   shouldBeAnonymous?: boolean;
   isQuiz?: boolean;
   defaultValues?: PollModalDefaults;
+  consensusResults?: ConsensusResults;
   onSend: (pollSummary: ApiNewPoll, pinned: boolean) => void;
   onClear: () => void;
 };
@@ -35,7 +36,7 @@ const MAX_QUESTION_LENGTH = 255;
 const MAX_SOLUTION_LENGTH = 200;
 
 const PollModal: FC<OwnProps> = ({
-  isOpen, isQuiz, shouldBeAnonymous, defaultValues, onSend, onClear,
+  isOpen, isQuiz, shouldBeAnonymous, defaultValues, onSend, onClear, consensusResults,
 }) => {
   // eslint-disable-next-line no-null/no-null
   const questionInputRef = useRef<HTMLInputElement>(null);
@@ -49,6 +50,8 @@ const PollModal: FC<OwnProps> = ({
   const [isAnonymous, setIsAnonymous] = useState(defaultValues?.isAnonymous ?? true);
   const [isMultipleAnswers, setIsMultipleAnswers] = useState(false);
   const [isQuizMode, setIsQuizMode] = useState(isQuiz || false);
+  const [toPin, setToPin] = useState(defaultValues?.pinned ?? false);
+  const [includeRanked, setIncludeRanked] = useState(defaultValues?.includeRanked ?? false);
   const [solution, setSolution] = useState<string>('');
   const [correctOption, setCorrectOption] = useState<number | undefined>();
   const [hasErrors, setHasErrors] = useState<boolean>(false);
@@ -60,6 +63,26 @@ const PollModal: FC<OwnProps> = ({
       ref.current.focus();
     }
   }, [isOpen]);
+
+  const removeRanked = useCallback((opts: string[]) => {
+    if (consensusResults) {
+      const newOptions = opts.reduce((nOptions, opt) => {
+        const values = Object.values(consensusResults.rankings);
+        for (const value of values) {
+          if (opt === value.option && value.votes && value.ofTotal) {
+            if (value.votes / value.ofTotal >= (2 / 3)) {
+              // Not including opt
+              return nOptions;
+            }
+          }
+        }
+        return [...nOptions, opt];
+      }, new Array<string>());
+      return newOptions;
+    } else {
+      return opts;
+    }
+  }, [consensusResults]);
 
   useEffect(() => (isOpen ? captureEscKeyListener(onClear) : undefined), [isOpen, onClear]);
   useEffect(() => {
@@ -74,10 +97,16 @@ const PollModal: FC<OwnProps> = ({
       setHasErrors(false);
     } else if (defaultValues) {
       setQuestion(defaultValues.question);
-      setOptions([...defaultValues.options, '']);
       setIsAnonymous(defaultValues.isAnonymous);
+      setToPin(defaultValues.pinned);
+      setIncludeRanked(defaultValues.includeRanked);
+      let defaultOptions = [...defaultValues.options, ''];
+      if (!defaultValues.includeRanked) {
+        defaultOptions = removeRanked(defaultOptions);
+      }
+      setOptions(defaultOptions);
     }
-  }, [isQuiz, isOpen, defaultValues]);
+  }, [isQuiz, isOpen, defaultValues, removeRanked]);
 
   useEffect(() => focusInput(questionInputRef), [focusInput, isOpen]);
 
@@ -158,7 +187,7 @@ const PollModal: FC<OwnProps> = ({
       };
     }
 
-    onSend(payload, defaultValues?.pinned ?? false);
+    onSend(payload, toPin);
   }, [
     isOpen,
     question,
@@ -170,7 +199,7 @@ const PollModal: FC<OwnProps> = ({
     onSend,
     addNewOption,
     solution,
-    defaultValues,
+    toPin,
   ]);
 
   const updateOption = useCallback((index: number, text: string) => {
@@ -208,6 +237,21 @@ const PollModal: FC<OwnProps> = ({
   const handleCorrectOptionChange = useCallback((newValue: string) => {
     setCorrectOption(Number(newValue));
   }, [setCorrectOption]);
+
+  const handleToPinChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    setToPin(e.target.checked);
+  }, []);
+
+  const handleIncludeRankedChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    setIncludeRanked(e.target.checked);
+    if (e.target.checked) {
+      if (defaultValues) {
+        setOptions([...defaultValues.options, '']);
+      }
+    } else {
+      setOptions(removeRanked(options));
+    }
+  }, [defaultValues, removeRanked, options]);
 
   const handleIsAnonymousChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     setIsAnonymous(e.target.checked);
@@ -341,6 +385,18 @@ const PollModal: FC<OwnProps> = ({
       <div className="options-divider" />
 
       <div className="quiz-mode">
+        <Checkbox
+          label={lang('Pin message')}
+          checked={toPin}
+          onChange={handleToPinChange}
+        />
+        {consensusResults && (
+          <Checkbox
+            label={lang('Inlude already ranked')}
+            checked={includeRanked}
+            onChange={handleIncludeRankedChange}
+          />
+        )}
         {!shouldBeAnonymous && (
           <Checkbox
             label={lang('PollAnonymous')}

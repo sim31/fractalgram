@@ -695,12 +695,14 @@ function openPollModal(
   tabId: number,
   isQuiz?: boolean,
   defaultValues?: PollModalDefaults,
+  consensusResults?: ConsensusResults,
 ): GlobalState {
   return updateTabState(global, {
     pollModal: {
       isOpen: true,
       isQuiz,
       defaultValues,
+      consensusResults,
     },
   }, tabId);
 }
@@ -826,7 +828,7 @@ addActionHandler('composeConsensusMessage', async (gl, actions, payload): Promis
         global = closeLoadingModal(global, tabId);
 
         const platform = getLatestPlatform(global);
-        global = createPollWithAccounts(global, SELECT_DELEGATE_STR, tabId, platform);
+        global = createPollWithAccounts(global, SELECT_DELEGATE_STR, tabId, platform, true);
         setGlobal(global);
       }
       break;
@@ -844,7 +846,7 @@ addActionHandler('composeConsensusMessage', async (gl, actions, payload): Promis
         const { rank } = payload;
         const question = RANK_POLL_STRS[rank as number - 1];
         const platform = getLatestPlatform(global);
-        global = createPollWithAccounts(global, question, tabId, platform);
+        global = createPollWithAccounts(global, question, tabId, platform, false);
         setGlobal(global);
       }
       break;
@@ -996,9 +998,10 @@ function optionToAccount(accountMap: AccountMap, optionStr: string): ExtUser | u
 function getAccountOptions(
   global: GlobalState,
   platform?: string,
+  accountMap?: AccountMap,
 ): string[] | undefined {
   const chat = selectCurrentChat(global);
-  const accountMap = chat && selectChatMemberAccountMap(global, chat, platform);
+  accountMap = accountMap || (chat && selectChatMemberAccountMap(global, chat, platform));
   if (!accountMap) {
     return undefined;
   }
@@ -1006,25 +1009,40 @@ function getAccountOptions(
   return constructAccountOptions(accountMap, platform);
 }
 
-function createPollWithAccounts(global: GlobalState, question: string, tabId: number, platform?: string): GlobalState {
+function createPollWithAccounts(
+  global: GlobalState,
+  question: string,
+  tabId: number,
+  platform?: string,
+  includeRanked?: boolean,
+): GlobalState {
   const tab = selectTabState(global, tabId);
   if (tab.pollModal.isOpen) {
     return global;
   }
 
+  const chat = selectCurrentChat(global);
+  const accountMap = chat && selectChatMemberAccountMap(global, chat, platform);
+  if (!accountMap) {
+    return global;
+  }
+
   // NOTE: This should not be called if there are a lot of users in the chat
-  const opt = getAccountOptions(global, platform);
+  const opt = getAccountOptions(global, platform, accountMap);
   assert(opt, 'Chat member list or messages not loaded');
   const options = opt as string[];
+
+  const results = guessConsensusResults(global, platform, chat, accountMap);
 
   const values: PollModalDefaults = {
     isAnonymous: false,
     pinned: true,
     question,
     options,
+    includeRanked: includeRanked ?? false,
   };
 
-  return openPollModal(global, tabId, false, values);
+  return openPollModal(global, tabId, false, values, results);
 }
 
 function getWinnerOption(poll: ApiPoll, accountMap: AccountMap, platform?: string): ConsensusResultOption | undefined {

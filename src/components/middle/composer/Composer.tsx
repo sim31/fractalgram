@@ -1297,6 +1297,7 @@ const Composer: FC<OwnProps & StateProps> = ({
         isQuiz={pollModal.isQuiz}
         shouldBeAnonymous={isChannel}
         defaultValues={pollModal.defaultValues}
+        consensusResults={pollModal.consensusResults}
         onClear={closePollModal}
         onSend={handlePollSend}
       />

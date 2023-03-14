@@ -134,6 +134,7 @@ export type PollModalDefaults = {
   options: string[];
   isAnonymous: boolean;
   pinned: boolean;
+  includeRanked: boolean;
 };
 
 export interface AccountPromptDefaults {
@@ -509,6 +510,7 @@ export type TabState = {
     isOpen: boolean;
     isQuiz?: boolean;
     defaultValues?: PollModalDefaults;
+    consensusResults?: ConsensusResults;
   };
 
   accountPromptModal: {
