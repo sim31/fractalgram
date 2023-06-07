@@ -311,19 +311,35 @@ export type Rank = 6 | 5 | 4 | 3 | 2 | 1;
 export const DEFAULT_FRACTAL_NAME = 'EdenFractal';
 export const FRACTAL_INFO: Record<string, ExtPlatformInfo> = {
   EdenFractal: {
+    displayTitle: 'Eden Fractal',
     fractalName: 'EdenFractal',
     submitUrl: 'https://edenfracfront.web.app',
     platform: 'EOS',
     accountInfoUrl: 'https://bloks.io/account',
   },
+  AWFractal: {
+    displayTitle: 'Alien Worlds Fractal',
+    fractalName: 'AWFractal',
+    submitUrl: 'https://awfractal.web.app/',
+    platform: 'WAX',
+    accountInfoUrl: 'https://wax.bloks.io/',
+  },
 };
 export const DEFAULT_PLATFORM = FRACTAL_INFO[DEFAULT_FRACTAL_NAME].platform;
 export const FRACTAL_INFO_BY_PLATFORM: Record<string, ExtPlatformInfo> = {
   EOS: {
+    displayTitle: 'Eden Fractal',
     fractalName: 'EdenFractal',
     submitUrl: 'https://edenfracfront.web.app',
     platform: 'EOS',
     accountInfoUrl: 'https://bloks.io/account',
+  },
+  WAX: {
+    displayTitle: 'Alien Worlds Fractal',
+    fractalName: 'AWFractal',
+    submitUrl: 'https://awfractal.web.app/',
+    platform: 'WAX',
+    accountInfoUrl: 'https://wax.bloks.io/',
   },
 };
 

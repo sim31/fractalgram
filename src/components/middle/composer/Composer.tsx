@@ -32,7 +32,7 @@ import {
   REPLIES_USER_ID,
   SEND_MESSAGE_ACTION_INTERVAL,
   EDITABLE_INPUT_CSS_SELECTOR,
-  MAX_UPLOAD_FILEPART_SIZE, EDITABLE_INPUT_MODAL_ID,
+  MAX_UPLOAD_FILEPART_SIZE, EDITABLE_INPUT_MODAL_ID, FRACTAL_INFO_BY_PLATFORM,
 } from '../../../config';
 import { IS_VOICE_RECORDING_SUPPORTED, IS_IOS } from '../../../util/environment';
 import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
@@ -1304,6 +1304,7 @@ const Composer: FC<OwnProps & StateProps> = ({
       <AccountPromptModal
         isOpen={accountPromptModal.isOpen}
         defaultValues={accountPromptModal.defaultValues}
+        presetPlatforms={Object.keys(FRACTAL_INFO_BY_PLATFORM)}
         onSend={handleAccountPromptSend}
         onClear={closeAccountPromptModal}
       />

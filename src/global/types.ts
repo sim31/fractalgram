@@ -121,6 +121,7 @@ export interface ConsensusResults {
 }
 
 export type ExtPlatformInfo = {
+  displayTitle: string;
   fractalName: string;
   platform: string;
   submitUrl: string;

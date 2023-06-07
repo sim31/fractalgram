@@ -15,18 +15,24 @@ import './PollModal.scss';
 import type { AccountPromptInfo, AccountPromptDefaults } from '../../../global/types';
 import TextArea from '../../ui/TextArea';
 import { composePrompt } from '../../../global/helpers/consensusMessages';
+import RadioGroup, { type IRadioOption } from '../../ui/RadioGroup';
 
 export type OwnProps = {
   isOpen: boolean;
   defaultValues: AccountPromptDefaults;
+  presetPlatforms: string[];
   onSend: (info: AccountPromptInfo) => void;
   onClear: () => void;
 };
 
 const AccountPromptModal: FC<OwnProps> = ({
-  isOpen, defaultValues, onSend, onClear,
+  isOpen, defaultValues, onSend, onClear, presetPlatforms,
 }) => {
   const [platform, setPlatform] = useState<string>(defaultValues.platform);
+  const defaultPreset = presetPlatforms.find(
+    (p) => p === defaultValues.platform,
+  );
+  const [presetSelection, setPreset] = useState<string>(defaultPreset ?? 'custom');
   const [hasErrors, setHasErrors] = useState<boolean>(false);
 
   const promptMsg = useMemo(() => composePrompt(platform), [platform]);
@@ -56,6 +62,16 @@ const AccountPromptModal: FC<OwnProps> = ({
     setPlatform(newPlatform);
   }, []);
 
+  const handlePresetSelection = useCallback((newSelection: string) => {
+    if (newSelection === 'custom') {
+      setPreset(newSelection);
+      setPlatform('');
+    } else {
+      setPreset(newSelection);
+      setPlatform(newSelection);
+    }
+  }, []);
+
   const getPlatformError = useCallback(() => {
     if (hasErrors && !platform.trim().length) {
       return lang('Please enter platform name');
@@ -63,6 +79,20 @@ const AccountPromptModal: FC<OwnProps> = ({
 
     return undefined;
   }, [hasErrors, lang, platform]);
+
+  const radioOptions = useMemo(() => {
+    const roptions = new Array<IRadioOption>();
+    const preset = Object.values(presetPlatforms).map((platformName) => {
+      return {
+        label: platformName,
+        value: platformName,
+      };
+    });
+    roptions.push(...preset);
+    roptions.push({ label: 'Custom', value: 'custom' });
+
+    return roptions;
+  }, [presetPlatforms]);
 
   // TODO: Message preview
   function renderHeader() {
@@ -83,13 +113,20 @@ const AccountPromptModal: FC<OwnProps> = ({
       </div>
     );
   }
-
   return (
     <Modal isOpen={isOpen} onClose={onClear} header={renderHeader()} className="PollModal">
+      <RadioGroup
+        name="preset"
+        options={radioOptions}
+        selected={presetSelection}
+        onChange={handlePresetSelection}
+      />
+
       <InputText
         label={lang('Platform')}
         value={platform}
         onChange={handlePlatformChange}
+        disabled={presetSelection !== 'custom'}
         error={getPlatformError()}
       />
 

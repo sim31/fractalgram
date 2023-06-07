@@ -52,7 +52,7 @@ const ExtPlatformSettings: FC<OwnProps> = ({
     roptions.push({ label: 'None', value: 'none' });
     const preset = Object.values(presetOptions).map((info) => {
       return {
-        label: info.fractalName,
+        label: info.displayTitle,
         subLabel: `platform: ${info.platform}, url: ${info.submitUrl}`,
         value: info.fractalName,
       };
@@ -84,6 +84,7 @@ const ExtPlatformSettings: FC<OwnProps> = ({
       setExtPlatform(undefined);
     } else if (newSelection === 'custom') {
       setExtPlatform({
+        displayTitle: 'Custom',
         fractalName: 'custom',
         platform: '',
         submitUrl: 'https://',
