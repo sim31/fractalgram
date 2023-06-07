@@ -29,9 +29,9 @@ const AccountPromptModal: FC<OwnProps> = ({
   isOpen, defaultValues, onSend, onClear, presetPlatforms,
 }) => {
   const [platform, setPlatform] = useState<string>(defaultValues.platform);
-  const defaultPreset = presetPlatforms.find(
-    (p) => p === defaultValues.platform,
-  );
+  const defaultPreset = useMemo(() => {
+    return presetPlatforms.find((p) => p === defaultValues.platform);
+  }, [presetPlatforms, defaultValues.platform]);
   const [presetSelection, setPreset] = useState<string>(defaultPreset ?? 'custom');
   const [hasErrors, setHasErrors] = useState<boolean>(false);
 
@@ -45,8 +45,9 @@ const AccountPromptModal: FC<OwnProps> = ({
       setHasErrors(false);
     } else if (isOpen && defaultValues) {
       setPlatform(defaultValues.platform);
+      setPreset(defaultPreset ?? 'custom');
     }
-  }, [isOpen, defaultValues]);
+  }, [isOpen, defaultValues, defaultPreset]);
 
   const handleSend = useCallback(() => {
     if (!platform.length) {
