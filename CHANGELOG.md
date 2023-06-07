@@ -1,3 +1,7 @@
+## Fractalgram 1.2 (2023-06-07)
+* Added radio controls for selecting platforms in account prompt modal
+* Added preset for Alien Worlds Fractal
+
 ## Fractalgram 1.1 (2023-03-14)
 * Added additional controls when creating a poll
   * To include accounts already ranked (with at least 2/3 consensus) or not (by default they are not included);

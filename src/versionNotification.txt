@@ -1,10 +1,6 @@
-**Fractalgram updated to version 1.1**
+**Fractalgram updated to version 1.2**
 
-* Added additional controls when creating a poll
-  * To include accounts already ranked (with at least 2/3 consensus) or not (by default they are not included);
-  * To pin a message or not;
-* [Integrated updates from Telegram Web Z version 1.60](https://github.com/Ajaxy/telegram-tt/blob/master/CHANGELOG.md#1600-2023-03-03)
-  * Includes support for topics!
-* Bugfixes
+* Added radio controls for selecting platforms in account prompt modal
+* Added preset for Alien Worlds Fractal
 
 If you're new to Fractalgram see [intro post](https://peakd.com/dao/@sim31/introducing-fractalgram) for what it is and how to use it.
