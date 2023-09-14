@@ -1,8 +1,8 @@
-# Telegram Web Z
+# Fractalgram
 
-This project won the first prize 🥇 at [Telegram Lightweight Client Contest](https://contest.com/javascript-web-3) and now is an official Telegram client available to anyone at [web.telegram.org/z](https://web.telegram.org/z).
+Telegram web client tailored for participants of [Eden](https://www.edenelections.com/) / [fractally](https://fractally.com/) style DAOs.
 
-This is a fork of [Telegram Web Z](https://github.com/Ajaxy/telegram-tt), which adds some additional features to help run [Eden](https://www.edenelections.com/) / [Fractally](https://fractally.com/) style meetings. Specifically it adds some buttons to automate creation of polls and other kinds of messages which help reach consensus in these meetings.
+This is a fork of [Telegram Web A](https://github.com/Ajaxy/telegram-tt), which adds some additional features to help run [Eden](https://www.edenelections.com/) / [Fractally](https://fractally.com/) style meetings. Specifically it adds some buttons to automate creation of polls and other kinds of messages which help reach consensus in these meetings.
 
 [See introductory post for details](https://peakd.com/dao/@sim31/introducing-fractalgram).
 
@@ -34,6 +34,3 @@ Example usage:
 ``` javascript
 await invoke(new GramJs.help.GetAppConfig())
 ```
-
-## Bug reports and Suggestions
-If you find an issue with this app, let Telegram know using the [Suggestions Platform](https://bugs.telegram.org/c/4002).
