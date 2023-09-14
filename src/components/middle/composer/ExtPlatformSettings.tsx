@@ -137,7 +137,7 @@ const ExtPlatformSettings: FC<OwnProps> = ({
     return (
       <div className="modal-header-condensed">
         <Button round color="translucent" size="smaller" ariaLabel="Cancel message creation" onClick={onClear}>
-          <i className="icon-close" />
+          <i className="icon icon-close" />
         </Button>
         <div className="modal-title">{lang('Link to platform')}</div>
         <Button
