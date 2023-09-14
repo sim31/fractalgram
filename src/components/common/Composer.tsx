@@ -1,6 +1,6 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useMemo, useRef, useState,
+  memo, useEffect, useMemo, useRef, useState,
 } from '../../lib/teact/teact';
 import { getActions, getGlobal, withGlobal } from '../../global';
 
@@ -1212,13 +1212,13 @@ const Composer: FC<OwnProps & StateProps> = ({
     }
   });
 
-  const handleAccountPromptSend = useCallback((value: AccountPromptInfo) => {
+  const handleAccountPromptSend = useLastCallback((value: AccountPromptInfo) => {
     composeConsensusMessage({ type: 'accountPromptSubmit', value });
-  }, [composeConsensusMessage]);
+  });
 
-  const handleResultsSend = useCallback((message: string, pinMessage: boolean) => {
+  const handleResultsSend = useLastCallback((message: string, pinMessage: boolean) => {
     composeConsensusMessage({ type: 'resultsReportSubmit', message, pinMessage });
-  }, [composeConsensusMessage]);
+  });
 
   const sendSilent = useLastCallback((additionalArgs?: ScheduledMessageArgs) => {
     if (shouldSchedule) {

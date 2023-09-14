@@ -796,6 +796,7 @@ function constructAccountOptions(accountMap: AccountMap, platform?: string) {
 addActionHandler('composeConsensusMessage', async (gl, actions, payload): Promise<void> => {
   const { sendPinnedMessage, sendMessage } = actions;
   const { tabId = getCurrentTabId() } = payload || {};
+  const messageList = selectCurrentMessageList(gl, tabId);
   switch (payload.type) {
     case 'delegatePoll': {
       let global = openLoadingModal(gl, 'NewPoll', tabId);
@@ -850,7 +851,9 @@ addActionHandler('composeConsensusMessage', async (gl, actions, payload): Promis
       }
 
       const { text, entities } = parseMessageInput(promptMessage);
-      sendPinnedMessage({ text, entities, tabId });
+      sendPinnedMessage({
+        text, entities, tabId, messageList,
+      });
 
       const global = closeAccountPromptModal(gl, tabId);
       setGlobal(global);
@@ -909,9 +912,13 @@ addActionHandler('composeConsensusMessage', async (gl, actions, payload): Promis
       const { text, entities } = parseMessageInput(message, true);
 
       if (pinMessage) {
-        sendPinnedMessage({ text, entities, tabId });
+        sendPinnedMessage({
+          text, entities, tabId, messageList,
+        });
       } else {
-        sendMessage({ text, entities, tabId });
+        sendMessage({
+          text, entities, tabId, messageList,
+        });
       }
 
       const global = closeResultsReportModal(gl, tabId);

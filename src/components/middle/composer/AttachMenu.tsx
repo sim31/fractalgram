@@ -9,7 +9,7 @@ import type { ActionPayloads, GlobalState } from '../../../global/types';
 import type { ISettings } from '../../../types';
 
 import {
-  CONTENT_TYPES_WITH_PREVIEW, DEBUG_LOG_FILENAME, Rank, SUPPORTED_AUDIO_CONTENT_TYPES,
+  CONTENT_TYPES_WITH_PREVIEW, DEBUG_LOG_FILENAME, type Rank, SUPPORTED_AUDIO_CONTENT_TYPES,
   SUPPORTED_IMAGE_CONTENT_TYPES,
   SUPPORTED_VIDEO_CONTENT_TYPES,
 } from '../../../config';

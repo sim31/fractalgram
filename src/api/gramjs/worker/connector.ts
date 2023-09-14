@@ -10,7 +10,6 @@ import assert from '../../../util/assert';
 import { logDebugMessage } from '../../../util/debugConsole';
 import Deferred from '../../../util/Deferred';
 import { getCurrentTabId, subscribeToMasterChange } from '../../../util/establishMultitabRole';
-import generateIdFor from '../../../util/generateIdFor';
 import generateUniqueId from '../../../util/generateUniqueId';
 import { pause } from '../../../util/schedulers';
 import { IS_MULTITAB_SUPPORTED } from '../../../util/windowEnvironment';
@@ -180,7 +179,7 @@ export function callApiLocal<T extends keyof Methods>(fnName: T, ...args: Method
 }
 
 export function generateMessageId() {
-  return generateIdFor(requestStates);
+  return generateUniqueId();
 }
 
 export function callApi<T extends keyof Methods>(fnName: T, ...args: MethodArgs<T>) {
