@@ -11,6 +11,6 @@ dev/perf/screenshot*
 .firebase
 .firebaserc
 .github
-dist/
+dist/*
 .github/workflows/*
 !.github/workflows/package-and-publish.yml
