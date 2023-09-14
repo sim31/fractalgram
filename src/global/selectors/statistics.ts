@@ -1,9 +1,9 @@
 import type { GlobalState, TabArgs } from '../types';
 
-import { selectCurrentMessageList } from './messages';
-import { selectChat } from './chats';
-import { selectTabState } from './tabs';
 import { getCurrentTabId } from '../../util/establishMultitabRole';
+import { selectChatFullInfo } from './chats';
+import { selectCurrentMessageList } from './messages';
+import { selectTabState } from './tabs';
 
 export function selectStatistics<T extends GlobalState>(
   global: T, chatId: string,
@@ -21,18 +21,6 @@ export function selectIsStatisticsShown<T extends GlobalState>(
   }
 
   const { chatId: currentChatId } = selectCurrentMessageList(global, tabId) || {};
-  const chat = currentChatId ? selectChat(global, currentChatId) : undefined;
 
-  return chat?.fullInfo?.canViewStatistics;
-}
-
-export function selectIsMessageStatisticsShown<T extends GlobalState>(
-  global: T,
-  ...[tabId = getCurrentTabId()]: TabArgs<T>
-) {
-  if (!selectTabState(global, tabId).isStatisticsShown) {
-    return false;
-  }
-
-  return Boolean(selectTabState(global, tabId).statistics.currentMessageId);
+  return currentChatId ? selectChatFullInfo(global, currentChatId)?.canViewStatistics : undefined;
 }

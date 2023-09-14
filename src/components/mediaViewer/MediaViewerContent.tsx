@@ -1,24 +1,26 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useCallback } from '../../lib/teact/teact';
+import React, { memo } from '../../lib/teact/teact';
 import { withGlobal } from '../../global';
 
 import type {
   ApiChat, ApiDimensions, ApiMessage, ApiUser,
 } from '../../api/types';
-import type { AnimationLevel } from '../../types';
 import { MediaViewerOrigin } from '../../types';
 
-import { IS_TOUCH_ENV } from '../../util/environment';
 import {
-  selectChat, selectChatMessage, selectTabState, selectIsMessageProtected, selectScheduledMessage, selectUser,
+  selectChat, selectChatMessage, selectIsMessageProtected, selectScheduledMessage, selectTabState, selectUser,
 } from '../../global/selectors';
+import buildClassName from '../../util/buildClassName';
+import stopEvent from '../../util/stopEvent';
+import { ARE_WEBCODECS_SUPPORTED, IS_TOUCH_ENV } from '../../util/windowEnvironment';
 import { calculateMediaViewerDimensions } from '../common/helpers/mediaDimensions';
 import { renderMessageText } from '../common/helpers/renderMessageText';
-import stopEvent from '../../util/stopEvent';
-import buildClassName from '../../util/buildClassName';
-import { useMediaProps } from './hooks/useMediaProps';
+
 import useAppLayout from '../../hooks/useAppLayout';
 import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
+import useControlsSignal from './hooks/useControlsSignal';
+import { useMediaProps } from './hooks/useMediaProps';
 
 import Spinner from '../ui/Spinner';
 import MediaViewerFooter from './MediaViewerFooter';
@@ -33,11 +35,9 @@ type OwnProps = {
   avatarOwnerId?: string;
   origin?: MediaViewerOrigin;
   isActive?: boolean;
-  animationLevel: AnimationLevel;
+  withAnimation?: boolean;
   onClose: () => void;
   onFooterClick: () => void;
-  setControlsVisible?: (isVisible: boolean) => void;
-  areControlsVisible: boolean;
   isMoving?: boolean;
 };
 
@@ -57,6 +57,7 @@ type StateProps = {
 };
 
 const ANIMATION_DURATION = 350;
+const MOBILE_VERSION_CONTROL_WIDTH = 350;
 
 const MediaViewerContent: FC<OwnProps & StateProps> = (props) => {
   const {
@@ -66,8 +67,7 @@ const MediaViewerContent: FC<OwnProps & StateProps> = (props) => {
     chatId,
     message,
     origin,
-    animationLevel,
-    areControlsVisible,
+    withAnimation,
     isProtected,
     volume,
     playbackRate,
@@ -75,13 +75,10 @@ const MediaViewerContent: FC<OwnProps & StateProps> = (props) => {
     isHidden,
     onClose,
     onFooterClick,
-    setControlsVisible,
     isMoving,
   } = props;
 
   const lang = useLang();
-
-  const isGhostAnimation = animationLevel === 2;
 
   const {
     isVideo,
@@ -91,19 +88,22 @@ const MediaViewerContent: FC<OwnProps & StateProps> = (props) => {
     bestData,
     dimensions,
     isGif,
+    isLocal,
     isVideoAvatar,
     videoSize,
     loadProgress,
   } = useMediaProps({
-    message, avatarOwner, mediaId, origin, delay: isGhostAnimation && ANIMATION_DURATION,
+    message, avatarOwner, mediaId, origin, delay: withAnimation ? ANIMATION_DURATION : false,
   });
+
+  const [, toggleControls] = useControlsSignal();
 
   const isOpen = Boolean(avatarOwner || mediaId);
   const { isMobile } = useAppLayout();
 
-  const toggleControls = useCallback((isVisible) => {
-    setControlsVisible?.(isVisible);
-  }, [setControlsVisible]);
+  const toggleControlsOnMove = useLastCallback(() => {
+    toggleControls(true);
+  });
 
   if (avatarOwner || actionPhoto) {
     if (!isVideoAvatar) {
@@ -111,7 +111,7 @@ const MediaViewerContent: FC<OwnProps & StateProps> = (props) => {
         <div key={chatId} className="MediaViewerContent">
           {renderPhoto(
             bestData,
-            calculateMediaViewerDimensions(dimensions, false),
+            calculateMediaViewerDimensions(dimensions!, false),
             !isMobile && !isProtected,
             isProtected,
           )}
@@ -129,9 +129,8 @@ const MediaViewerContent: FC<OwnProps & StateProps> = (props) => {
             loadProgress={loadProgress}
             fileSize={videoSize!}
             isMediaViewerOpen={isOpen && isActive}
-            areControlsVisible={areControlsVisible}
-            toggleControls={toggleControls}
             isProtected={isProtected}
+            isPreviewDisabled={!ARE_WEBCODECS_SUPPORTED || isLocal}
             noPlay={!isActive}
             onClose={onClose}
             isMuted
@@ -148,22 +147,26 @@ const MediaViewerContent: FC<OwnProps & StateProps> = (props) => {
   if (!message) return undefined;
   const textParts = message.content.action?.type === 'suggestProfilePhoto'
     ? lang('Conversation.SuggestedPhotoTitle')
-    : renderMessageText(message);
+    : renderMessageText({ message, forcePlayback: true, isForMediaViewer: true });
+
   const hasFooter = Boolean(textParts);
+  const posterSize = message && calculateMediaViewerDimensions(dimensions!, hasFooter, isVideo);
+  const isForceMobileVersion = isMobile || shouldForceMobileVersion(posterSize);
 
   return (
     <div
       className={buildClassName('MediaViewerContent', hasFooter && 'has-footer')}
+      onMouseMove={isForceMobileVersion && !IS_TOUCH_ENV ? toggleControlsOnMove : undefined}
     >
       {isPhoto && renderPhoto(
         bestData,
-        message && calculateMediaViewerDimensions(dimensions!, hasFooter),
+        posterSize,
         !isMobile && !isProtected,
         isProtected,
       )}
       {isVideo && (!isActive ? renderVideoPreview(
         bestImageData,
-        message && calculateMediaViewerDimensions(dimensions!, hasFooter, true),
+        posterSize,
         !isMobile && !isProtected,
         isProtected,
       ) : (
@@ -172,16 +175,16 @@ const MediaViewerContent: FC<OwnProps & StateProps> = (props) => {
           url={bestData}
           isGif={isGif}
           posterData={bestImageData}
-          posterSize={message && calculateMediaViewerDimensions(dimensions!, hasFooter, true)}
+          posterSize={posterSize}
           loadProgress={loadProgress}
           fileSize={videoSize!}
-          areControlsVisible={areControlsVisible}
           isMediaViewerOpen={isOpen && isActive}
-          toggleControls={toggleControls}
           noPlay={!isActive}
+          isPreviewDisabled={!ARE_WEBCODECS_SUPPORTED || isLocal}
           onClose={onClose}
           isMuted={isMuted}
           isHidden={isHidden}
+          isForceMobileVersion={isForceMobileVersion}
           isProtected={isProtected}
           volume={volume}
           isClickDisabled={isMoving}
@@ -193,7 +196,7 @@ const MediaViewerContent: FC<OwnProps & StateProps> = (props) => {
           text={textParts}
           onClick={onFooterClick}
           isProtected={isProtected}
-          isHidden={IS_TOUCH_ENV ? !areControlsVisible : false}
+          isForceMobileVersion={isForceMobileVersion}
           isForVideo={isVideo && !isGif}
         />
       )}
@@ -341,4 +344,9 @@ function renderVideoPreview(blobUrl?: string, imageSize?: ApiDimensions, canDrag
         <Spinner color="white" />
       </div>
     );
+}
+
+function shouldForceMobileVersion(posterSize?: { width: number; height: number }) {
+  if (!posterSize) return false;
+  return posterSize.width < MOBILE_VERSION_CONTROL_WIDTH;
 }

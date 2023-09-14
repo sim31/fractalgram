@@ -1,7 +1,8 @@
 import type { ActionOptions } from '../lib/teact/teactn';
 import { typify } from '../lib/teact/teactn';
+
 import type {
-  GlobalState, ActionPayloads, RequiredGlobalState, RequiredActionPayloads,
+  ActionPayloads, GlobalState, RequiredActionPayloads, RequiredGlobalState,
 } from './types';
 
 const typed = typify<GlobalState, ActionPayloads & RequiredActionPayloads>();
@@ -46,3 +47,4 @@ export const addActionHandler = typed.addActionHandler as <ActionName extends Pr
   handler: ActionHandlers[ActionName],
 ) => void;
 export const withGlobal = typed.withGlobal;
+export type GlobalActions = ReturnType<typeof getActions>;

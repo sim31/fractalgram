@@ -1,37 +1,40 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, {
-  memo, useEffect, useRef, useCallback,
+  memo, useEffect, useRef,
 } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
-import type { FolderEditDispatch } from '../../../hooks/reducers/useFoldersReducer';
-import { LeftColumnContent } from '../../../types';
-import type { SettingsScreens } from '../../../types';
 import type { GlobalState } from '../../../global/types';
+import type { FolderEditDispatch } from '../../../hooks/reducers/useFoldersReducer';
+import type { SettingsScreens } from '../../../types';
+import { LeftColumnContent } from '../../../types';
 
 import {
   ALL_FOLDER_ID,
-  ARCHIVED_FOLDER_ID,
   ARCHIVE_MINIMIZED_HEIGHT,
+  ARCHIVED_FOLDER_ID,
   CHAT_HEIGHT_PX,
   CHAT_LIST_SLICE,
 } from '../../../config';
-import { IS_MAC_OS, IS_PWA } from '../../../util/environment';
-import { getPinnedChatsCount, getOrderKey } from '../../../util/folderManager';
 import buildClassName from '../../../util/buildClassName';
+import { getOrderKey, getPinnedChatsCount } from '../../../util/folderManager';
+import { IS_APP, IS_MAC_OS } from '../../../util/windowEnvironment';
 
-import useInfiniteScroll from '../../../hooks/useInfiniteScroll';
-import { useFolderManagerForOrderedIds } from '../../../hooks/useFolderManager';
-import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
-import { useHotkeys } from '../../../hooks/useHotkeys';
+import useUserStoriesPolling from '../../../hooks/polling/useUserStoriesPolling';
+import useTopOverscroll from '../../../hooks/scroll/useTopOverscroll';
 import useDebouncedCallback from '../../../hooks/useDebouncedCallback';
-import useChatOrderDiff from './hooks/useChatOrderDiff';
+import { useFolderManagerForOrderedIds } from '../../../hooks/useFolderManager';
+import { useHotkeys } from '../../../hooks/useHotkeys';
+import useInfiniteScroll from '../../../hooks/useInfiniteScroll';
+import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useOrderDiff from './hooks/useOrderDiff';
 
 import InfiniteScroll from '../../ui/InfiniteScroll';
 import Loading from '../../ui/Loading';
+import Archive from './Archive';
 import Chat from './Chat';
 import EmptyFolder from './EmptyFolder';
-import Archive from './Archive';
 
 type OwnProps = {
   folderType: 'all' | 'archived' | 'folder';
@@ -40,7 +43,7 @@ type OwnProps = {
   canDisplayArchive?: boolean;
   archiveSettings: GlobalState['archiveSettings'];
   isForumPanelOpen?: boolean;
-  lastSyncTime?: number;
+  className?: string;
   foldersDispatch: FolderEditDispatch;
   onSettingsScreenSelect: (screen: SettingsScreens) => void;
   onLeftColumnContentChange: (content: LeftColumnContent) => void;
@@ -61,24 +64,31 @@ const ChatList: FC<OwnProps> = ({
   onSettingsScreenSelect,
   onLeftColumnContentChange,
 }) => {
-  const { openChat, openNextChat, closeForumPanel } = getActions();
+  const {
+    openChat,
+    openNextChat,
+    closeForumPanel,
+    toggleStoryRibbon,
+  } = getActions();
   // eslint-disable-next-line no-null/no-null
   const containerRef = useRef<HTMLDivElement>(null);
   const shouldIgnoreDragRef = useRef(false);
 
+  const isArchived = folderType === 'archived';
   const resolvedFolderId = (
-    folderType === 'all' ? ALL_FOLDER_ID : folderType === 'archived' ? ARCHIVED_FOLDER_ID : folderId!
+    folderType === 'all' ? ALL_FOLDER_ID : isArchived ? ARCHIVED_FOLDER_ID : folderId!
   );
 
   const shouldDisplayArchive = folderType === 'all' && canDisplayArchive;
 
   const orderedIds = useFolderManagerForOrderedIds(resolvedFolderId);
+  useUserStoriesPolling(orderedIds);
 
   const chatsHeight = (orderedIds?.length || 0) * CHAT_HEIGHT_PX;
   const archiveHeight = shouldDisplayArchive
     ? archiveSettings.isMinimized ? ARCHIVE_MINIMIZED_HEIGHT : CHAT_HEIGHT_PX : 0;
 
-  const { orderDiffById, getAnimationType } = useChatOrderDiff(orderedIds);
+  const { orderDiffById, getAnimationType } = useOrderDiff(orderedIds);
 
   const [viewportIds, getMore] = useInfiniteScroll(undefined, orderedIds, undefined, CHAT_LIST_SLICE);
 
@@ -96,7 +106,7 @@ const ChatList: FC<OwnProps> = ({
 
   // Support <Cmd>+<Digit> to navigate between chats
   useEffect(() => {
-    if (!isActive || !orderedIds || !IS_PWA) {
+    if (!isActive || !orderedIds || !IS_APP) {
       return undefined;
     }
 
@@ -133,18 +143,18 @@ const ChatList: FC<OwnProps> = ({
     throttleMs: INTERSECTION_THROTTLE,
   });
 
-  const handleArchivedClick = useCallback(() => {
+  const handleArchivedClick = useLastCallback(() => {
     onLeftColumnContentChange(LeftColumnContent.Archived);
     closeForumPanel();
-  }, [closeForumPanel, onLeftColumnContentChange]);
+  });
 
-  const handleArchivedDragEnter = useCallback(() => {
+  const handleArchivedDragEnter = useLastCallback(() => {
     if (shouldIgnoreDragRef.current) {
       shouldIgnoreDragRef.current = false;
       return;
     }
     handleArchivedClick();
-  }, [handleArchivedClick]);
+  });
 
   const handleDragEnter = useDebouncedCallback((chatId: string) => {
     if (shouldIgnoreDragRef.current) {
@@ -154,13 +164,23 @@ const ChatList: FC<OwnProps> = ({
     openChat({ id: chatId, shouldReplaceHistory: true });
   }, [openChat], DRAG_ENTER_DEBOUNCE, true);
 
-  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+  const handleDragLeave = useLastCallback((e: React.DragEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     if (x < rect.width || y < rect.y) return;
     shouldIgnoreDragRef.current = true;
-  }, []);
+  });
+
+  const handleShowStoryRibbon = useLastCallback(() => {
+    toggleStoryRibbon({ isShown: true, isArchived });
+  });
+
+  const handleHideStoryRibbon = useLastCallback(() => {
+    toggleStoryRibbon({ isShown: false, isArchived });
+  });
+
+  const renderedOverflowTrigger = useTopOverscroll(containerRef, handleShowStoryRibbon, handleHideStoryRibbon);
 
   function renderChats() {
     const viewportOffset = orderedIds!.indexOf(viewportIds![0]);
@@ -196,6 +216,7 @@ const ChatList: FC<OwnProps> = ({
       itemSelector=".ListItem:not(.chat-item-archive)"
       preloadBackwards={CHAT_LIST_SLICE}
       withAbsolutePositioning
+      beforeChildren={renderedOverflowTrigger}
       maxHeight={chatsHeight + archiveHeight}
       onLoadMore={getMore}
       onDragLeave={handleDragLeave}

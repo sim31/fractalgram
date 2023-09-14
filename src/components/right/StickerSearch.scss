@@ -1,7 +1,9 @@
 .StickerSearch {
+  container: stickers / inline-size;
   height: 100%;
   padding: 0 0.5rem;
-  overflow-y: auto;
+  overflow-y: scroll;
+  overflow-x: hidden;
 
   .helper-text {
     padding: 1rem;
@@ -71,5 +73,17 @@
 
   .StickerButton {
     margin: 0.125rem;
+
+    @media (max-width: 380px) {
+      &:last-child {
+        display: none;
+      }
+    }
+  }
+}
+
+@container (max-width: 376px) {
+  .StickerSearch .StickerButton:last-child {
+    display: none;
   }
 }

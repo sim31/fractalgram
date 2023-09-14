@@ -1,6 +1,6 @@
-import type { ApiDocument, ApiPhoto } from './messages';
-import type { ApiBotInfo } from './bots';
 import type { API_CHAT_TYPES } from '../../config';
+import type { ApiBotInfo } from './bots';
+import type { ApiDocument, ApiPhoto } from './messages';
 
 export interface ApiUser {
   id: string;
@@ -8,7 +8,9 @@ export interface ApiUser {
   isSelf?: true;
   isVerified?: true;
   isPremium?: boolean;
+  isCloseFriend?: boolean;
   isContact?: true;
+  isSupport?: true;
   type: ApiUserType;
   firstName?: string;
   lastName?: string;
@@ -29,9 +31,10 @@ export interface ApiUser {
   fakeType?: ApiFakeType;
   isAttachBot?: boolean;
   emojiStatus?: ApiEmojiStatus;
-
-  // Obtained from GetFullUser / UserFullInfo
-  fullInfo?: ApiUserFullInfo;
+  areStoriesHidden?: boolean;
+  hasStories?: boolean;
+  hasUnreadStories?: boolean;
+  maxStoryId?: number;
 }
 
 export interface ApiUserFullInfo {
@@ -45,6 +48,8 @@ export interface ApiUserFullInfo {
   personalPhoto?: ApiPhoto;
   noVoiceMessages?: boolean;
   premiumGifts?: ApiPremiumGiftOption[];
+  isTranslationDisabled?: true;
+  hasPinnedStories?: boolean;
 }
 
 export type ApiFakeType = 'fake' | 'scam';

@@ -1,9 +1,11 @@
 import type { TeactNode } from '../lib/teact/teact';
+
 import type {
   ApiBotInlineMediaResult, ApiBotInlineResult, ApiBotInlineSwitchPm,
+  ApiBotInlineSwitchWebview,
   ApiChatInviteImporter,
   ApiExportedInvite,
-  ApiLanguage, ApiMessage, ApiStickerSet,
+  ApiLanguage, ApiMessage, ApiReaction, ApiStickerSet,
 } from '../api/types';
 
 export type TextPart = TeactNode;
@@ -28,6 +30,14 @@ export interface IAlbum {
 
 export type ThemeKey = 'light' | 'dark';
 export type AnimationLevel = 0 | 1 | 2;
+export type PerformanceTypeKey = (
+  'pageTransitions' | 'messageSendingAnimations' | 'mediaViewerAnimations'
+  | 'messageComposerAnimations' | 'contextMenuAnimations' | 'contextMenuBlur' | 'rightColumnAnimations'
+  | 'animatedEmoji' | 'loopAnimatedStickers' | 'reactionEffects' | 'stickerEffects' | 'autoplayGifs' | 'autoplayVideos'
+);
+export type PerformanceType = {
+  [key in PerformanceTypeKey]: boolean;
+};
 
 export interface IThemeSettings {
   background?: string;
@@ -75,11 +85,9 @@ export interface ISettings extends NotifySettings, Record<string, any> {
   canAutoLoadFileInGroups: boolean;
   canAutoLoadFileInChannels: boolean;
   autoLoadFileMaxSizeMb: number;
-  canAutoPlayGifs: boolean;
-  canAutoPlayVideos: boolean;
   shouldSuggestStickers: boolean;
   shouldSuggestCustomEmoji: boolean;
-  shouldLoopStickers: boolean;
+  shouldUpdateStickerSetOrder: boolean;
   hasPassword?: boolean;
   languages?: ApiLanguage[];
   language: LangCode;
@@ -91,8 +99,14 @@ export interface ISettings extends NotifySettings, Record<string, any> {
   shouldArchiveAndMuteNewNonContact?: boolean;
   canTranslate: boolean;
   canTranslateChats: boolean;
+  translationLanguage?: string;
   doNotTranslate: string[];
   canDisplayChatInTitle: boolean;
+  shouldShowLoginCodeInChatList?: boolean;
+  shouldForceHttpTransport?: boolean;
+  shouldAllowHttpTransport?: boolean;
+  shouldCollectDebugLogs?: boolean;
+  shouldDebugExportedSenders?: boolean;
 }
 
 export interface ApiPrivacySettings {
@@ -182,10 +196,12 @@ export enum SettingsScreens {
   PrivacyGroupChatsAllowedContacts,
   PrivacyGroupChatsDeniedContacts,
   PrivacyBlockedUsers,
+  Performance,
   Folders,
   FoldersCreateFolder,
   FoldersEditFolder,
   FoldersEditFolderFromChatList,
+  FoldersEditFolderInvites,
   FoldersIncludedChats,
   FoldersIncludedChatsFromChatList,
   FoldersExcludedChats,
@@ -221,12 +237,13 @@ export enum SettingsScreens {
   QuickReaction,
   CustomEmoji,
   DoNotTranslate,
+  FoldersShare,
 }
 
-export type StickerSetOrRecent = Pick<ApiStickerSet, (
+export type StickerSetOrReactionsSetOrRecent = Pick<ApiStickerSet, (
   'id' | 'accessHash' | 'title' | 'count' | 'stickers' | 'hasThumbnail' | 'isLottie' | 'isVideos' | 'isEmoji' |
   'installedDate' | 'isArchived'
-)>;
+)> & { reactions?: ApiReaction[] };
 
 export enum LeftColumnContent {
   ChatList,
@@ -274,6 +291,13 @@ export enum MediaViewerOrigin {
   ScheduledAlbum,
   SearchResult,
   SuggestedAvatar,
+}
+
+export enum StoryViewerOrigin {
+  StoryRibbon,
+  MiddleHeaderAvatar,
+  ChatList,
+  SearchResult,
 }
 
 export enum AudioOrigin {
@@ -325,16 +349,20 @@ export enum NewChatMembersProgress {
   Loading,
 }
 
-export type ProfileTabType = 'members' | 'commonChats' | 'media' | 'documents' | 'links' | 'audio' | 'voice';
+export type ProfileTabType = (
+  'members' | 'commonChats' | 'media' | 'documents' | 'links' | 'audio' | 'voice' | 'stories' | 'storiesArchive'
+);
 export type SharedMediaType = 'media' | 'documents' | 'links' | 'audio' | 'voice';
 export type ApiPrivacyKey = 'phoneNumber' | 'lastSeen' | 'profilePhoto' | 'voiceMessages' |
 'forwards' | 'chatInvite' | 'phoneCall' | 'phoneP2P';
-export type PrivacyVisibility = 'everybody' | 'contacts' | 'nonContacts' | 'nobody';
+export type PrivacyVisibility = 'everybody' | 'contacts' | 'closeFriends' | 'selectedContacts' | 'nonContacts' |
+'nobody';
 
 export enum ProfileState {
   Profile,
   SharedMedia,
   MemberList,
+  StoryList,
 }
 
 export enum PaymentStep {
@@ -396,5 +424,6 @@ export type InlineBotSettings = {
   results?: (ApiBotInlineResult | ApiBotInlineMediaResult)[];
   isGallery?: boolean;
   switchPm?: ApiBotInlineSwitchPm;
+  switchWebview?: ApiBotInlineSwitchWebview;
   cacheTime: number;
 };

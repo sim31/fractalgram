@@ -1,25 +1,29 @@
-import type { Signal } from '../../../util/signals';
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback, useEffect } from '../../../lib/teact/teact';
+import React, { memo, useEffect, useRef } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { ApiMessage, ApiMessageEntityTextUrl, ApiWebPage } from '../../../api/types';
-import { ApiMessageEntityTypes } from '../../../api/types';
+import type {
+  ApiFormattedText, ApiMessage, ApiMessageEntityTextUrl, ApiWebPage,
+} from '../../../api/types';
 import type { ISettings } from '../../../types';
+import type { Signal } from '../../../util/signals';
+import { ApiMessageEntityTypes } from '../../../api/types';
 
 import { RE_LINK_TEMPLATE } from '../../../config';
-import { selectTabState, selectNoWebPage, selectTheme } from '../../../global/selectors';
+import { selectNoWebPage, selectTabState, selectTheme } from '../../../global/selectors';
 import buildClassName from '../../../util/buildClassName';
 import parseMessageInput from '../../../util/parseMessageInput';
-import useSyncEffect from '../../../hooks/useSyncEffect';
-import useShowTransition from '../../../hooks/useShowTransition';
-import useCurrentOrPrev from '../../../hooks/useCurrentOrPrev';
-import useDerivedState from '../../../hooks/useDerivedState';
-import useDerivedSignal from '../../../hooks/useDerivedSignal';
-import { useDebouncedResolver } from '../../../hooks/useAsyncResolvers';
 
-import WebPage from '../message/WebPage';
+import { useDebouncedResolver } from '../../../hooks/useAsyncResolvers';
+import useCurrentOrPrev from '../../../hooks/useCurrentOrPrev';
+import useDerivedSignal from '../../../hooks/useDerivedSignal';
+import useDerivedState from '../../../hooks/useDerivedState';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useShowTransition from '../../../hooks/useShowTransition';
+import useSyncEffect from '../../../hooks/useSyncEffect';
+
 import Button from '../../ui/Button';
+import WebPage from '../message/WebPage';
 
 import './WebPagePreview.scss';
 
@@ -54,27 +58,32 @@ const WebPagePreview: FC<OwnProps & StateProps> = ({
     toggleMessageWebPage,
   } = getActions();
 
+  const formattedTextWithLinkRef = useRef<ApiFormattedText>();
+
   const detectLinkDebounced = useDebouncedResolver(() => {
-    const { text, entities } = parseMessageInput(getHtml());
-    const linkEntity = entities?.find((entity): entity is ApiMessageEntityTextUrl => (
+    const formattedText = parseMessageInput(getHtml());
+    const linkEntity = formattedText.entities?.find((entity): entity is ApiMessageEntityTextUrl => (
       entity.type === ApiMessageEntityTypes.TextUrl
     ));
 
-    return linkEntity?.url || text.match(RE_LINK)?.[0];
+    formattedTextWithLinkRef.current = formattedText;
+
+    return linkEntity?.url || formattedText.text.match(RE_LINK)?.[0];
   }, [getHtml], DEBOUNCE_MS, true);
 
   const getLink = useDerivedSignal(detectLinkDebounced, [detectLinkDebounced, getHtml], true);
 
   useEffect(() => {
     const link = getLink();
+    const formattedText = formattedTextWithLinkRef.current;
 
     if (link) {
-      loadWebPagePreview({ text: link });
+      loadWebPagePreview({ text: formattedText! });
     } else {
       clearWebPagePreview();
       toggleMessageWebPage({ chatId, threadId });
     }
-  }, [getLink, chatId, threadId, clearWebPagePreview, loadWebPagePreview, toggleMessageWebPage]);
+  }, [getLink, chatId, threadId]);
 
   useSyncEffect(() => {
     clearWebPagePreview();
@@ -88,9 +97,9 @@ const WebPagePreview: FC<OwnProps & StateProps> = ({
 
   const renderingWebPage = useCurrentOrPrev(webPagePreview, true);
 
-  const handleClearWebpagePreview = useCallback(() => {
+  const handleClearWebpagePreview = useLastCallback(() => {
     toggleMessageWebPage({ chatId, threadId, noWebPage: true });
-  }, [chatId, threadId, toggleMessageWebPage]);
+  });
 
   if (!shouldRender || !renderingWebPage) {
     return undefined;
@@ -106,9 +115,9 @@ const WebPagePreview: FC<OwnProps & StateProps> = ({
 
   return (
     <div className={buildClassName('WebPagePreview', transitionClassNames)}>
-      <div>
+      <div className="WebPagePreview_inner">
         <div className="WebPagePreview-left-icon">
-          <i className="icon-link" />
+          <i className="icon icon-link" />
         </div>
         <WebPage message={messageStub} inPreview theme={theme} />
         <Button
@@ -119,7 +128,7 @@ const WebPagePreview: FC<OwnProps & StateProps> = ({
           ariaLabel="Clear Webpage Preview"
           onClick={handleClearWebpagePreview}
         >
-          <i className="icon-close" />
+          <i className="icon icon-close" />
         </Button>
       </div>
     </div>

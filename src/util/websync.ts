@@ -1,12 +1,16 @@
-import { APP_VERSION, DEBUG, IS_MOCKED_CLIENT } from '../config';
 import { getGlobal } from '../global';
+
+import {
+  APP_CODE_NAME,
+  DEBUG, IS_ELECTRON, IS_MOCKED_CLIENT,
+} from '../config';
 import { hasStoredSession } from './sessions';
 
 const WEBSYNC_URLS = [
   't.me',
   'telegram.me',
-].map((domain) => `//${domain}/_websync_?`);
-const WEBSYNC_VERSION = `${APP_VERSION} Z`;
+].map((domain) => `https://${domain}/_websync_?`);
+const WEBSYNC_VERSION = `${APP_VERSION} ${APP_CODE_NAME}`;
 const WEBSYNC_KEY = 'tgme_sync';
 const WEBSYNC_TIMEOUT = 86400;
 
@@ -25,7 +29,7 @@ const saveSync = (authed: boolean) => {
 let lastTimeout: NodeJS.Timeout | undefined;
 
 export const forceWebsync = (authed: boolean) => {
-  if (IS_MOCKED_CLIENT) return undefined;
+  if (IS_MOCKED_CLIENT || IS_ELECTRON) return undefined;
   const currentTs = getTs();
 
   const { canRedirect, ts } = JSON.parse(localStorage.getItem(WEBSYNC_KEY) || '{}');
@@ -67,13 +71,13 @@ export const forceWebsync = (authed: boolean) => {
 };
 
 export function stopWebsync() {
-  if (DEBUG) return;
+  if (DEBUG || IS_ELECTRON) return;
 
   if (lastTimeout) clearTimeout(lastTimeout);
 }
 
 export function startWebsync() {
-  if (DEBUG) {
+  if (DEBUG || IS_ELECTRON) {
     return;
   }
 

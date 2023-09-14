@@ -4,19 +4,27 @@ import { getActions } from '../../../../global';
 import type { ApiChat, ApiTopic } from '../../../../api/types';
 import type { MenuItemContextAction } from '../../../ui/ListItem';
 
-import { compact } from '../../../../util/iteratees';
 import { getCanManageTopic, getHasAdminRight } from '../../../../global/helpers';
-import { IS_MULTITAB_SUPPORTED } from '../../../../util/environment';
+import { compact } from '../../../../util/iteratees';
+import { IS_OPEN_IN_NEW_TAB_SUPPORTED } from '../../../../util/windowEnvironment';
 
 import useLang from '../../../../hooks/useLang';
 
-export default function useTopicContextActions(
-  topic: ApiTopic,
-  chat: ApiChat,
-  wasOpened?: boolean,
-  canDelete?: boolean,
-  handleDelete?: NoneToVoidFunction,
-) {
+export default function useTopicContextActions({
+  topic,
+  chat,
+  wasOpened,
+  canDelete,
+  handleDelete,
+  handleMute,
+}: {
+  topic: ApiTopic;
+  chat: ApiChat;
+  wasOpened?: boolean;
+  canDelete?: boolean;
+  handleDelete?: NoneToVoidFunction;
+  handleMute?: NoneToVoidFunction;
+}) {
   const lang = useLang();
 
   return useMemo(() => {
@@ -37,15 +45,13 @@ export default function useTopicContextActions(
     const canToggleClosed = getCanManageTopic(chat, topic);
     const canTogglePinned = chat.isCreator || getHasAdminRight(chat, 'manageTopics');
 
-    const actionOpenInNewTab = IS_MULTITAB_SUPPORTED && {
+    const actionOpenInNewTab = IS_OPEN_IN_NEW_TAB_SUPPORTED && {
       title: 'Open in new tab',
       icon: 'open-in-new-tab',
       handler: () => {
         openChatInNewTab({ chatId: chat.id, threadId: topicId });
       },
     };
-
-    const newTabActionSeparator = actionOpenInNewTab && { isSeparator: true, key: 'newTabSeparator' };
 
     const actionUnreadMark = topic.unreadCount || !wasOpened
       ? {
@@ -76,9 +82,9 @@ export default function useTopicContextActions(
         handler: () => updateTopicMutedState({ chatId, topicId, isMuted: false }),
       }
       : {
-        title: lang('ChatList.Mute'),
+        title: `${lang('ChatList.Mute')}...`,
         icon: 'mute',
-        handler: () => updateTopicMutedState({ chatId, topicId, isMuted: true }),
+        handler: handleMute,
       };
 
     const actionCloseTopic = canToggleClosed ? (isClosed
@@ -102,12 +108,11 @@ export default function useTopicContextActions(
 
     return compact([
       actionOpenInNewTab,
-      newTabActionSeparator,
       actionPin,
       actionUnreadMark,
       actionMute,
       actionCloseTopic,
       actionDelete,
     ]) as MenuItemContextAction[];
-  }, [topic, chat, wasOpened, lang, canDelete, handleDelete]);
+  }, [topic, chat, wasOpened, lang, canDelete, handleDelete, handleMute]);
 }

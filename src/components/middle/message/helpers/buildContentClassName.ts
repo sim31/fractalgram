@@ -32,11 +32,11 @@ export function buildContentClassName(
   } = {},
 ) {
   const {
-    text, photo, video, audio, voice, document, poll, webPage, contact, location, invoice,
+    text, photo, video, audio, voice, document, poll, webPage, contact, location, invoice, storyData,
   } = getMessageContent(message);
 
   const classNames = [MESSAGE_CONTENT_CLASS_NAME];
-  const isMedia = photo || video || location || invoice?.extendedMedia;
+  const isMedia = storyData || photo || video || location || invoice?.extendedMedia;
   const hasText = text || location?.type === 'venue' || isGeoLiveActive;
   const isMediaWithNoText = isMedia && !hasText;
   const isViaBot = Boolean(message.viaBotId);
@@ -48,6 +48,8 @@ export function buildContentClassName(
     }
   } else if (hasText) {
     classNames.push('text');
+  } else {
+    classNames.push('no-text');
   }
 
   if (hasActionButton) {
@@ -91,6 +93,10 @@ export function buildContentClassName(
     classNames.push('invoice');
   }
 
+  if (storyData) {
+    classNames.push('story');
+  }
+
   if (asForwarded) {
     classNames.push('is-forwarded');
   }
@@ -126,7 +132,7 @@ export function buildContentClassName(
       classNames.push('has-solid-background');
     }
 
-    if (isLastInGroup && (photo || (location && !hasText) || !isMediaWithNoText)) {
+    if (isLastInGroup && (photo || !isMediaWithNoText || (location && asForwarded))) {
       classNames.push('has-appendix');
     }
   }

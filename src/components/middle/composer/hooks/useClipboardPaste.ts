@@ -4,16 +4,21 @@ import { useEffect } from '../../../../lib/teact/teact';
 import type { ApiAttachment, ApiFormattedText, ApiMessage } from '../../../../api/types';
 import { ApiMessageEntityTypes } from '../../../../api/types';
 
-import buildAttachment from '../helpers/buildAttachment';
-import { DEBUG, EDITABLE_INPUT_ID, EDITABLE_INPUT_MODAL_ID } from '../../../../config';
-import getFilesFromDataTransferItems from '../helpers/getFilesFromDataTransferItems';
-import parseMessageInput, { ENTITY_CLASS_BY_NODE_NAME } from '../../../../util/parseMessageInput';
+import {
+  DEBUG, EDITABLE_INPUT_ID, EDITABLE_INPUT_MODAL_ID, EDITABLE_STORY_INPUT_ID,
+} from '../../../../config';
 import cleanDocsHtml from '../../../../lib/cleanDocsHtml';
 import { containsCustomEmoji, stripCustomEmoji } from '../../../../global/helpers/symbols';
+import parseMessageInput, { ENTITY_CLASS_BY_NODE_NAME } from '../../../../util/parseMessageInput';
+import buildAttachment from '../helpers/buildAttachment';
+import getFilesFromDataTransferItems from '../helpers/getFilesFromDataTransferItems';
 
 const MAX_MESSAGE_LENGTH = 4096;
 
 const STYLE_TAG_REGEX = /<style>(.*?)<\/style>/gs;
+const TYPE_HTML = 'text/html';
+const DOCUMENT_TYPE_WORD = 'urn:schemas-microsoft-com:office:word';
+const NAMESPACE_PREFIX_WORD = 'xmlns:w';
 
 function preparePastedHtml(html: string) {
   let fragment = document.createElement('div');
@@ -67,6 +72,7 @@ const useClipboardPaste = (
   isActive: boolean,
   insertTextAndUpdateCursor: (text: ApiFormattedText, inputId?: string) => void,
   setAttachments: StateHookSetter<ApiAttachment[]>,
+  setNextText: StateHookSetter<ApiFormattedText | undefined>,
   editedMessage: ApiMessage | undefined,
   shouldStripCustomEmoji?: boolean,
   onCustomEmojiStripped?: VoidFunction,
@@ -82,12 +88,13 @@ const useClipboardPaste = (
       }
 
       const input = document.activeElement;
-      if (input && ![EDITABLE_INPUT_ID, EDITABLE_INPUT_MODAL_ID].includes(input.id)) {
+      if (input && ![EDITABLE_INPUT_ID, EDITABLE_INPUT_MODAL_ID, EDITABLE_STORY_INPUT_ID].includes(input.id)) {
         return;
       }
 
       const pastedText = e.clipboardData.getData('text').substring(0, MAX_MESSAGE_LENGTH);
       const html = e.clipboardData.getData('text/html');
+
       let pastedFormattedText = html ? parseMessageInput(
         preparePastedHtml(html), undefined, true,
       ) : undefined;
@@ -109,17 +116,34 @@ const useClipboardPaste = (
         return;
       }
 
-      if (files?.length && !editedMessage) {
-        const newAttachments = await Promise.all(files.map((file) => {
+      const textToPaste = pastedFormattedText?.entities?.length ? pastedFormattedText : { text: pastedText };
+
+      let isWordDocument = false;
+      try {
+        const parser = new DOMParser();
+        const parsedDocument = parser.parseFromString(html, TYPE_HTML);
+        isWordDocument = parsedDocument.documentElement
+          .getAttribute(NAMESPACE_PREFIX_WORD) === DOCUMENT_TYPE_WORD;
+      } catch (err: any) {
+        // Ignore
+      }
+
+      const hasText = textToPaste && textToPaste.text;
+      const shouldSetAttachments = files?.length && !editedMessage && !isWordDocument;
+
+      if (shouldSetAttachments) {
+        const newAttachments = await Promise.all(files!.map((file) => {
           return buildAttachment(file.name, file);
         }));
         setAttachments((attachments) => attachments.concat(newAttachments));
       }
 
-      const textToPaste = pastedFormattedText?.entities?.length ? pastedFormattedText : { text: pastedText };
-
-      if (textToPaste) {
-        insertTextAndUpdateCursor(textToPaste, input?.id);
+      if (hasText) {
+        if (shouldSetAttachments) {
+          setNextText(textToPaste);
+        } else {
+          insertTextAndUpdateCursor(textToPaste, input?.id);
+        }
       }
     }
 
@@ -130,6 +154,7 @@ const useClipboardPaste = (
     };
   }, [
     insertTextAndUpdateCursor, editedMessage, setAttachments, isActive, shouldStripCustomEmoji, onCustomEmojiStripped,
+    setNextText,
   ]);
 };
 

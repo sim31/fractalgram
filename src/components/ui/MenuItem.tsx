@@ -1,15 +1,20 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { useCallback } from '../../lib/teact/teact';
+import React from '../../lib/teact/teact';
+
+import type { IconName } from '../../types/icons';
 
 import { IS_TEST } from '../../config';
 import buildClassName from '../../util/buildClassName';
+
+import useAppLayout from '../../hooks/useAppLayout';
 import useLang from '../../hooks/useLang';
-import { IS_COMPACT_MENU } from '../../util/environment';
+import useLastCallback from '../../hooks/useLastCallback';
 
 import './MenuItem.scss';
 
 export type MenuItemProps = {
-  icon?: string;
+  icon?: IconName | 'A' | 'K';
+  isCharIcon?: boolean;
   customIcon?: React.ReactNode;
   className?: string;
   children: React.ReactNode;
@@ -27,6 +32,7 @@ export type MenuItemProps = {
 const MenuItem: FC<MenuItemProps> = (props) => {
   const {
     icon,
+    isCharIcon,
     customIcon,
     className,
     children,
@@ -42,7 +48,8 @@ const MenuItem: FC<MenuItemProps> = (props) => {
   } = props;
 
   const lang = useLang();
-  const handleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+  const { isTouchScreen } = useAppLayout();
+  const handleClick = useLastCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (disabled || !onClick) {
       e.stopPropagation();
       e.preventDefault();
@@ -51,9 +58,9 @@ const MenuItem: FC<MenuItemProps> = (props) => {
     }
 
     onClick(e, clickArg);
-  }, [clickArg, disabled, onClick]);
+  });
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+  const handleKeyDown = useLastCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.keyCode !== 13 && e.keyCode !== 32) {
       return;
     }
@@ -66,21 +73,24 @@ const MenuItem: FC<MenuItemProps> = (props) => {
     }
 
     onClick(e, clickArg);
-  }, [clickArg, disabled, onClick]);
+  });
 
   const fullClassName = buildClassName(
     'MenuItem',
     className,
     disabled && 'disabled',
     destructive && 'destructive',
-    IS_COMPACT_MENU && 'compact',
+    !isTouchScreen && 'compact',
     withWrap && 'wrap',
   );
 
   const content = (
     <>
       {!customIcon && icon && (
-        <i className={`icon-${icon}`} data-char={icon.startsWith('char-') ? icon.replace('char-', '') : undefined} />
+        <i
+          className={isCharIcon ? 'icon icon-char' : `icon icon-${icon}`}
+          data-char={isCharIcon ? icon : undefined}
+        />
       )}
       {customIcon}
       {children}

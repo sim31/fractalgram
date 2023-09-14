@@ -1,22 +1,24 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { useCallback } from '../../../lib/teact/teact';
+import React from '../../../lib/teact/teact';
+import { getActions, getGlobal, withGlobal } from '../../../global';
 
-import type { GlobalState } from '../../../global/types';
 import type { ApiMessage } from '../../../api/types';
+import type { GlobalState } from '../../../global/types';
+import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
 import type { IAlbum, ISettings } from '../../../types';
 import type { IAlbumLayout } from './helpers/calculateAlbumLayout';
-import { AlbumRectPart } from './helpers/calculateAlbumLayout';
 
 import { getMessageContent, getMessageHtmlId, getMessageOriginalId } from '../../../global/helpers';
-import { getActions, getGlobal, withGlobal } from '../../../global';
-import withSelectControl from './hocs/withSelectControl';
-import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
 import {
-  selectActiveDownloadIds,
+  selectActiveDownloads,
   selectCanAutoLoadMedia,
   selectCanAutoPlayMedia,
   selectTheme,
 } from '../../../global/selectors';
+import { AlbumRectPart } from './helpers/calculateAlbumLayout';
+import withSelectControl from './hocs/withSelectControl';
+
+import useLastCallback from '../../../hooks/useLastCallback';
 
 import Photo from './Photo';
 import Video from './Video';
@@ -30,7 +32,6 @@ type OwnProps = {
   album: IAlbum;
   observeIntersection: ObserveFn;
   hasCustomAppendix?: boolean;
-  lastSyncTime?: number;
   isOwn: boolean;
   isProtected?: boolean;
   albumLayout: IAlbumLayout;
@@ -40,14 +41,13 @@ type OwnProps = {
 type StateProps = {
   theme: ISettings['theme'];
   uploadsById: GlobalState['fileUploads']['byMessageLocalId'];
-  activeDownloadIds: number[];
+  activeDownloadIds?: number[];
 };
 
 const Album: FC<OwnProps & StateProps> = ({
   album,
   observeIntersection,
   hasCustomAppendix,
-  lastSyncTime,
   isOwn,
   isProtected,
   albumLayout,
@@ -60,9 +60,9 @@ const Album: FC<OwnProps & StateProps> = ({
 
   const mediaCount = album.messages.length;
 
-  const handleCancelUpload = useCallback((message: ApiMessage) => {
+  const handleCancelUpload = useLastCallback((message: ApiMessage) => {
     cancelSendingMessage({ chatId: message.chatId, messageId: message.id });
-  }, [cancelSendingMessage]);
+  });
 
   function renderAlbumMessage(message: ApiMessage, index: number) {
     const { photo, video } = getMessageContent(message);
@@ -92,7 +92,7 @@ const Album: FC<OwnProps & StateProps> = ({
           isProtected={isProtected}
           onClick={onMediaClick}
           onCancelUpload={handleCancelUpload}
-          isDownloading={activeDownloadIds.includes(message.id)}
+          isDownloading={activeDownloadIds?.includes(message.id)}
           theme={theme}
         />
       );
@@ -105,12 +105,11 @@ const Album: FC<OwnProps & StateProps> = ({
           canAutoLoad={canAutoLoad}
           canAutoPlay={canAutoPlay}
           uploadProgress={uploadProgress}
-          lastSyncTime={lastSyncTime}
           dimensions={dimensions}
           isProtected={isProtected}
           onClick={onMediaClick}
           onCancelUpload={handleCancelUpload}
-          isDownloading={activeDownloadIds.includes(message.id)}
+          isDownloading={activeDownloadIds?.includes(message.id)}
           theme={theme}
         />
       );
@@ -135,11 +134,13 @@ export default withGlobal<OwnProps>(
   (global, { album }): StateProps => {
     const { chatId } = album.mainMessage;
     const theme = selectTheme(global);
-    const activeDownloadIds = selectActiveDownloadIds(global, chatId);
+    const activeDownloads = selectActiveDownloads(global, chatId);
+    const isScheduled = album.mainMessage.isScheduled;
+
     return {
       theme,
       uploadsById: global.fileUploads.byMessageLocalId,
-      activeDownloadIds,
+      activeDownloadIds: isScheduled ? activeDownloads?.scheduledIds : activeDownloads?.ids,
     };
   },
 )(Album);

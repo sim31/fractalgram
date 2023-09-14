@@ -1,9 +1,7 @@
-@import "../../../styles/mixins";
-
 #Settings {
   height: 100%;
 
-  > div {
+  > .Transition_slide {
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -34,11 +32,9 @@
 
 .settings-content {
   border-top: 1px solid var(--color-borders);
-  background-color: var(--color-background-secondary);
   height: calc(100% - var(--header-height));
 
-  overflow-y: auto;
-  @include overflow-y-overlay();
+  overflow-y: scroll;
 
   &.no-border, &.two-fa, &.local-passcode, &.password-form {
     border-top: none;
@@ -51,6 +47,7 @@
   &.infinite-scroll {
     display: flex;
     flex-direction: column;
+    overflow-y: hidden;
 
     & > .custom-scroll {
       flex: 1 1 auto;
@@ -98,7 +95,7 @@
 .settings-content-icon {
   margin-bottom: 2.5rem;
 
-  &.opacity-transition:not(.shown) {
+  &.opacity-transition.not-shown {
     display: block;
     visibility: hidden;
   }
@@ -124,15 +121,24 @@
   }
 }
 
+.settings-item-simple,
 .settings-item {
   background-color: var(--color-background);
   padding: 1.5rem 1.5rem 1rem;
   box-shadow: inset 0 -0.0625rem 0 0 var(--color-background-secondary-accent);
-  margin-bottom: 0.625rem;
+  border-bottom: 0.625rem solid var(--color-background-secondary);
 
+  &:last-child {
+    border-bottom: none;
+    box-shadow: none;
+  }
+}
+
+.settings-item {
   &.no-border {
     margin-bottom: 0;
     box-shadow: none;
+    border-bottom: none;
   }
 
   &-header {
@@ -242,7 +248,7 @@
       .ListItem-button {
         color: var(--color-error);
 
-        i {
+        .icon {
           color: inherit;
         }
       }
@@ -261,6 +267,10 @@
         width: 3rem;
         height: 3rem;
         margin-right: 1rem;
+      }
+
+      .contact-info {
+        overflow: hidden;
       }
 
       .contact-name {
@@ -360,8 +370,28 @@
   }
 }
 
+.settings-dropdown-section {
+  margin: 0 -0.75rem 1rem -1rem;
+
+  .DropdownList {
+    position: relative;
+
+    &--open {
+      transform: translate(0, 0);
+    }
+  }
+}
+
 .SettingsDefaultReaction {
   .current-default-reaction {
     margin-inline-end: 2rem;
   }
+}
+
+.settings-item-chatlist {
+  padding: 0;
+}
+
+.settings-item-chatlist .ListItem {
+  margin: inherit;
 }

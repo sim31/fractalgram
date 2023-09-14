@@ -3,11 +3,11 @@ import { getActions } from '../global';
 import type { ApiChatType } from '../api/types';
 
 import { API_CHAT_TYPES } from '../config';
-import { IS_SAFARI } from './environment';
+import { IS_SAFARI } from './windowEnvironment';
 
 type DeepLinkMethod = 'resolve' | 'login' | 'passport' | 'settings' | 'join' | 'addstickers' | 'addemoji' |
 'setlanguage' | 'addtheme' | 'confirmphone' | 'socks' | 'proxy' | 'privatepost' | 'bg' | 'share' | 'msg' | 'msg_url' |
-'invoice';
+'invoice' | 'addlist';
 
 export const processDeepLink = (url: string) => {
   const {
@@ -26,6 +26,8 @@ export const processDeepLink = (url: string) => {
     openInvoice,
     processAttachBotParameters,
     openChatWithDraft,
+    checkChatlistInvite,
+    openStoryViewerByUsername,
   } = getActions();
 
   // Safari thinks the path in tg://path links is hostname for some reason
@@ -36,6 +38,7 @@ export const processDeepLink = (url: string) => {
     case 'resolve': {
       const {
         domain, phone, post, comment, voicechat, livestream, start, startattach, attach, thread, topic,
+        appname, startapp, story,
       } = params;
 
       const startAttach = params.hasOwnProperty('startattach') && !startattach ? true : startattach;
@@ -43,7 +46,13 @@ export const processDeepLink = (url: string) => {
       const threadId = Number(thread) || Number(topic) || undefined;
 
       if (domain !== 'telegrampassport') {
-        if (startAttach && choose) {
+        if (appname) {
+          openChatByUsername({
+            username: domain,
+            startApp: startapp,
+            originalParts: [domain, appname],
+          });
+        } else if (startAttach && choose) {
           processAttachBotParameters({
             username: domain,
             filter: choose,
@@ -56,6 +65,8 @@ export const processDeepLink = (url: string) => {
           });
         } else if (phone) {
           openChatByPhoneNumber({ phoneNumber: phone, startAttach, attach });
+        } else if (story) {
+          openStoryViewerByUsername({ username: domain, storyId: Number(story) });
         } else {
           openChatByUsername({
             username: domain,
@@ -111,6 +122,11 @@ export const processDeepLink = (url: string) => {
       openChatWithDraft({ text: formatShareText(urlParam, text) });
       break;
     }
+    case 'addlist': {
+      checkChatlistInvite({ slug: params.slug });
+      break;
+    }
+
     case 'login': {
       // const { code, token } = params;
       break;

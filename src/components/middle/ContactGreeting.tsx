@@ -1,17 +1,17 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
-  memo, useCallback, useEffect, useRef,
-} from '../../lib/teact/teact';
+import React, { memo, useEffect, useRef } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type { ApiSticker, ApiUpdateConnectionStateType } from '../../api/types';
+import type { MessageList } from '../../global/types';
 
-import { selectChat } from '../../global/selectors';
-import { useIntersectionObserver } from '../../hooks/useIntersectionObserver';
-import useLang from '../../hooks/useLang';
 import { getUserIdDividend } from '../../global/helpers';
+import { selectChat, selectCurrentMessageList } from '../../global/selectors';
 
-import StickerButton from '../common/StickerButton';
+import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
+
+import StickerView from '../common/StickerView';
 
 import './ContactGreeting.scss';
 
@@ -23,14 +23,14 @@ type StateProps = {
   sticker?: ApiSticker;
   lastUnreadMessageId?: number;
   connectionState?: ApiUpdateConnectionStateType;
+  currentMessageList?: MessageList;
 };
-
-const INTERSECTION_DEBOUNCE_MS = 200;
 
 const ContactGreeting: FC<OwnProps & StateProps> = ({
   sticker,
   connectionState,
   lastUnreadMessageId,
+  currentMessageList,
 }) => {
   const {
     loadGreetingStickers,
@@ -39,14 +39,10 @@ const ContactGreeting: FC<OwnProps & StateProps> = ({
   } = getActions();
 
   const lang = useLang();
+
   // eslint-disable-next-line no-null/no-null
   const containerRef = useRef<HTMLDivElement>(null);
-  const {
-    observe: observeIntersection,
-  } = useIntersectionObserver({
-    rootRef: containerRef,
-    debounceMs: INTERSECTION_DEBOUNCE_MS,
-  });
+
   useEffect(() => {
     if (sticker || connectionState !== 'connectionStateReady') {
       return;
@@ -61,31 +57,32 @@ const ContactGreeting: FC<OwnProps & StateProps> = ({
     }
   }, [connectionState, markMessageListRead, lastUnreadMessageId]);
 
-  const handleStickerSelect = useCallback((selectedSticker: ApiSticker) => {
-    selectedSticker = {
-      ...selectedSticker,
-      isPreloadedGlobally: true,
-    };
-    sendMessage({ sticker: selectedSticker });
-  }, [sendMessage]);
+  const handleStickerSelect = useLastCallback(() => {
+    if (!currentMessageList) {
+      return;
+    }
+
+    sendMessage({
+      sticker: {
+        ...sticker!,
+        isPreloadedGlobally: true,
+      },
+      messageList: currentMessageList,
+    });
+  });
 
   return (
-    <div className="ContactGreeting" ref={containerRef}>
+    <div className="ContactGreeting">
       <div className="wrapper">
         <p className="title" dir="auto">{lang('Conversation.EmptyPlaceholder')}</p>
         <p className="description" dir="auto">{lang('Conversation.GreetingText')}</p>
 
-        <div className="sticker">
+        <div ref={containerRef} className="sticker" onClick={handleStickerSelect}>
           {sticker && (
-            <StickerButton
+            <StickerView
+              containerRef={containerRef}
               sticker={sticker}
-              onClick={handleStickerSelect}
-              clickArg={sticker}
-              observeIntersection={observeIntersection}
               size={160}
-              className="large"
-              noContextMenu
-              isCurrentUserPremium
             />
           )}
         </div>
@@ -110,6 +107,7 @@ export default memo(withGlobal<OwnProps>(
         ? chat.lastMessage.id
         : undefined,
       connectionState: global.connectionState,
+      currentMessageList: selectCurrentMessageList(global),
     };
   },
 )(ContactGreeting));

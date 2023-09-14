@@ -1,9 +1,10 @@
 import type {
+  ApiAvailableReaction,
   ApiChatReactions,
   ApiMessage,
   ApiReaction,
-  ApiReactions,
   ApiReactionCount,
+  ApiReactions,
 } from '../../api/types';
 import type { GlobalState } from '../types';
 
@@ -13,7 +14,7 @@ export function getMessageRecentReaction(message: Partial<ApiMessage>) {
 export function checkIfHasUnreadReactions(global: GlobalState, reactions: ApiReactions) {
   const { currentUserId } = global;
   return reactions?.recentReactions?.some(
-    ({ isUnread, userId }) => isUnread && userId !== currentUserId,
+    ({ isUnread, isOwn, peerId }) => isUnread && !isOwn && currentUserId !== peerId,
   );
 }
 
@@ -47,6 +48,21 @@ export function canSendReaction(reaction: ApiReaction, chatReactions: ApiChatRea
   }
 
   return false;
+}
+
+export function sortReactions<T extends ApiAvailableReaction | ApiReaction>(
+  reactions: T[],
+  topReactions?: ApiReaction[],
+): T[] {
+  return reactions.slice().sort((left, right) => {
+    const reactionOne = left ? ('reaction' in left ? left.reaction : left) as ApiReaction : undefined;
+    const reactionTwo = right ? ('reaction' in right ? right.reaction : right) as ApiReaction : undefined;
+    const indexOne = topReactions?.findIndex((reaction) => isSameReaction(reaction, reactionOne)) || 0;
+    const indexTwo = topReactions?.findIndex((reaction) => isSameReaction(reaction, reactionTwo)) || 0;
+    return (
+      (indexOne > -1 ? indexOne : Infinity) - (indexTwo > -1 ? indexTwo : Infinity)
+    );
+  });
 }
 
 export function getUserReactions(message: ApiMessage): ApiReaction[] {

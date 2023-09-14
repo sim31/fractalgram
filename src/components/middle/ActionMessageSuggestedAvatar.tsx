@@ -1,30 +1,32 @@
-import React, { memo, useCallback, useState } from '../../lib/teact/teact';
+import type { FC } from '../../lib/teact/teact';
+import React, { memo, useState } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
-import type { FC } from '../../lib/teact/teact';
 import type { ApiMessage } from '../../api/types';
 import type { TextPart } from '../../types';
-import { MediaViewerOrigin, SettingsScreens } from '../../types';
 import { ApiMediaFormat, MAIN_THREAD_ID } from '../../api/types';
+import { MediaViewerOrigin, SettingsScreens } from '../../types';
 
 import { getMessageMediaHash } from '../../global/helpers';
 import * as mediaLoader from '../../util/mediaLoader';
-import useMedia from '../../hooks/useMedia';
-import useLang from '../../hooks/useLang';
+
 import useFlag from '../../hooks/useFlag';
+import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
+import useMedia from '../../hooks/useMedia';
 
 import Avatar from '../common/Avatar';
-import CropModal from '../ui/CropModal';
 import ConfirmDialog from '../ui/ConfirmDialog';
+import CropModal from '../ui/CropModal';
 
 type OwnProps = {
   message: ApiMessage;
-  content?: TextPart;
+  renderContent: () => TextPart | undefined;
 };
 
 const ActionMessageSuggestedAvatar: FC<OwnProps> = ({
   message,
-  content,
+  renderContent,
 }) => {
   const {
     openMediaViewer, uploadProfilePhoto, showNotification,
@@ -38,7 +40,7 @@ const ActionMessageSuggestedAvatar: FC<OwnProps> = ({
   const suggestedPhotoUrl = useMedia(getMessageMediaHash(message, 'full'));
   const isVideo = message.content.action!.photo?.isVideo;
 
-  const showAvatarNotification = useCallback(() => {
+  const showAvatarNotification = useLastCallback(() => {
     showNotification({
       title: lang('ApplyAvatarHintTitle'),
       message: lang('ApplyAvatarHint'),
@@ -50,19 +52,19 @@ const ActionMessageSuggestedAvatar: FC<OwnProps> = ({
       },
       actionText: lang('Open'),
     });
-  }, [lang, showNotification]);
+  });
 
-  const handleSetSuggestedAvatar = useCallback((file: File) => {
+  const handleSetSuggestedAvatar = useLastCallback((file: File) => {
     setCropModalBlob(undefined);
     uploadProfilePhoto({ file });
     showAvatarNotification();
-  }, [showAvatarNotification, uploadProfilePhoto]);
+  });
 
-  const handleCloseCropModal = useCallback(() => {
+  const handleCloseCropModal = useLastCallback(() => {
     setCropModalBlob(undefined);
-  }, []);
+  });
 
-  const handleSetVideo = useCallback(async () => {
+  const handleSetVideo = useLastCallback(async () => {
     closeVideoModal();
     showAvatarNotification();
 
@@ -75,7 +77,7 @@ const ActionMessageSuggestedAvatar: FC<OwnProps> = ({
       isVideo: true,
       videoTs: photo.videoSizes?.find((l) => l.videoStartTs !== undefined)?.videoStartTs,
     });
-  }, [closeVideoModal, message.content.action, showAvatarNotification, uploadProfilePhoto]);
+  });
 
   const handleViewSuggestedAvatar = async () => {
     if (!isOutgoing && suggestedPhotoUrl) {
@@ -98,12 +100,11 @@ const ActionMessageSuggestedAvatar: FC<OwnProps> = ({
     <span className="action-message-suggested-avatar" tabIndex={0} role="button" onClick={handleViewSuggestedAvatar}>
       <Avatar
         photo={message.content.action!.photo}
-        showVideoOverwrite
         loopIndefinitely
         withVideo={isVideo}
         size="jumbo"
       />
-      <span>{content}</span>
+      <span>{renderContent()}</span>
 
       <span className="action-message-button">{lang(isVideo ? 'ViewVideoAction' : 'ViewPhotoAction')}</span>
       <CropModal
@@ -116,7 +117,7 @@ const ActionMessageSuggestedAvatar: FC<OwnProps> = ({
         title={lang('SuggestedVideo')}
         confirmHandler={handleSetVideo}
         onClose={closeVideoModal}
-        textParts={content}
+        textParts={renderContent()}
       />
     </span>
   );

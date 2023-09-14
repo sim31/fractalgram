@@ -1,12 +1,14 @@
 import type { ChangeEvent } from 'react';
-import useLang from '../../../hooks/useLang';
 import type { FC } from '../../../lib/teact/teact';
 import React, {
   memo, useCallback, useEffect, useState,
 } from '../../../lib/teact/teact';
+
+import useLang from '../../../hooks/useLang';
+
 import Button from '../../ui/Button';
-import Modal from '../../ui/Modal';
 import InputText from '../../ui/InputText';
+import Modal from '../../ui/Modal';
 
 export type OwnProps = {
   isOpen: boolean;

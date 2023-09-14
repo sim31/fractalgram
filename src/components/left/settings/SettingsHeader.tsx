@@ -6,20 +6,19 @@ import { getActions } from '../../../global';
 
 import { SettingsScreens } from '../../../types';
 
+import useAppLayout from '../../../hooks/useAppLayout';
 import useLang from '../../../hooks/useLang';
 import useMultiClick from '../../../hooks/useMultiClick';
-import useAppLayout from '../../../hooks/useAppLayout';
 
-import DropdownMenu from '../../ui/DropdownMenu';
-import MenuItem from '../../ui/MenuItem';
 import Button from '../../ui/Button';
 import ConfirmDialog from '../../ui/ConfirmDialog';
+import DropdownMenu from '../../ui/DropdownMenu';
+import MenuItem from '../../ui/MenuItem';
 
 type OwnProps = {
   currentScreen: SettingsScreens;
   editedFolderId?: number;
   onReset: () => void;
-  onSaveFilter: () => void;
   onScreenSelect: (screen: SettingsScreens) => void;
 };
 
@@ -27,7 +26,6 @@ const SettingsHeader: FC<OwnProps> = ({
   currentScreen,
   editedFolderId,
   onReset,
-  onSaveFilter,
   onScreenSelect,
 }) => {
   const {
@@ -72,7 +70,7 @@ const SettingsHeader: FC<OwnProps> = ({
         onClick={onTrigger}
         ariaLabel="More actions"
       >
-        <i className="icon-more" />
+        <i className="icon icon-more" />
       </Button>
     );
   }, [isMobile]);
@@ -121,12 +119,19 @@ const SettingsHeader: FC<OwnProps> = ({
         return <h3>{lang('PrivacyVoiceMessages')}</h3>;
       case SettingsScreens.PrivacyGroupChats:
         return <h3>{lang('AutodownloadGroupChats')}</h3>;
+      case SettingsScreens.PrivacyPhoneP2P:
+        return <h3>{lang('PrivacyP2P')}</h3>;
+      case SettingsScreens.PrivacyPhoneCall:
+        return <h3>{lang('Calls')}</h3>;
+
       case SettingsScreens.PrivacyPhoneNumberAllowedContacts:
       case SettingsScreens.PrivacyLastSeenAllowedContacts:
       case SettingsScreens.PrivacyProfilePhotoAllowedContacts:
       case SettingsScreens.PrivacyForwardingAllowedContacts:
       case SettingsScreens.PrivacyVoiceMessagesAllowedContacts:
       case SettingsScreens.PrivacyGroupChatsAllowedContacts:
+      case SettingsScreens.PrivacyPhoneCallAllowedContacts:
+      case SettingsScreens.PrivacyPhoneP2PAllowedContacts:
         return <h3>{lang('AlwaysShareWith')}</h3>;
       case SettingsScreens.PrivacyPhoneNumberDeniedContacts:
       case SettingsScreens.PrivacyLastSeenDeniedContacts:
@@ -134,7 +139,12 @@ const SettingsHeader: FC<OwnProps> = ({
       case SettingsScreens.PrivacyForwardingDeniedContacts:
       case SettingsScreens.PrivacyVoiceMessagesDeniedContacts:
       case SettingsScreens.PrivacyGroupChatsDeniedContacts:
+      case SettingsScreens.PrivacyPhoneCallDeniedContacts:
+      case SettingsScreens.PrivacyPhoneP2PDeniedContacts:
         return <h3>{lang('NeverShareWith')}</h3>;
+
+      case SettingsScreens.Performance:
+        return <h3>{lang('Animations and Performance')}</h3>;
 
       case SettingsScreens.ActiveSessions:
         return <h3>{lang('SessionsTitle')}</h3>;
@@ -189,8 +199,11 @@ const SettingsHeader: FC<OwnProps> = ({
         return <h3>{lang('Filters')}</h3>;
       case SettingsScreens.FoldersCreateFolder:
         return <h3>{lang('FilterNew')}</h3>;
+      case SettingsScreens.FoldersShare:
+        return <h3>{lang('FolderLinkScreen.Title')}</h3>;
       case SettingsScreens.FoldersEditFolder:
       case SettingsScreens.FoldersEditFolderFromChatList:
+      case SettingsScreens.FoldersEditFolderInvites:
         return (
           <div className="settings-main-header">
             <h3>{lang('FilterEdit')}</h3>
@@ -212,27 +225,14 @@ const SettingsHeader: FC<OwnProps> = ({
       case SettingsScreens.FoldersExcludedChats:
       case SettingsScreens.FoldersExcludedChatsFromChatList:
         return (
-          <div className="settings-main-header">
-            {(currentScreen === SettingsScreens.FoldersIncludedChats
-              || currentScreen === SettingsScreens.FoldersIncludedChatsFromChatList) ? (
-                <h3>{lang('FilterInclude')}</h3>
-              ) : (
-                <h3>{lang('FilterExclude')}</h3>
-              )}
-
-            <Button
-              round
-              size="smaller"
-              color="translucent"
-              className="color-primary"
-              onClick={onSaveFilter}
-              ariaLabel={lang('AutoDeleteConfirm')}
-            >
-              <i className="icon-check" />
-            </Button>
-          </div>
+          <h3>
+            {lang(
+              currentScreen === SettingsScreens.FoldersIncludedChats
+                  || currentScreen === SettingsScreens.FoldersIncludedChatsFromChatList
+                ? 'FilterInclude' : 'FilterExclude',
+            )}
+          </h3>
         );
-
       default:
         return (
           <div className="settings-main-header">
@@ -250,7 +250,7 @@ const SettingsHeader: FC<OwnProps> = ({
               onClick={() => onScreenSelect(SettingsScreens.EditProfile)}
               ariaLabel={lang('lng_settings_information')}
             >
-              <i className="icon-edit" />
+              <i className="icon icon-edit" />
             </Button>
             <DropdownMenu
               className="settings-more-menu"
@@ -273,7 +273,7 @@ const SettingsHeader: FC<OwnProps> = ({
         onClick={onReset}
         ariaLabel={lang('AccDescrGoBack')}
       >
-        <i className="icon-arrow-left" />
+        <i className="icon icon-arrow-left" />
       </Button>
       {renderHeaderContent()}
       <ConfirmDialog

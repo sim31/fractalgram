@@ -1,29 +1,34 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, {
-  useState, useEffect, memo, useRef, useMemo, useCallback,
+  memo, useEffect, useMemo,
+  useRef, useState,
 } from '../../../lib/teact/teact';
 import { withGlobal } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
 import type { GlobalState } from '../../../global/types';
 import type {
+  EmojiData,
   EmojiModule,
   EmojiRawData,
-  EmojiData,
 } from '../../../util/emoji';
 
 import { MENU_TRANSITION_DURATION, RECENT_SYMBOL_SET_ID } from '../../../config';
-import { IS_TOUCH_ENV } from '../../../util/environment';
-import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
-import { uncompressEmoji } from '../../../util/emoji';
-import fastSmoothScroll from '../../../util/fastSmoothScroll';
-import { pick } from '../../../util/iteratees';
+import animateHorizontalScroll from '../../../util/animateHorizontalScroll';
+import animateScroll from '../../../util/animateScroll';
 import buildClassName from '../../../util/buildClassName';
-import fastSmoothScrollHorizontal from '../../../util/fastSmoothScrollHorizontal';
-import useAsyncRendering from '../../right/hooks/useAsyncRendering';
-import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
-import useHorizontalScroll from '../../../hooks/useHorizontalScroll';
-import useLang from '../../../hooks/useLang';
+import { uncompressEmoji } from '../../../util/emoji';
+import { pick } from '../../../util/iteratees';
+import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
+import { IS_TOUCH_ENV } from '../../../util/windowEnvironment';
+import { REM } from '../../common/helpers/mediaDimensions';
+
 import useAppLayout from '../../../hooks/useAppLayout';
+import useHorizontalScroll from '../../../hooks/useHorizontalScroll';
+import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
+import useLang from '../../../hooks/useLang';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useScrolledState from '../../../hooks/useScrolledState';
+import useAsyncRendering from '../../right/hooks/useAsyncRendering';
 
 import Button from '../../ui/Button';
 import Loading from '../../ui/Loading';
@@ -53,10 +58,9 @@ const ICONS_BY_CATEGORY: Record<string, string> = {
 };
 
 const OPEN_ANIMATION_DELAY = 200;
-// Only a few categories are above this height.
-const SMOOTH_SCROLL_DISTANCE = 800;
-const FOCUS_MARGIN = 50;
-const HEADER_BUTTON_WIDTH = 42; // px. Includes margins
+const SMOOTH_SCROLL_DISTANCE = 100;
+const FOCUS_MARGIN = 3.25 * REM;
+const HEADER_BUTTON_WIDTH = 2.625 * REM; // Includes margins
 const INTERSECTION_THROTTLE = 200;
 
 const categoryIntersections: boolean[] = [];
@@ -79,6 +83,10 @@ const EmojiPicker: FC<OwnProps & StateProps> = ({
   const [emojis, setEmojis] = useState<AllEmojis>();
   const [activeCategoryIndex, setActiveCategoryIndex] = useState(0);
   const { isMobile } = useAppLayout();
+  const {
+    handleScroll: handleContentScroll,
+    isAtBeginning: shouldHideTopBorder,
+  } = useScrolledState();
 
   const { observe: observeIntersection } = useIntersectionObserver({
     rootRef: containerRef,
@@ -94,15 +102,15 @@ const EmojiPicker: FC<OwnProps & StateProps> = ({
       categoryIntersections[index] = entry.isIntersecting;
     });
 
-    const intersectingWithIndexes = categoryIntersections
-      .map((isIntersecting, index) => ({ index, isIntersecting }))
-      .filter(({ isIntersecting }) => isIntersecting);
+    const minIntersectingIndex = categoryIntersections.reduce((lowestIndex, isIntersecting, index) => {
+      return isIntersecting && index < lowestIndex ? index : lowestIndex;
+    }, Infinity);
 
-    if (!intersectingWithIndexes.length) {
+    if (minIntersectingIndex === Infinity) {
       return;
     }
 
-    setActiveCategoryIndex(intersectingWithIndexes[Math.floor(intersectingWithIndexes.length / 2)].index);
+    setActiveCategoryIndex(minIntersectingIndex);
   });
 
   const canRenderContents = useAsyncRendering([], MENU_TRANSITION_DURATION);
@@ -123,7 +131,7 @@ const EmojiPicker: FC<OwnProps & StateProps> = ({
 
     const newLeft = activeCategoryIndex * HEADER_BUTTON_WIDTH - header.offsetWidth / 2 + HEADER_BUTTON_WIDTH / 2;
 
-    fastSmoothScrollHorizontal(header, newLeft);
+    animateHorizontalScroll(header, newLeft);
   }, [categories, activeCategoryIndex]);
 
   const lang = useLang();
@@ -162,16 +170,16 @@ const EmojiPicker: FC<OwnProps & StateProps> = ({
     }, OPEN_ANIMATION_DELAY);
   }, []);
 
-  const selectCategory = useCallback((index: number) => {
+  const selectCategory = useLastCallback((index: number) => {
     setActiveCategoryIndex(index);
     const categoryEl = containerRef.current!.closest<HTMLElement>('.SymbolMenu-main')!
       .querySelector(`#emoji-category-${index}`)! as HTMLElement;
-    fastSmoothScroll(containerRef.current!, categoryEl, 'start', FOCUS_MARGIN, SMOOTH_SCROLL_DISTANCE);
-  }, []);
+    animateScroll(containerRef.current!, categoryEl, 'start', FOCUS_MARGIN, SMOOTH_SCROLL_DISTANCE);
+  });
 
-  const handleEmojiSelect = useCallback((emoji: string, name: string) => {
+  const handleEmojiSelect = useLastCallback((emoji: string, name: string) => {
     onEmojiSelect(emoji, name);
-  }, [onEmojiSelect]);
+  });
 
   function renderCategoryButton(category: EmojiCategoryData, index: number) {
     const icon = ICONS_BY_CATEGORY[category.id];
@@ -186,7 +194,7 @@ const EmojiPicker: FC<OwnProps & StateProps> = ({
         onClick={() => selectCategory(index)}
         ariaLabel={category.name}
       >
-        <i className={icon} />
+        <i className={buildClassName('icon', icon)} />
       </Button>
     );
   }
@@ -201,14 +209,24 @@ const EmojiPicker: FC<OwnProps & StateProps> = ({
     );
   }
 
+  const headerClassName = buildClassName(
+    'EmojiPicker-header',
+    !shouldHideTopBorder && 'with-top-border',
+  );
+
   return (
     <div className={containerClassName}>
-      <div ref={headerRef} className="EmojiPicker-header" dir={lang.isRtl ? 'rtl' : ''}>
+      <div
+        ref={headerRef}
+        className={headerClassName}
+        dir={lang.isRtl ? 'rtl' : undefined}
+      >
         {allCategories.map(renderCategoryButton)}
       </div>
       <div
         ref={containerRef}
-        className={buildClassName('EmojiPicker-main no-selection', IS_TOUCH_ENV ? 'no-scrollbar' : 'custom-scroll')}
+        onScroll={handleContentScroll}
+        className={buildClassName('EmojiPicker-main', IS_TOUCH_ENV ? 'no-scrollbar' : 'custom-scroll')}
       >
         {allCategories.map((category, i) => (
           <EmojiCategory

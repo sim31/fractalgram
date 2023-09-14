@@ -1,24 +1,33 @@
 import BigInt from 'big-integer';
-import type { Api as GramJs } from '../../lib/gramjs';
-import type { ApiMessage } from '../types';
-import { omitVirtualClassFields } from './apiBuilders/helpers';
-import { DATA_BROADCAST_CHANNEL_NAME } from '../../config';
 import { constructors } from '../../lib/gramjs/tl';
+
+import type { Api as GramJs } from '../../lib/gramjs';
+
+import { DATA_BROADCAST_CHANNEL_NAME } from '../../config';
 import { throttle } from '../../util/schedulers';
+import { omitVirtualClassFields } from './apiBuilders/helpers';
 
 // eslint-disable-next-line no-restricted-globals
 const IS_MULTITAB_SUPPORTED = 'BroadcastChannel' in self;
 
+export type StoryRepairInfo = {
+  storyData?: {
+    userId: string;
+    id: number;
+  };
+};
+
 export interface LocalDb {
-  localMessages: Record<string, ApiMessage>;
   // Used for loading avatars and media through in-memory Gram JS instances.
   chats: Record<string, GramJs.Chat | GramJs.Channel>;
   users: Record<string, GramJs.User>;
   messages: Record<string, GramJs.Message | GramJs.MessageService>;
-  documents: Record<string, GramJs.Document>;
+  documents: Record<string, GramJs.Document & StoryRepairInfo>;
   stickerSets: Record<string, GramJs.StickerSet>;
-  photos: Record<string, GramJs.Photo>;
+  photos: Record<string, GramJs.Photo & StoryRepairInfo>;
   webDocuments: Record<string, GramJs.TypeWebDocument>;
+  commonBoxState: Record<string, number>;
+  channelPtsById: Record<string, number>;
 }
 
 const channel = IS_MULTITAB_SUPPORTED ? new BroadcastChannel(DATA_BROADCAST_CHANNEL_NAME) : undefined;
@@ -78,18 +87,25 @@ function convertToVirtualClass(value: any): any {
 
 function createLocalDbInitial(initial?: LocalDb): LocalDb {
   return [
-    'localMessages', 'chats', 'users', 'messages', 'documents', 'stickerSets', 'photos', 'webDocuments',
+    'localMessages', 'chats', 'users', 'messages', 'documents', 'stickerSets', 'photos', 'webDocuments', 'stories',
+    'commonBoxState', 'channelPtsById',
   ]
     .reduce((acc: Record<string, any>, key) => {
       const value = initial?.[key as keyof LocalDb] ?? {};
-      const valueVirtualClass = Object.keys(value).reduce((acc2, key2) => {
+      const convertedValue = Object.keys(value).reduce((acc2, key2) => {
+        if (key === 'commonBoxState' || key === 'channelPtsById') {
+          const typedValue = value as Record<string, number>;
+          acc2[key2] = typedValue[key2];
+          return acc2;
+        }
+
         acc2[key2] = convertToVirtualClass(value[key2]);
         return acc2;
       }, {} as Record<string, any>);
 
       acc[key] = IS_MULTITAB_SUPPORTED
-        ? createProxy(key, valueVirtualClass)
-        : valueVirtualClass;
+        ? createProxy(key, convertedValue)
+        : convertedValue;
       return acc;
     }, {} as LocalDb) as LocalDb;
 }

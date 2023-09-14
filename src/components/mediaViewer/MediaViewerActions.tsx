@@ -1,42 +1,40 @@
-import React, {
-  memo,
-  useCallback,
-  useMemo,
-} from '../../lib/teact/teact';
+import type { FC } from '../../lib/teact/teact';
+import React, { memo, useMemo } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { FC } from '../../lib/teact/teact';
 import type {
-  ApiMessage, ApiPhoto, ApiChat, ApiUser,
+  ApiChat, ApiMessage, ApiPhoto, ApiUser,
 } from '../../api/types';
 import type { MessageListType } from '../../global/types';
 import type { MenuItemProps } from '../ui/MenuItem';
 
+import { getMessageMediaFormat, getMessageMediaHash, isUserId } from '../../global/helpers';
 import {
-  selectIsDownloading,
-  selectIsMessageProtected,
   selectAllowedMessageActions,
   selectCurrentMessageList,
   selectIsChatProtected,
+  selectIsDownloading,
+  selectIsMessageProtected,
 } from '../../global/selectors';
-import { getMessageMediaFormat, getMessageMediaHash, isUserId } from '../../global/helpers';
 
-import useLang from '../../hooks/useLang';
-import useMediaWithLoadProgress from '../../hooks/useMediaWithLoadProgress';
-import useFlag from '../../hooks/useFlag';
 import useAppLayout from '../../hooks/useAppLayout';
+import useFlag from '../../hooks/useFlag';
+import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
+import useMediaWithLoadProgress from '../../hooks/useMediaWithLoadProgress';
+import useZoomChange from './hooks/useZoomChangeSignal';
 
+import DeleteMessageModal from '../common/DeleteMessageModal';
+import DeleteProfilePhotoModal from '../common/DeleteProfilePhotoModal';
 import Button from '../ui/Button';
 import DropdownMenu from '../ui/DropdownMenu';
 import MenuItem from '../ui/MenuItem';
 import ProgressSpinner from '../ui/ProgressSpinner';
-import DeleteMessageModal from '../common/DeleteMessageModal';
-import DeleteProfilePhotoModal from '../common/DeleteProfilePhotoModal';
 
 import './MediaViewerActions.scss';
 
 type StateProps = {
-  isDownloading: boolean;
+  isDownloading?: boolean;
   isProtected?: boolean;
   isChatProtected?: boolean;
   canDelete?: boolean;
@@ -48,7 +46,6 @@ type StateProps = {
 type OwnProps = {
   mediaData?: string;
   isVideo: boolean;
-  zoomLevelChange: number;
   message?: ApiMessage;
   canUpdateMedia?: boolean;
   isSingleMedia?: boolean;
@@ -61,7 +58,6 @@ type OwnProps = {
   onBeforeDelete: NoneToVoidFunction;
   onCloseMediaViewer: NoneToVoidFunction;
   onForward: NoneToVoidFunction;
-  setZoomLevelChange: (change: number) => void;
 };
 
 const MediaViewerActions: FC<OwnProps & StateProps> = ({
@@ -75,7 +71,6 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
   isDownloading,
   isProtected,
   canReport,
-  zoomLevelChange,
   canDelete,
   canUpdate,
   messageListType,
@@ -84,9 +79,9 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
   onCloseMediaViewer,
   onBeforeDelete,
   onForward,
-  setZoomLevelChange,
 }) => {
   const [isDeleteModalOpen, openDeleteModal, closeDeleteModal] = useFlag(false);
+  const [getZoomChange, setZoomChange] = useZoomChange();
   const { isMobile } = useAppLayout();
 
   const {
@@ -102,25 +97,27 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
     message && getMessageMediaFormat(message, 'download'),
   );
 
-  const handleDownloadClick = useCallback(() => {
+  const handleDownloadClick = useLastCallback(() => {
     if (isDownloading) {
       cancelMessageMediaDownload({ message: message! });
     } else {
       downloadMessageMedia({ message: message! });
     }
-  }, [cancelMessageMediaDownload, downloadMessageMedia, isDownloading, message]);
+  });
 
-  const handleZoomOut = useCallback(() => {
-    const change = zoomLevelChange < 0 ? zoomLevelChange : 0;
-    setZoomLevelChange(change - 1);
-  }, [setZoomLevelChange, zoomLevelChange]);
+  const handleZoomOut = useLastCallback(() => {
+    const zoomChange = getZoomChange();
+    const change = zoomChange < 0 ? zoomChange : 0;
+    setZoomChange(change - 1);
+  });
 
-  const handleZoomIn = useCallback(() => {
-    const change = zoomLevelChange > 0 ? zoomLevelChange : 0;
-    setZoomLevelChange(change + 1);
-  }, [setZoomLevelChange, zoomLevelChange]);
+  const handleZoomIn = useLastCallback(() => {
+    const zoomChange = getZoomChange();
+    const change = zoomChange > 0 ? zoomChange : 0;
+    setZoomChange(change + 1);
+  });
 
-  const handleUpdate = useCallback(() => {
+  const handleUpdate = useLastCallback(() => {
     if (!avatarPhoto || !avatarOwnerId) return;
     if (isUserId(avatarOwnerId)) {
       updateProfilePhoto({ photo: avatarPhoto });
@@ -128,7 +125,7 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
       updateChatPhoto({ chatId: avatarOwnerId, photo: avatarPhoto });
     }
     selectMedia(0);
-  }, [avatarPhoto, avatarOwnerId, selectMedia, updateProfilePhoto, updateChatPhoto]);
+  });
 
   const lang = useLang();
 
@@ -142,7 +139,7 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
         onClick={onTrigger}
         ariaLabel="More actions"
       >
-        <i className="icon-more" />
+        <i className="icon icon-more" />
       </Button>
     );
   }, []);
@@ -185,7 +182,7 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
         {isDownloading ? (
           <ProgressSpinner progress={downloadProgress} size="s" onClick={handleDownloadClick} />
         ) : (
-          <i className="icon-download" />
+          <i className="icon icon-download" />
         )}
       </Button>
     ) : (
@@ -197,14 +194,14 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
         color="translucent-white"
         ariaLabel={lang('AccActionDownload')}
       >
-        <i className="icon-download" />
+        <i className="icon icon-download" />
       </Button>
     );
   }
 
   if (isMobile) {
     const menuItems: MenuItemProps[] = [];
-    if (!message?.isForwardingAllowed && !isChatProtected) {
+    if (message?.isForwardingAllowed && !isChatProtected) {
       menuItems.push({
         icon: 'forward',
         onClick: onForward,
@@ -214,7 +211,7 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
     if (!isProtected) {
       if (isVideo) {
         menuItems.push({
-          icon: isDownloading ? 'cancel' : 'download',
+          icon: isDownloading ? 'close' : 'download',
           onClick: handleDownloadClick,
           children: isDownloading ? `${Math.round(downloadProgress * 100)}% Downloading...` : 'Download',
         });
@@ -230,7 +227,7 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
 
     if (canReport) {
       menuItems.push({
-        icon: 'report',
+        icon: 'flag',
         onClick: onReport,
         children: lang('ReportPeer.Report'),
       });
@@ -249,6 +246,7 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
         icon: 'delete',
         onClick: openDeleteModal,
         children: lang('Delete'),
+        destructive: true,
       });
     }
 
@@ -263,7 +261,7 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
           positionX="right"
         >
           {menuItems.map(({
-            icon, onClick, href, download, children,
+            icon, onClick, href, download, children, destructive,
           }) => (
             <MenuItem
               key={icon}
@@ -271,6 +269,7 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
               href={href}
               download={download}
               onClick={onClick}
+              destructive={destructive}
             >
               {children}
             </MenuItem>
@@ -292,7 +291,7 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
           ariaLabel={lang('Forward')}
           onClick={onForward}
         >
-          <i className="icon-forward" />
+          <i className="icon icon-forward" />
         </Button>
       )}
       {renderDownloadButton()}
@@ -303,7 +302,7 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
         ariaLabel={lang('MediaZoomOut')}
         onClick={handleZoomOut}
       >
-        <i className="icon-zoom-out" />
+        <i className="icon icon-zoom-out" />
       </Button>
       <Button
         round
@@ -312,7 +311,7 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
         ariaLabel={lang('MediaZoomIn')}
         onClick={handleZoomIn}
       >
-        <i className="icon-zoom-in" />
+        <i className="icon icon-zoom-in" />
       </Button>
       {canReport && (
         <Button
@@ -322,7 +321,7 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
           ariaLabel={lang(isVideo ? 'PeerInfo.ReportProfileVideo' : 'PeerInfo.ReportProfilePhoto')}
           onClick={onReport}
         >
-          <i className="icon-flag" />
+          <i className="icon icon-flag" />
         </Button>
       )}
       {canUpdate && (
@@ -333,7 +332,7 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
           ariaLabel={lang('ProfilePhoto.SetMainPhoto')}
           onClick={handleUpdate}
         >
-          <i className="icon-copy-media" />
+          <i className="icon icon-copy-media" />
         </Button>
       )}
       {canDelete && (
@@ -344,7 +343,7 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
           ariaLabel={lang('Delete')}
           onClick={openDeleteModal}
         >
-          <i className="icon-delete" />
+          <i className="icon icon-delete" />
         </Button>
       )}
       <Button
@@ -354,7 +353,7 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
         ariaLabel={lang('Close')}
         onClick={onCloseMediaViewer}
       >
-        <i className="icon-close" />
+        <i className="icon icon-close" />
       </Button>
       {canDelete && renderDeleteModals()}
     </div>

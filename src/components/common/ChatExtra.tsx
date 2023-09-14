@@ -1,10 +1,9 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useMemo, useState,
+  memo, useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { GlobalState } from '../../global/types';
 import type {
   ApiChat, ApiCountryCode, ApiUser, ApiUsername,
 } from '../../api/types';
@@ -12,24 +11,31 @@ import { MAIN_THREAD_ID } from '../../api/types';
 
 import { TME_LINK_PREFIX } from '../../config';
 import {
-  selectChat, selectCurrentMessageList, selectNotifyExceptions, selectNotifySettings, selectUser,
-} from '../../global/selectors';
-import {
-  getChatDescription,
   getChatLink,
-  getTopicLink,
   getHasAdminRight,
+  getTopicLink,
   isChatChannel,
   isUserId,
   isUserRightBanned,
   selectIsChatMuted,
 } from '../../global/helpers';
-import renderText from './helpers/renderText';
+import {
+  selectChat,
+  selectChatFullInfo,
+  selectCurrentMessageList,
+  selectNotifyExceptions,
+  selectNotifySettings,
+  selectUser,
+  selectUserFullInfo,
+} from '../../global/selectors';
 import { copyTextToClipboard } from '../../util/clipboard';
 import { formatPhoneNumberWithCode } from '../../util/phoneNumber';
 import { debounce } from '../../util/schedulers';
 import stopEvent from '../../util/stopEvent';
+import renderText from './helpers/renderText';
+
 import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
 
 import ListItem from '../ui/ListItem';
 import Switcher from '../ui/Switcher';
@@ -47,13 +53,13 @@ type StateProps =
     isMuted?: boolean;
     phoneCodeList: ApiCountryCode[];
     topicId?: number;
-  }
-  & Pick<GlobalState, 'lastSyncTime'>;
+    description?: string;
+    chatInviteLink?: string;
+  };
 
 const runDebounced = debounce((cb) => cb(), 500, false);
 
 const ChatExtra: FC<OwnProps & StateProps> = ({
-  lastSyncTime,
   user,
   chat,
   forceShowSelf,
@@ -61,17 +67,19 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
   isMuted,
   phoneCodeList,
   topicId,
+  description,
+  chatInviteLink,
 }) => {
   const {
     loadFullUser,
     showNotification,
     updateChatMutedState,
     updateTopicMutedState,
+    loadUserStories,
   } = getActions();
 
   const {
     id: userId,
-    fullInfo,
     usernames,
     phoneNumber,
     isSelf,
@@ -82,10 +90,14 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
   const [areNotificationsEnabled, setAreNotificationsEnabled] = useState(!isMuted);
 
   useEffect(() => {
-    if (lastSyncTime && userId) {
-      loadFullUser({ userId });
-    }
-  }, [loadFullUser, userId, lastSyncTime]);
+    setAreNotificationsEnabled(!isMuted);
+  }, [isMuted]);
+
+  useEffect(() => {
+    if (!userId) return;
+    loadFullUser({ userId });
+    loadUserStories({ userId });
+  }, [userId]);
 
   const isTopicInfo = Boolean(topicId && topicId !== MAIN_THREAD_ID);
 
@@ -108,10 +120,10 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
 
     return isTopicInfo
       ? getTopicLink(chat.id, activeChatUsernames?.[0].username, topicId)
-      : getChatLink(chat);
-  }, [chat, isTopicInfo, activeChatUsernames, topicId]);
+      : getChatLink(chat) || chatInviteLink;
+  }, [chat, isTopicInfo, activeChatUsernames, topicId, chatInviteLink]);
 
-  const handleNotificationChange = useCallback(() => {
+  const handleNotificationChange = useLastCallback(() => {
     setAreNotificationsEnabled((current) => {
       const newAreNotificationsEnabled = !current;
 
@@ -129,7 +141,7 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
 
       return newAreNotificationsEnabled;
     });
-  }, [chatId, isTopicInfo, topicId, updateChatMutedState, updateTopicMutedState]);
+  });
 
   if (!chat || chat.isRestricted || (isSelf && !forceShowSelf)) {
     return undefined;
@@ -141,7 +153,6 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
   }
 
   const formattedNumber = phoneNumber && formatPhoneNumberWithCode(phoneCodeList, phoneNumber);
-  const description = (fullInfo?.bio) || getChatDescription(chat);
 
   function renderUsernames(usernameList: ApiUsername[], isChat?: boolean) {
     const [mainUsername, ...otherUsernames] = usernameList;
@@ -214,7 +225,7 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
           narrow
           isStatic
         >
-          <span className="title word-break" dir="auto">
+          <span className="title word-break allow-selection" dir="auto">
             {renderText(description, ['br', 'links', 'emoji'])}
           </span>
           <span className="subtitle">{lang(userId ? 'UserBio' : 'Info')}</span>
@@ -251,7 +262,7 @@ const ChatExtra: FC<OwnProps & StateProps> = ({
 
 export default memo(withGlobal<OwnProps>(
   (global, { chatOrUserId }): StateProps => {
-    const { lastSyncTime, countryList: { phoneCodes: phoneCodeList } } = global;
+    const { countryList: { phoneCodes: phoneCodeList } } = global;
 
     const chat = chatOrUserId ? selectChat(global, chatOrUserId) : undefined;
     const user = isUserId(chatOrUserId) ? selectUser(global, chatOrUserId) : undefined;
@@ -259,6 +270,11 @@ export default memo(withGlobal<OwnProps>(
     const isMuted = chat && selectIsChatMuted(chat, selectNotifySettings(global), selectNotifyExceptions(global));
     const { threadId } = selectCurrentMessageList(global) || {};
     const topicId = isForum ? threadId : undefined;
+    const chatInviteLink = chat ? selectChatFullInfo(global, chat.id)?.inviteLink : undefined;
+    let description = user ? selectUserFullInfo(global, user.id)?.bio : undefined;
+    if (!description && chat) {
+      description = selectChatFullInfo(global, chat.id)?.about;
+    }
 
     const canInviteUsers = chat && !user && (
       (!isChatChannel(chat) && !isUserRightBanned(chat, 'inviteUsers'))
@@ -266,13 +282,14 @@ export default memo(withGlobal<OwnProps>(
     );
 
     return {
-      lastSyncTime,
       phoneCodeList,
       chat,
       user,
       canInviteUsers,
       isMuted,
       topicId,
+      chatInviteLink,
+      description,
     };
   },
 )(ChatExtra));

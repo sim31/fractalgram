@@ -1,10 +1,11 @@
+import type { FC } from '../../../lib/teact/teact';
 import React from '../../../lib/teact/teact';
 
-import type { FC } from '../../../lib/teact/teact';
 import type { ApiKeyboardButton, ApiMessage } from '../../../api/types';
 
 import { RE_TME_LINK } from '../../../config';
 import renderText from '../../common/helpers/renderText';
+
 import useLang from '../../../hooks/useLang';
 
 import Button from '../../ui/Button';
@@ -24,20 +25,20 @@ const InlineButtons: FC<OwnProps> = ({ message, onClick }) => {
     switch (type) {
       case 'url': {
         if (!RE_TME_LINK.test(button.url)) {
-          return <i className="icon-arrow-right" />;
+          return <i className="icon icon-arrow-right" />;
         }
         break;
       }
       case 'urlAuth':
-        return <i className="icon-arrow-right" />;
+        return <i className="icon icon-arrow-right" />;
       case 'buy':
       case 'receipt':
-        return <i className="icon-cart" />;
+        return <i className="icon icon-cart" />;
       case 'switchBotInline':
-        return <i className="icon-share-filled" />;
+        return <i className="icon icon-share-filled" />;
       case 'webView':
       case 'simpleWebView':
-        return <i className="icon-webapp" />;
+        return <i className="icon icon-webapp" />;
     }
     return undefined;
   };

@@ -1,5 +1,6 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo } from '../../lib/teact/teact';
+import React from '../../lib/teact/teact';
+
 import { Bundles } from '../../util/moduleLoader';
 
 import useModuleLoader from '../../hooks/useModuleLoader';
@@ -11,4 +12,4 @@ const NotificationsAsync: FC = ({ isOpen }) => {
   return Notifications ? <Notifications /> : undefined;
 };
 
-export default memo(NotificationsAsync);
+export default NotificationsAsync;

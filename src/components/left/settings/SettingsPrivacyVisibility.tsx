@@ -2,14 +2,15 @@ import type { FC } from '../../../lib/teact/teact';
 import React, { memo, useCallback, useMemo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { ApiChat, ApiUser } from '../../../api/types';
+import type { ApiChat, ApiPhoto, ApiUser } from '../../../api/types';
 import type { ApiPrivacySettings } from '../../../types';
 import { SettingsScreens } from '../../../types';
 
+import { selectUserFullInfo } from '../../../global/selectors';
 import { getPrivacyKey } from './helpers/privacy';
-import { selectUser } from '../../../global/selectors';
-import useLang from '../../../hooks/useLang';
+
 import useHistoryBack from '../../../hooks/useHistoryBack';
+import useLang from '../../../hooks/useLang';
 
 import ListItem from '../../ui/ListItem';
 import RadioGroup from '../../ui/RadioGroup';
@@ -26,7 +27,9 @@ type StateProps =
   Partial<ApiPrivacySettings> & {
     chatsById?: Record<string, ApiChat>;
     usersById?: Record<string, ApiUser>;
-    currentUser: ApiUser;
+    currentUserId: string;
+    hasCurrentUserFullInfo?: boolean;
+    currentUserFallbackPhoto?: ApiPhoto;
   };
 
 const SettingsPrivacyVisibility: FC<OwnProps & StateProps> = ({
@@ -40,28 +43,21 @@ const SettingsPrivacyVisibility: FC<OwnProps & StateProps> = ({
   blockUserIds,
   blockChatIds,
   chatsById,
-  currentUser,
+  currentUserId,
+  hasCurrentUserFullInfo,
+  currentUserFallbackPhoto,
 }) => {
   const { setPrivacyVisibility } = getActions();
 
   const lang = useLang();
 
   const visibilityOptions = useMemo(() => {
-    switch (screen) {
-      case SettingsScreens.PrivacyGroupChats:
-        return [
-          { value: 'everybody', label: lang('P2PEverybody') },
-          { value: 'contacts', label: lang('P2PContacts') },
-        ];
-
-      default:
-        return [
-          { value: 'everybody', label: lang('P2PEverybody') },
-          { value: 'contacts', label: lang('P2PContacts') },
-          { value: 'nobody', label: lang('P2PNobody') },
-        ];
-    }
-  }, [lang, screen]);
+    return [
+      { value: 'everybody', label: lang('P2PEverybody') },
+      { value: 'contacts', label: lang('P2PContacts') },
+      { value: 'nobody', label: lang('P2PNobody') },
+    ];
+  }, [lang]);
 
   const exceptionLists = {
     shouldShowDenied: visibility !== 'nobody',
@@ -231,7 +227,11 @@ const SettingsPrivacyVisibility: FC<OwnProps & StateProps> = ({
       </div>
 
       {screen === SettingsScreens.PrivacyProfilePhoto && exceptionLists.shouldShowAllowed && (
-        <SettingsPrivacyPublicProfilePhoto currentUser={currentUser} />
+        <SettingsPrivacyPublicProfilePhoto
+          currentUserId={currentUserId}
+          hasCurrentUserFullInfo={hasCurrentUserFullInfo}
+          currentUserFallbackPhoto={currentUserFallbackPhoto}
+        />
       )}
     </div>
   );
@@ -242,11 +242,12 @@ export default memo(withGlobal<OwnProps>(
     let privacySettings: ApiPrivacySettings | undefined;
 
     const {
+      currentUserId,
       chats: { byId: chatsById },
       settings: { privacy },
     } = global;
 
-    const currentUser = selectUser(global, global.currentUserId!)!;
+    const currentUserFullInfo = selectUserFullInfo(global, currentUserId!);
 
     switch (screen) {
       case SettingsScreens.PrivacyPhoneNumber:
@@ -284,14 +285,18 @@ export default memo(withGlobal<OwnProps>(
 
     if (!privacySettings) {
       return {
-        currentUser,
+        currentUserId: currentUserId!,
+        hasCurrentUserFullInfo: Boolean(currentUserFullInfo),
+        currentUserFallbackPhoto: currentUserFullInfo?.fallbackPhoto,
       };
     }
 
     return {
       ...privacySettings,
       chatsById,
-      currentUser,
+      currentUserId: currentUserId!,
+      hasCurrentUserFullInfo: Boolean(currentUserFullInfo),
+      currentUserFallbackPhoto: currentUserFullInfo?.fallbackPhoto,
     };
   },
 )(SettingsPrivacyVisibility));

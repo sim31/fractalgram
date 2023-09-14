@@ -1,31 +1,33 @@
 import type { FC } from '../../../../lib/teact/teact';
-import React, { memo, useMemo, useCallback } from '../../../../lib/teact/teact';
+import React, { memo, useCallback, useMemo } from '../../../../lib/teact/teact';
 import { getGlobal } from '../../../../global';
 
-import { unique } from '../../../../util/iteratees';
+import type {
+  FolderEditDispatch,
+  FoldersState,
+} from '../../../../hooks/reducers/useFoldersReducer';
 
 import { ALL_FOLDER_ID, ARCHIVED_FOLDER_ID } from '../../../../config';
 import { filterChatsByName } from '../../../../global/helpers';
-import useLang from '../../../../hooks/useLang';
-import useHistoryBack from '../../../../hooks/useHistoryBack';
-import { useFolderManagerForOrderedIds } from '../../../../hooks/useFolderManager';
-import type {
-  FoldersState,
-  FolderEditDispatch,
-} from '../../../../hooks/reducers/useFoldersReducer';
+import { unique } from '../../../../util/iteratees';
+
 import {
   selectChatFilters,
 } from '../../../../hooks/reducers/useFoldersReducer';
+import { useFolderManagerForOrderedIds } from '../../../../hooks/useFolderManager';
+import useHistoryBack from '../../../../hooks/useHistoryBack';
+import useLang from '../../../../hooks/useLang';
 
-import SettingsFoldersChatsPicker from './SettingsFoldersChatsPicker';
 import Loading from '../../../ui/Loading';
+import SettingsFoldersChatsPicker from './SettingsFoldersChatsPicker';
 
 type OwnProps = {
   mode: 'included' | 'excluded';
   state: FoldersState;
   dispatch: FolderEditDispatch;
   isActive?: boolean;
-  onReset: () => void;
+  onReset: VoidFunction;
+  onSaveFilter: VoidFunction;
 };
 
 const SettingsFoldersChatFilters: FC<OwnProps> = ({
@@ -34,6 +36,7 @@ const SettingsFoldersChatFilters: FC<OwnProps> = ({
   dispatch,
   isActive,
   onReset,
+  onSaveFilter,
 }) => {
   const { chatFilter } = state;
   const { selectedChatIds, selectedChatTypes } = selectChatFilters(state, mode, true);
@@ -42,6 +45,8 @@ const SettingsFoldersChatFilters: FC<OwnProps> = ({
 
   const folderAllOrderedIds = useFolderManagerForOrderedIds(ALL_FOLDER_ID);
   const folderArchivedOrderedIds = useFolderManagerForOrderedIds(ARCHIVED_FOLDER_ID);
+
+  const shouldHideChatTypes = state.folder.isChatList;
 
   const displayedIds = useMemo(() => {
     // No need for expensive global updates on chats, so we avoid them
@@ -116,9 +121,12 @@ const SettingsFoldersChatFilters: FC<OwnProps> = ({
       selectedIds={selectedChatIds}
       selectedChatTypes={selectedChatTypes}
       filterValue={chatFilter}
+      shouldHideChatTypes={shouldHideChatTypes}
       onSelectedIdsChange={handleSelectedIdsChange}
       onSelectedChatTypesChange={handleSelectedChatTypesChange}
       onFilterChange={handleFilterChange}
+      onSaveFilter={onSaveFilter}
+      isActive={isActive}
     />
   );
 };

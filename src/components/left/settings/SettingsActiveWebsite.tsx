@@ -1,19 +1,18 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, { memo, useCallback } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
 import type { ApiUser, ApiWebSession } from '../../../api/types';
-import type { AnimationLevel } from '../../../types';
 
 import buildClassName from '../../../util/buildClassName';
 
-import useLang from '../../../hooks/useLang';
 import useCurrentOrPrev from '../../../hooks/useCurrentOrPrev';
+import useLang from '../../../hooks/useLang';
 
-import Modal from '../../ui/Modal';
-import Button from '../../ui/Button';
 import Avatar from '../../common/Avatar';
 import FullNameTitle from '../../common/FullNameTitle';
+import Button from '../../ui/Button';
+import Modal from '../../ui/Modal';
 
 import styles from './SettingsActiveWebsite.module.scss';
 
@@ -26,14 +25,12 @@ type OwnProps = {
 type StateProps = {
   session?: ApiWebSession;
   bot?: ApiUser;
-  animationLevel: AnimationLevel;
 };
 
 const SettingsActiveWebsite: FC<OwnProps & StateProps> = ({
   isOpen,
   session,
   bot,
-  animationLevel,
   onClose,
 }) => {
   const { terminateWebAuthorization } = getActions();
@@ -55,7 +52,7 @@ const SettingsActiveWebsite: FC<OwnProps & StateProps> = ({
     return (
       <div className="modal-header-condensed" dir={lang.isRtl ? 'rtl' : undefined}>
         <Button round color="translucent" size="smaller" ariaLabel={lang('Close')} onClick={onClose}>
-          <i className="icon-close" />
+          <i className="icon icon-close" />
         </Button>
         <div className="modal-title">{lang('WebSessionsTitle')}</div>
         <Button
@@ -76,7 +73,11 @@ const SettingsActiveWebsite: FC<OwnProps & StateProps> = ({
       onClose={onClose}
       className={styles.root}
     >
-      <Avatar className={styles.avatar} user={renderingBot} size="large" animationLevel={animationLevel} withVideo />
+      <Avatar
+        className={styles.avatar}
+        peer={renderingBot}
+        size="large"
+      />
       {renderingBot && <FullNameTitle className={styles.title} peer={renderingBot} />}
       <div className={styles.note}>
         {renderingSession?.domain}
@@ -99,12 +100,12 @@ const SettingsActiveWebsite: FC<OwnProps & StateProps> = ({
   );
 };
 
-export default memo(withGlobal<OwnProps>((global, { hash }) => {
+export default memo(withGlobal<OwnProps>((global, { hash }): StateProps => {
   const session = hash ? global.activeWebSessions.byHash[hash] : undefined;
   const bot = session ? global.users.byId[session.botId] : undefined;
+
   return {
     session,
     bot,
-    animationLevel: global.settings.byKey.animationLevel,
   };
 })(SettingsActiveWebsite));

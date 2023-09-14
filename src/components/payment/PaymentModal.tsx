@@ -4,32 +4,34 @@ import React, {
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { TabState } from '../../global/types';
 import type { ApiChat, ApiCountry, ApiPaymentCredentials } from '../../api/types';
-import type { Price, ShippingOption } from '../../types';
+import type { TabState } from '../../global/types';
 import type { FormState } from '../../hooks/reducers/usePaymentReducer';
-
+import type { Price, ShippingOption } from '../../types';
 import { PaymentStep } from '../../types';
-import { selectChat, selectTabState } from '../../global/selectors';
-import { formatCurrency } from '../../util/formatCurrency';
-import buildClassName from '../../util/buildClassName';
-import { detectCardTypeText } from '../common/helpers/detectCardType';
-import captureKeyboardListeners from '../../util/captureKeyboardListeners';
-import useLang from '../../hooks/useLang';
-import useFlag from '../../hooks/useFlag';
-import usePaymentReducer from '../../hooks/reducers/usePaymentReducer';
 
-import ShippingInfo from './ShippingInfo';
-import Shipping from './Shipping';
-import Checkout from './Checkout';
-import PaymentInfo from './PaymentInfo';
+import { selectChat, selectTabState } from '../../global/selectors';
+import buildClassName from '../../util/buildClassName';
+import captureKeyboardListeners from '../../util/captureKeyboardListeners';
+import { formatCurrency } from '../../util/formatCurrency';
+import { detectCardTypeText } from '../common/helpers/detectCardType';
+
+import usePaymentReducer from '../../hooks/reducers/usePaymentReducer';
+import useFlag from '../../hooks/useFlag';
+import useLang from '../../hooks/useLang';
+import usePrevious from '../../hooks/usePrevious';
+
 import Button from '../ui/Button';
 import Modal from '../ui/Modal';
-import Transition from '../ui/Transition';
 import Spinner from '../ui/Spinner';
+import Transition from '../ui/Transition';
+import Checkout from './Checkout';
 import ConfirmPayment from './ConfirmPayment';
-import SavedPaymentCredentials from './SavedPaymentCredentials';
 import PasswordConfirm from './PasswordConfirm';
+import PaymentInfo from './PaymentInfo';
+import SavedPaymentCredentials from './SavedPaymentCredentials';
+import Shipping from './Shipping';
+import ShippingInfo from './ShippingInfo';
 
 import './PaymentModal.scss';
 
@@ -125,7 +127,8 @@ const PaymentModal: FC<OwnProps & StateProps & GlobalStateProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [isTosAccepted, setIsTosAccepted] = useState(false);
   const [twoFaPassword, setTwoFaPassword] = useState('');
-
+  const prevStep = usePrevious(step, true);
+  const prevRequestId = usePrevious(requestId);
   const canRenderFooter = step !== PaymentStep.ConfirmPayment;
 
   const setStep = useCallback((nextStep) => {
@@ -151,7 +154,20 @@ const PaymentModal: FC<OwnProps & StateProps & GlobalStateProps> = ({
     if (step !== undefined || error) {
       setIsLoading(false);
     }
-  }, [step, error]);
+  }, [step, error, requestId]);
+
+  // When payment verification occurs and the `step` does not change, the card details must be requested
+  useEffect(() => {
+    if (
+      step === PaymentStep.Checkout
+      && step === prevStep
+      && requestId !== prevRequestId
+      && !paymentState.savedCredentialId
+      && !paymentState.cardNumber
+    ) {
+      setStep(PaymentStep.PaymentInfo);
+    }
+  }, [paymentState.cardNumber, paymentState.savedCredentialId, prevRequestId, prevStep, requestId, setStep, step]);
 
   useEffect(() => {
     if (error?.field) {
@@ -517,7 +533,7 @@ const PaymentModal: FC<OwnProps & StateProps & GlobalStateProps> = ({
         onCloseAnimationEnd={handleModalClose}
       >
         <p>
-          Sorry, Telegram WebZ doesn&apos;t support payments with this provider yet. <br />
+          Sorry, Telegram Web A doesn&apos;t support payments with this provider yet. <br />
           Please use one of our mobile apps to do this.
         </p>
         <div className="dialog-buttons mt-2">
@@ -550,7 +566,10 @@ const PaymentModal: FC<OwnProps & StateProps & GlobalStateProps> = ({
           onClick={step === PaymentStep.Checkout ? closeModal : handleBackClick}
           ariaLabel="Close"
         >
-          <i className={step === PaymentStep.Checkout ? 'icon-close' : 'icon-arrow-left'} />
+          <i className={buildClassName(
+            'icon', step === PaymentStep.Checkout ? 'icon-close' : 'icon-arrow-left',
+          )}
+          />
         </Button>
         <h3>{modalHeader}</h3>
       </div>

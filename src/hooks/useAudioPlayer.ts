@@ -1,19 +1,18 @@
-import {
-  useCallback, useEffect, useRef, useState,
-} from '../lib/teact/teact';
+import { useEffect, useRef, useState } from '../lib/teact/teact';
 import { getActions, getGlobal } from '../global';
 
-import { PLAYBACK_RATE_FOR_AUDIO_MIN_DURATION } from '../config';
 import type { Track, TrackId } from '../util/audioPlayer';
-import { register } from '../util/audioPlayer';
-import { isSafariPatchInProgress } from '../util/patchSafariProgressiveAudio';
 import type { MediaSessionHandlers } from '../util/mediaSession';
+
+import { PLAYBACK_RATE_FOR_AUDIO_MIN_DURATION } from '../config';
+import { selectTabState } from '../global/selectors';
+import { register } from '../util/audioPlayer';
 import {
   registerMediaSession, setPlaybackState, setPositionState, updateMetadata,
 } from '../util/mediaSession';
-import { selectTabState } from '../global/selectors';
-
+import { isSafariPatchInProgress } from '../util/patchSafariProgressiveAudio';
 import useEffectWithPrevDeps from './useEffectWithPrevDeps';
+import useLastCallback from './useLastCallback';
 import useSyncEffect from './useSyncEffect';
 
 type Handler = (e: Event) => void;
@@ -42,10 +41,10 @@ const useAudioPlayer = (
 
   const [playProgress, setPlayProgress] = useState<number>(0);
 
-  const handleTrackChange = useCallback(() => {
+  const handleTrackChange = useLastCallback(() => {
     setIsPlaying(false);
     if (onTrackChange) onTrackChange();
-  }, [onTrackChange]);
+  });
 
   useSyncEffect(() => {
     controllerRef.current = register(trackId, trackType, (eventName, e) => {
@@ -164,26 +163,26 @@ const useAudioPlayer = (
     }
   }, [shouldPlay, src, isPlaying, play, proxy.src, proxy.paused]);
 
-  const playIfPresent = useCallback(() => {
+  const playIfPresent = useLastCallback(() => {
     if (src) {
       play(src);
     }
-  }, [src, play]);
+  });
 
-  const playPause = useCallback(() => {
+  const playPause = useLastCallback(() => {
     if (isPlaying) {
       pause();
     } else {
       playIfPresent();
     }
-  }, [pause, playIfPresent, isPlaying]);
+  });
 
-  const setTime = useCallback((time: number) => {
+  const setTime = useLastCallback((time: number) => {
     setCurrentTime(time);
     if (duration) {
       setPlayProgress(proxy.currentTime / duration);
     }
-  }, [duration, proxy, setCurrentTime]);
+  });
 
   return {
     isPlaying: isPlayingSync,

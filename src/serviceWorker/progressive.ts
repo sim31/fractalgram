@@ -1,11 +1,11 @@
-import { pause } from '../util/schedulers';
-import generateIdFor from '../util/generateIdFor';
 import {
   DEBUG,
   MEDIA_CACHE_MAX_BYTES,
   MEDIA_PROGRESSIVE_CACHE_DISABLED,
   MEDIA_PROGRESSIVE_CACHE_NAME,
 } from '../config';
+import generateUniqueId from '../util/generateUniqueId';
+import { pause } from '../util/schedulers';
 
 declare const self: ServiceWorkerGlobalScope;
 
@@ -149,7 +149,7 @@ export async function requestPart(
     return undefined;
   }
 
-  const messageId = generateIdFor(requestStates);
+  const messageId = generateUniqueId();
   const requestState = {} as RequestStates;
 
   let isResolved = false;

@@ -1,10 +1,10 @@
 import { useRef } from '../lib/teact/teact';
 
-import usePrevious from './usePrevious';
 import useForceUpdate from './useForceUpdate';
+import usePrevious from './usePrevious';
 import useSyncEffect from './useSyncEffect';
 
-export default function usePrevDuringAnimation(current: any, duration?: number) {
+export default function usePrevDuringAnimation<T>(current: T, duration?: number) {
   const prev = usePrevious(current, true);
   const timeoutRef = useRef<number>();
   const forceUpdate = useForceUpdate();

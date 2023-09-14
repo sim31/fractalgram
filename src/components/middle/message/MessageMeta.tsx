@@ -1,4 +1,4 @@
-import type { FC } from '../../../lib/teact/teact';
+import type { FC, TeactNode } from '../../../lib/teact/teact';
 import React, { memo, useMemo } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
@@ -6,16 +6,16 @@ import type {
   ApiAvailableReaction, ApiMessage, ApiMessageOutgoingStatus, ApiThreadInfo,
 } from '../../../api/types';
 
+import buildClassName from '../../../util/buildClassName';
 import { formatDateTimeToString, formatTime } from '../../../util/dateFormat';
 import { formatIntegerCompact } from '../../../util/textFormat';
-
 import renderText from '../../common/helpers/renderText';
-import useLang from '../../../hooks/useLang';
-import useFlag from '../../../hooks/useFlag';
-import buildClassName from '../../../util/buildClassName';
 
-import MessageOutgoingStatus from '../../common/MessageOutgoingStatus';
+import useFlag from '../../../hooks/useFlag';
+import useLang from '../../../hooks/useLang';
+
 import AnimatedCounter from '../../common/AnimatedCounter';
+import MessageOutgoingStatus from '../../common/MessageOutgoingStatus';
 
 import './MessageMeta.scss';
 
@@ -28,8 +28,10 @@ type OwnProps = {
   noReplies?: boolean;
   repliesThreadInfo?: ApiThreadInfo;
   isTranslated?: boolean;
+  isPinned?: boolean;
   onClick: (e: React.MouseEvent<HTMLDivElement>) => void;
   onTranslationClick: (e: React.MouseEvent<HTMLDivElement>) => void;
+  renderQuickReactionButton?: () => TeactNode | undefined;
   onOpenThread: NoneToVoidFunction;
 };
 
@@ -39,8 +41,10 @@ const MessageMeta: FC<OwnProps> = ({
   signature,
   withReactionOffset,
   repliesThreadInfo,
+  renderQuickReactionButton,
   noReplies,
   isTranslated,
+  isPinned,
   onClick,
   onTranslationClick,
   onOpenThread,
@@ -49,13 +53,13 @@ const MessageMeta: FC<OwnProps> = ({
   const lang = useLang();
   const [isActivated, markActivated] = useFlag();
 
-  const handleClick = (e: React.MouseEvent) => {
+  function handleImportedClick(e: React.MouseEvent) {
     e.stopPropagation();
 
     showNotification({
       message: lang('ImportedInfo'),
     });
-  };
+  }
 
   function handleOpenThread(e: React.MouseEvent) {
     e.stopPropagation();
@@ -64,9 +68,11 @@ const MessageMeta: FC<OwnProps> = ({
 
   const title = useMemo(() => {
     if (!isActivated) return undefined;
-    const createDateTime = formatDateTimeToString(message.date * 1000, lang.code);
-    const editDateTime = message.isEdited && formatDateTimeToString(message.editDate! * 1000, lang.code);
-    const forwardedDateTime = message.forwardInfo && formatDateTimeToString(message.forwardInfo.date * 1000, lang.code);
+    const createDateTime = formatDateTimeToString(message.date * 1000, lang.code, undefined, lang.timeFormat);
+    const editDateTime = message.isEdited
+      && formatDateTimeToString(message.editDate! * 1000, lang.code, undefined, lang.timeFormat);
+    const forwardedDateTime = message.forwardInfo
+      && formatDateTimeToString(message.forwardInfo.date * 1000, lang.code, undefined, lang.timeFormat);
 
     let text = createDateTime;
     if (editDateTime) {
@@ -79,7 +85,9 @@ const MessageMeta: FC<OwnProps> = ({
     }
 
     return text;
-  }, [isActivated, lang, message]);
+    // We need to listen to timeformat change
+    // eslint-disable-next-line react-hooks-static-deps/exhaustive-deps
+  }, [isActivated, lang, message, lang.timeFormat]);
 
   const fullClassName = buildClassName(
     'MessageMeta',
@@ -95,23 +103,26 @@ const MessageMeta: FC<OwnProps> = ({
       data-ignore-on-paste
     >
       {isTranslated && (
-        <i className="icon-language message-translated" onClick={onTranslationClick} />
+        <i className="icon icon-language message-translated" onClick={onTranslationClick} />
       )}
       {Boolean(message.views) && (
         <>
           <span className="message-views">
             {formatIntegerCompact(message.views!)}
           </span>
-          <i className="icon-channelviews" />
+          <i className="icon icon-channelviews" />
         </>
       )}
       {!noReplies && Boolean(repliesThreadInfo?.messagesCount) && (
-        <span onClick={handleOpenThread}>
+        <span onClick={handleOpenThread} className="message-replies-wrapper">
           <span className="message-replies">
             <AnimatedCounter text={formatIntegerCompact(repliesThreadInfo!.messagesCount!)} />
           </span>
-          <i className="icon-reply-filled" />
+          <i className="icon icon-reply-filled" />
         </span>
+      )}
+      {isPinned && (
+        <i className="icon icon-pinned-message message-pinned" />
       )}
       {signature && (
         <span className="message-signature">{renderText(signature)}</span>
@@ -119,10 +130,10 @@ const MessageMeta: FC<OwnProps> = ({
       <span className="message-time" title={title} onMouseEnter={markActivated}>
         {message.forwardInfo?.isImported && (
           <>
-            <span className="message-imported" onClick={handleClick}>
+            <span className="message-imported" onClick={handleImportedClick}>
               {formatDateTimeToString(message.forwardInfo.date * 1000, lang.code, true)}
             </span>
-            <span className="message-imported" onClick={handleClick}>{lang('ImportedMessage')}</span>
+            <span className="message-imported" onClick={handleImportedClick}>{lang('ImportedMessage')}</span>
           </>
         )}
         {message.isEdited && `${lang('EditedMessage')} `}
@@ -131,6 +142,7 @@ const MessageMeta: FC<OwnProps> = ({
       {outgoingStatus && (
         <MessageOutgoingStatus status={outgoingStatus} />
       )}
+      {renderQuickReactionButton && renderQuickReactionButton()}
     </span>
   );
 };

@@ -1,21 +1,25 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  useCallback, useRef, useEffect, memo,
+  memo, useEffect, useMemo, useRef,
 } from '../../lib/teact/teact';
 
+import { requestMutation } from '../../lib/fasterdom/fasterdom';
 import { isUserId } from '../../global/helpers';
+import buildClassName from '../../util/buildClassName';
+import { MEMO_EMPTY_ARRAY } from '../../util/memo';
 
-import InfiniteScroll from '../ui/InfiniteScroll';
-import Checkbox from '../ui/Checkbox';
-import InputText from '../ui/InputText';
-import ListItem from '../ui/ListItem';
-import PrivateChatInfo from './PrivateChatInfo';
-import GroupChatInfo from './GroupChatInfo';
-import PickerSelectedItem from './PickerSelectedItem';
 import useInfiniteScroll from '../../hooks/useInfiniteScroll';
 import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
 
+import Checkbox from '../ui/Checkbox';
+import InfiniteScroll from '../ui/InfiniteScroll';
+import InputText from '../ui/InputText';
+import ListItem from '../ui/ListItem';
 import Loading from '../ui/Loading';
+import GroupChatInfo from './GroupChatInfo';
+import PickerSelectedItem from './PickerSelectedItem';
+import PrivateChatInfo from './PrivateChatInfo';
 
 import './Picker.scss';
 
@@ -28,8 +32,13 @@ type OwnProps = {
   searchInputId?: string;
   isLoading?: boolean;
   noScrollRestore?: boolean;
-  onSelectedIdsChange: (ids: string[]) => void;
-  onFilterChange: (value: string) => void;
+  isSearchable?: boolean;
+  isRoundCheckbox?: boolean;
+  lockedIds?: string[];
+  forceShowSelf?: boolean;
+  onSelectedIdsChange?: (ids: string[]) => void;
+  onFilterChange?: (value: string) => void;
+  onDisabledClick?: (id: string) => void;
   onLoadMore?: () => void;
 };
 
@@ -48,8 +57,13 @@ const Picker: FC<OwnProps> = ({
   searchInputId,
   isLoading,
   noScrollRestore,
+  isSearchable,
+  isRoundCheckbox,
+  lockedIds,
+  forceShowSelf,
   onSelectedIdsChange,
   onFilterChange,
+  onDisabledClick,
   onLoadMore,
 }) => {
   // eslint-disable-next-line no-null/no-null
@@ -57,53 +71,94 @@ const Picker: FC<OwnProps> = ({
   const shouldMinimize = selectedIds.length > MAX_FULL_ITEMS;
 
   useEffect(() => {
+    if (!isSearchable) return;
     setTimeout(() => {
-      requestAnimationFrame(() => {
+      requestMutation(() => {
         inputRef.current!.focus();
       });
     }, FOCUS_DELAY_MS);
-  }, []);
+  }, [isSearchable]);
 
-  const handleItemClick = useCallback((id: string) => {
-    const newSelectedIds = [...selectedIds];
+  const [lockedSelectedIds, unlockedSelectedIds] = useMemo(() => {
+    if (!lockedIds?.length) return [MEMO_EMPTY_ARRAY, selectedIds];
+    const unlockedIds = selectedIds.filter((id) => !lockedIds.includes(id));
+    return [lockedIds, unlockedIds];
+  }, [selectedIds, lockedIds]);
+
+  const lockedIdsSet = useMemo(() => new Set(lockedIds), [lockedIds]);
+
+  const sortedItemIds = useMemo(() => {
+    return itemIds.sort((a, b) => {
+      const aIsLocked = lockedIdsSet.has(a);
+      const bIsLocked = lockedIdsSet.has(b);
+      if (aIsLocked && !bIsLocked) {
+        return -1;
+      }
+      if (!aIsLocked && bIsLocked) {
+        return 1;
+      }
+      return 0;
+    });
+  }, [itemIds, lockedIdsSet]);
+
+  const handleItemClick = useLastCallback((id: string) => {
+    if (lockedIdsSet.has(id)) {
+      onDisabledClick?.(id);
+      return;
+    }
+
+    const newSelectedIds = selectedIds.slice();
     if (newSelectedIds.includes(id)) {
       newSelectedIds.splice(newSelectedIds.indexOf(id), 1);
     } else {
       newSelectedIds.push(id);
     }
-    onSelectedIdsChange(newSelectedIds);
-    onFilterChange('');
-  }, [selectedIds, onSelectedIdsChange, onFilterChange]);
+    onSelectedIdsChange?.(newSelectedIds);
+    onFilterChange?.('');
+  });
 
-  const handleFilterChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFilterChange = useLastCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const { value } = e.currentTarget;
-    onFilterChange(value);
-  }, [onFilterChange]);
+    onFilterChange?.(value);
+  });
 
-  const [viewportIds, getMore] = useInfiniteScroll(onLoadMore, itemIds, Boolean(filterValue));
+  const [viewportIds, getMore] = useInfiniteScroll(onLoadMore, sortedItemIds, Boolean(filterValue));
 
   const lang = useLang();
 
   return (
     <div className="Picker">
-      <div className="picker-header custom-scroll" dir={lang.isRtl ? 'rtl' : undefined}>
-        {selectedIds.map((id, i) => (
-          <PickerSelectedItem
-            chatOrUserId={id}
-            isMinimized={shouldMinimize && i < selectedIds.length - ALWAYS_FULL_ITEMS_COUNT}
-            canClose
-            onClick={handleItemClick}
-            clickArg={id}
+      {isSearchable && (
+        <div className="picker-header custom-scroll" dir={lang.isRtl ? 'rtl' : undefined}>
+          {lockedSelectedIds.map((id, i) => (
+            <PickerSelectedItem
+              chatOrUserId={id}
+              isMinimized={shouldMinimize && i < selectedIds.length - ALWAYS_FULL_ITEMS_COUNT}
+              forceShowSelf={forceShowSelf}
+              onClick={handleItemClick}
+              clickArg={id}
+            />
+          ))}
+          {unlockedSelectedIds.map((id, i) => (
+            <PickerSelectedItem
+              chatOrUserId={id}
+              isMinimized={
+                shouldMinimize && i + lockedSelectedIds.length < selectedIds.length - ALWAYS_FULL_ITEMS_COUNT
+              }
+              canClose
+              onClick={handleItemClick}
+              clickArg={id}
+            />
+          ))}
+          <InputText
+            id={searchInputId}
+            ref={inputRef}
+            value={filterValue}
+            onChange={handleFilterChange}
+            placeholder={filterPlaceholder || lang('SelectChat')}
           />
-        ))}
-        <InputText
-          id={searchInputId}
-          ref={inputRef}
-          value={filterValue}
-          onChange={handleFilterChange}
-          placeholder={filterPlaceholder || lang('SelectChat')}
-        />
-      </div>
+        </div>
+      )}
 
       {viewportIds?.length ? (
         <InfiniteScroll
@@ -112,22 +167,37 @@ const Picker: FC<OwnProps> = ({
           onLoadMore={getMore}
           noScrollRestore={noScrollRestore}
         >
-          {viewportIds.map((id) => (
-            <ListItem
-              key={id}
-              className="chat-item-clickable picker-list-item"
-              // eslint-disable-next-line react/jsx-no-bind
-              onClick={() => handleItemClick(id)}
-              ripple
-            >
-              <Checkbox label="" checked={selectedIds.includes(id)} />
-              {isUserId(id) ? (
-                <PrivateChatInfo userId={id} />
-              ) : (
-                <GroupChatInfo chatId={id} />
-              )}
-            </ListItem>
-          ))}
+          {viewportIds.map((id) => {
+            const renderCheckbox = () => {
+              return (
+                <Checkbox
+                  label=""
+                  disabled={lockedIdsSet.has(id)}
+                  checked={selectedIds.includes(id)}
+                  round={isRoundCheckbox}
+                />
+              );
+            };
+            return (
+              <ListItem
+                key={id}
+                className={buildClassName('chat-item-clickable picker-list-item', isRoundCheckbox && 'chat-item')}
+                disabled={lockedIdsSet.has(id)}
+                allowDisabledClick={Boolean(onDisabledClick)}
+                // eslint-disable-next-line react/jsx-no-bind
+                onClick={() => handleItemClick(id)}
+                ripple
+              >
+                {!isRoundCheckbox ? renderCheckbox() : undefined}
+                {isUserId(id) ? (
+                  <PrivateChatInfo forceShowSelf={forceShowSelf} userId={id} />
+                ) : (
+                  <GroupChatInfo chatId={id} />
+                )}
+                {isRoundCheckbox ? renderCheckbox() : undefined}
+              </ListItem>
+            );
+          })}
         </InfiniteScroll>
       ) : !isLoading && viewportIds && !viewportIds.length ? (
         <p className="no-results">{notFoundText || 'Sorry, nothing found.'}</p>

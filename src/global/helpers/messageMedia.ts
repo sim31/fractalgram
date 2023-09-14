@@ -18,9 +18,9 @@ import {
   IS_PROGRESSIVE_SUPPORTED,
   IS_SAFARI,
   MAX_BUFFER_SIZE,
-} from '../../util/environment';
-import { getMessageKey, isMessageLocal, matchLinkInMessageText } from './messages';
+} from '../../util/windowEnvironment';
 import { getDocumentHasPreview } from '../../components/common/helpers/documentInfo';
+import { getMessageKey, isMessageLocal, matchLinkInMessageText } from './messages';
 
 type Target =
   'micro'
@@ -312,7 +312,7 @@ export function getGamePreviewVideoHash(game: ApiGame) {
   return undefined;
 }
 
-function getVideoOrAudioBaseHash(media: ApiAudio | ApiVideo | ApiDocument, base: string) {
+export function getVideoOrAudioBaseHash(media: ApiAudio | ApiVideo | ApiDocument, base: string) {
   if (IS_PROGRESSIVE_SUPPORTED && IS_SAFARI) {
     return `${base}?fileSize=${media.size}&mimeType=${media.mimeType}`;
   }

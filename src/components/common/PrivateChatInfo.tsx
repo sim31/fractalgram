@@ -1,27 +1,27 @@
-import React, {
-  useEffect, useCallback, memo, useMemo,
-} from '../../lib/teact/teact';
+import type { FC } from '../../lib/teact/teact';
+import React, { memo, useEffect, useMemo } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { FC } from '../../lib/teact/teact';
 import type {
-  ApiUser, ApiTypingStatus, ApiUserStatus, ApiChatMember,
+  ApiChatMember, ApiTypingStatus, ApiUser, ApiUserStatus,
 } from '../../api/types';
-import type { GlobalState } from '../../global/types';
-import type { AnimationLevel } from '../../types';
+import type { StoryViewerOrigin } from '../../types';
+import type { IconName } from '../../types/icons';
 import { MediaViewerOrigin } from '../../types';
 
-import { selectChatMessages, selectUser, selectUserStatus } from '../../global/selectors';
 import { getMainUsername, getUserStatus, isUserOnline } from '../../global/helpers';
+import { selectChatMessages, selectUser, selectUserStatus } from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
 import renderText from './helpers/renderText';
 
 import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
 
+import RippleEffect from '../ui/RippleEffect';
 import Avatar from './Avatar';
-import TypingStatus from './TypingStatus';
 import DotAnimation from './DotAnimation';
 import FullNameTitle from './FullNameTitle';
+import TypingStatus from './TypingStatus';
 
 type OwnProps = {
   userId: string;
@@ -29,16 +29,21 @@ type OwnProps = {
   avatarSize?: 'tiny' | 'small' | 'medium' | 'large' | 'jumbo';
   forceShowSelf?: boolean;
   status?: string;
+  statusIcon?: IconName;
+  ripple?: boolean;
   withDots?: boolean;
   withMediaViewer?: boolean;
   withUsername?: boolean;
+  withStory?: boolean;
   withFullInfo?: boolean;
   withUpdatingStatus?: boolean;
-  withVideoAvatar?: boolean;
+  storyViewerOrigin?: StoryViewerOrigin;
+  noEmojiStatus?: boolean;
   emojiStatusSize?: number;
   noStatusOrTyping?: boolean;
   noRtl?: boolean;
   adminMember?: ApiChatMember;
+  onEmojiStatusClick?: NoneToVoidFunction;
 };
 
 type StateProps =
@@ -46,31 +51,32 @@ type StateProps =
     user?: ApiUser;
     userStatus?: ApiUserStatus;
     isSavedMessages?: boolean;
-    animationLevel: AnimationLevel;
     areMessagesLoaded: boolean;
-  }
-  & Pick<GlobalState, 'lastSyncTime'>;
+  };
 
 const PrivateChatInfo: FC<OwnProps & StateProps> = ({
   typingStatus,
   avatarSize = 'medium',
   status,
+  statusIcon,
   withDots,
   withMediaViewer,
   withUsername,
+  withStory,
   withFullInfo,
   withUpdatingStatus,
-  withVideoAvatar,
   emojiStatusSize,
   noStatusOrTyping,
+  noEmojiStatus,
   noRtl,
   user,
   userStatus,
   isSavedMessages,
   areMessagesLoaded,
-  animationLevel,
-  lastSyncTime,
   adminMember,
+  ripple,
+  onEmojiStatusClick,
+  storyViewerOrigin,
 }) => {
   const {
     loadFullUser,
@@ -78,27 +84,30 @@ const PrivateChatInfo: FC<OwnProps & StateProps> = ({
     loadProfilePhotos,
   } = getActions();
 
+  const lang = useLang();
+
   const { id: userId } = user || {};
 
   useEffect(() => {
-    if (userId && lastSyncTime) {
+    if (userId) {
       if (withFullInfo) loadFullUser({ userId });
       if (withMediaViewer) loadProfilePhotos({ profileId: userId });
     }
-  }, [userId, loadFullUser, loadProfilePhotos, lastSyncTime, withFullInfo, withMediaViewer]);
+  }, [userId, withFullInfo, withMediaViewer]);
 
-  const handleAvatarViewerOpen = useCallback((e: React.MouseEvent<HTMLDivElement, MouseEvent>, hasMedia: boolean) => {
-    if (user && hasMedia) {
-      e.stopPropagation();
-      openMediaViewer({
-        avatarOwnerId: user.id,
-        mediaId: 0,
-        origin: avatarSize === 'jumbo' ? MediaViewerOrigin.ProfileAvatar : MediaViewerOrigin.MiddleHeaderAvatar,
-      });
-    }
-  }, [user, avatarSize, openMediaViewer]);
+  const handleAvatarViewerOpen = useLastCallback(
+    (e: React.MouseEvent<HTMLDivElement, MouseEvent>, hasMedia: boolean) => {
+      if (user && hasMedia) {
+        e.stopPropagation();
+        openMediaViewer({
+          avatarOwnerId: user.id,
+          mediaId: 0,
+          origin: avatarSize === 'jumbo' ? MediaViewerOrigin.ProfileAvatar : MediaViewerOrigin.MiddleHeaderAvatar,
+        });
+      }
+    },
+  );
 
-  const lang = useLang();
   const mainUsername = useMemo(() => user && withUsername && getMainUsername(user), [user, withUsername]);
 
   if (!user) {
@@ -110,7 +119,10 @@ const PrivateChatInfo: FC<OwnProps & StateProps> = ({
       return withDots ? (
         <DotAnimation className="status" content={status} />
       ) : (
-        <span className="status" dir="auto">{renderText(status)}</span>
+        <span className="status" dir="auto">
+          {statusIcon && <i className={`icon icon-${statusIcon} status-icon`} />}
+          {renderText(status)}
+        </span>
       );
     }
 
@@ -146,9 +158,10 @@ const PrivateChatInfo: FC<OwnProps & StateProps> = ({
         <div className="info-name-title">
           <FullNameTitle
             peer={user!}
-            withEmojiStatus
+            withEmojiStatus={!noEmojiStatus}
             emojiStatusSize={emojiStatusSize}
             isSavedMessages={isSavedMessages}
+            onEmojiStatusClick={onEmojiStatusClick}
           />
           {customTitle && <span className="custom-title">{customTitle}</span>}
         </div>
@@ -158,9 +171,10 @@ const PrivateChatInfo: FC<OwnProps & StateProps> = ({
     return (
       <FullNameTitle
         peer={user!}
-        withEmojiStatus
+        withEmojiStatus={!noEmojiStatus}
         emojiStatusSize={emojiStatusSize}
         isSavedMessages={isSavedMessages}
+        onEmojiStatusClick={onEmojiStatusClick}
       />
     );
   }
@@ -170,35 +184,34 @@ const PrivateChatInfo: FC<OwnProps & StateProps> = ({
       <Avatar
         key={user.id}
         size={avatarSize}
-        user={user}
+        peer={user}
         isSavedMessages={isSavedMessages}
+        withStory={withStory}
+        storyViewerOrigin={storyViewerOrigin}
+        storyViewerMode="single-user"
         onClick={withMediaViewer ? handleAvatarViewerOpen : undefined}
-        withVideo={withVideoAvatar}
-        animationLevel={animationLevel}
       />
       <div className="info">
         {renderNameTitle()}
         {(status || (!isSavedMessages && !noStatusOrTyping)) && renderStatusOrTyping()}
       </div>
+      {ripple && <RippleEffect />}
     </div>
   );
 };
 
 export default memo(withGlobal<OwnProps>(
   (global, { userId, forceShowSelf }): StateProps => {
-    const { lastSyncTime } = global;
     const user = selectUser(global, userId);
     const userStatus = selectUserStatus(global, userId);
     const isSavedMessages = !forceShowSelf && user && user.isSelf;
     const areMessagesLoaded = Boolean(selectChatMessages(global, userId));
 
     return {
-      lastSyncTime,
       user,
       userStatus,
       isSavedMessages,
       areMessagesLoaded,
-      animationLevel: global.settings.byKey.animationLevel,
     };
   },
 )(PrivateChatInfo));

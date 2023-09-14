@@ -1,15 +1,19 @@
 import type { FC } from '../../../lib/teact/teact';
-import { getActions } from '../../../global';
 import React, {
   memo, useCallback, useMemo,
 } from '../../../lib/teact/teact';
-import './PollModal.scss';
-import { FRACTAL_INFO } from '../../../config';
-import ExtPlatformSettings from './ExtPlatformSettings';
+import { getActions } from '../../../global';
+
 import type { ExtPlatformInfo, TabState } from '../../../global/types';
+
+import { FRACTAL_INFO } from '../../../config';
 import { createConsensusResultMsg } from '../../../global/helpers/consensusMessages';
+
+import ExtPlatformSettings from './ExtPlatformSettings';
 import GroupNumberEdit from './GroupNumberEdit';
 import SendMessageModal from './SendMessageModal';
+
+import './PollModal.scss';
 
 export type OwnProps = {
   values: TabState['consensusResultsModal'];

@@ -1,4 +1,6 @@
-import { fastRaf } from './schedulers';
+import type { Scheduler } from './schedulers';
+
+import { requestMeasure } from '../lib/fasterdom/fasterdom';
 
 interface AnimationInstance {
   isCancelled: boolean;
@@ -6,7 +8,7 @@ interface AnimationInstance {
 
 let currentInstance: AnimationInstance | undefined;
 
-export function animateSingle(tick: Function, instance?: AnimationInstance) {
+export function animateSingle(tick: Function, schedulerFn: Scheduler, instance?: AnimationInstance) {
   if (!instance) {
     if (currentInstance && !currentInstance.isCancelled) {
       currentInstance.isCancelled = true;
@@ -17,35 +19,42 @@ export function animateSingle(tick: Function, instance?: AnimationInstance) {
   }
 
   if (!instance!.isCancelled && tick()) {
-    fastRaf(() => {
-      animateSingle(tick, instance);
+    schedulerFn(() => {
+      animateSingle(tick, schedulerFn, instance);
     });
   }
 }
 
-export function animate(tick: Function) {
-  fastRaf(() => {
+export function cancelSingleAnimation() {
+  const dumbScheduler = (cb: AnyFunction) => cb;
+  const dumbCb = () => undefined;
+
+  animateSingle(dumbCb, dumbScheduler);
+}
+
+export function animate(tick: Function, schedulerFn: Scheduler) {
+  schedulerFn(() => {
     if (tick()) {
-      animate(tick);
+      animate(tick, schedulerFn);
     }
   });
 }
 
-export function animateInstantly(tick: Function) {
+export function animateInstantly(tick: Function, schedulerFn: Scheduler) {
   if (tick()) {
-    fastRaf(() => {
-      animateInstantly(tick);
+    schedulerFn(() => {
+      animateInstantly(tick, schedulerFn);
     });
   }
 }
 
-export type TimingFn = (t: number) => number;
+type TimingFn = (t: number) => number;
 
-export type AnimateNumberProps = {
-  to: number | number[];
-  from: number | number[];
+type AnimateNumberProps<T extends number | number[]> = {
+  to: T;
+  from: T;
   duration: number;
-  onUpdate: (value: any) => void;
+  onUpdate: (value: T) => void;
   timing?: TimingFn;
   onEnd?: () => void;
 };
@@ -69,14 +78,14 @@ export const timingFunctions = {
   easeInOutQuint: (t: number) => (t < 0.5 ? 16 * t ** 5 : 1 + 16 * (--t) * t ** 4),
 };
 
-export function animateNumber({
+export function animateNumber<T extends number | number[]>({
   timing = timingFunctions.linear,
   onUpdate,
   duration,
   onEnd,
   from,
   to,
-}: AnimateNumberProps) {
+}: AnimateNumberProps<T>) {
   const t0 = Date.now();
   let canceled = false;
 
@@ -87,14 +96,14 @@ export function animateNumber({
     if (t > 1) t = 1;
     const progress = timing(t);
     if (typeof from === 'number' && typeof to === 'number') {
-      onUpdate(from + ((to - from) * progress));
+      onUpdate((from + ((to - from) * progress)) as T);
     } else if (Array.isArray(from) && Array.isArray(to)) {
       const result = from.map((f, i) => f + ((to[i] - f) * progress));
-      onUpdate(result);
+      onUpdate(result as T);
     }
     if (t === 1 && onEnd) onEnd();
     return t < 1;
-  });
+  }, requestMeasure);
 
   return () => {
     canceled = true;

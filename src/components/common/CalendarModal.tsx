@@ -1,18 +1,20 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  memo, useState, useEffect, useMemo, useCallback,
+  memo, useCallback, useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
+
+import type { LangFn } from '../../hooks/useLang';
 
 import { MAX_INT_32 } from '../../config';
 import buildClassName from '../../util/buildClassName';
-import { formatTime, formatDateToString, getDayStart } from '../../util/dateFormat';
-import type { LangFn } from '../../hooks/useLang';
+import { formatDateToString, formatTime, getDayStart } from '../../util/dateFormat';
+
+import useFlag from '../../hooks/useFlag';
 import useLang from '../../hooks/useLang';
 import usePrevious from '../../hooks/usePrevious';
-import useFlag from '../../hooks/useFlag';
 
-import Modal from '../ui/Modal';
 import Button from '../ui/Button';
+import Modal from '../ui/Modal';
 
 import './CalendarModal.scss';
 
@@ -249,7 +251,7 @@ const CalendarModal: FC<OwnProps> = ({
             color="translucent"
             onClick={onClose}
           >
-            <i className="icon-close" />
+            <i className="icon icon-close" />
           </Button>
 
           <h4>
@@ -265,7 +267,7 @@ const CalendarModal: FC<OwnProps> = ({
             disabled={shouldDisablePrevMonth}
             onClick={!shouldDisablePrevMonth ? handlePrevMonth : undefined}
           >
-            <i className="icon-previous" />
+            <i className="icon icon-previous" />
           </Button>
 
           <Button
@@ -275,7 +277,7 @@ const CalendarModal: FC<OwnProps> = ({
             disabled={shouldDisableNextMonth}
             onClick={!shouldDisableNextMonth ? handleNextMonth : undefined}
           >
-            <i className="icon-next" />
+            <i className="icon icon-next" />
           </Button>
         </div>
       </div>
@@ -297,6 +299,7 @@ const CalendarModal: FC<OwnProps> = ({
               onClick={() => handleDateSelect(gridDate)}
               className={buildClassName(
                 'day-button',
+                'div-button',
                 isDisabledDay(
                   currentYear, currentMonth, gridDate, minDate, maxDate,
                 )

@@ -1,27 +1,27 @@
+import type { FC } from '../../lib/teact/teact';
 import React, {
-  memo, useCallback, useMemo, useState,
+  memo, useCallback, useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { FC } from '../../lib/teact/teact';
 import type { ApiChat, ApiSticker } from '../../api/types';
 import type { TabState } from '../../global/types';
 
 import { DEFAULT_TOPIC_ICON_STICKER_ID } from '../../config';
 import { selectChat, selectIsCurrentUserPremium, selectTabState } from '../../global/selectors';
-import { getTopicColors } from '../../util/forumColors';
-import cycleRestrict from '../../util/cycleRestrict';
 import buildClassName from '../../util/buildClassName';
+import cycleRestrict from '../../util/cycleRestrict';
+import { getTopicColors } from '../../util/forumColors';
 import { REM } from '../common/helpers/mediaDimensions';
 
-import useLang from '../../hooks/useLang';
 import useHistoryBack from '../../hooks/useHistoryBack';
+import useLang from '../../hooks/useLang';
 
+import CustomEmojiPicker from '../common/CustomEmojiPicker';
 import TopicIcon from '../common/TopicIcon';
-import InputText from '../ui/InputText';
 import FloatingActionButton from '../ui/FloatingActionButton';
+import InputText from '../ui/InputText';
 import Spinner from '../ui/Spinner';
-import CustomEmojiPicker from '../middle/composer/CustomEmojiPicker';
 import Transition from '../ui/Transition';
 
 import styles from './ManageTopic.module.scss';
@@ -59,6 +59,13 @@ const CreateTopic: FC<OwnProps & StateProps> = ({
     isActive,
     onBack: onClose,
   });
+
+  useEffect(() => {
+    if (!isActive) {
+      setTitle('');
+      setIconEmojiId(undefined);
+    }
+  }, [isActive]);
 
   const handleTitleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setTitle(e.target.value);
@@ -110,7 +117,7 @@ const CreateTopic: FC<OwnProps & StateProps> = ({
         <div className={buildClassName(styles.section, styles.top)}>
           <span className={styles.heading}>{lang('CreateTopicTitle')}</span>
           <Transition
-            name="zoom-fade"
+            name="zoomFade"
             activeKey={Number(dummyTopic.iconEmojiId) || 0}
             shouldCleanup
             direction={1}
@@ -135,9 +142,11 @@ const CreateTopic: FC<OwnProps & StateProps> = ({
         <div className={buildClassName(styles.section, styles.bottom)}>
           <CustomEmojiPicker
             idPrefix="create-topic-icons-set-"
+            isHidden={!isActive}
             loadAndPlay={isActive}
             onCustomEmojiSelect={handleCustomEmojiSelect}
             className={styles.iconPicker}
+            pickerListClassName="fab-padding-bottom"
             withDefaultTopicIcons
           />
         </div>
@@ -151,7 +160,7 @@ const CreateTopic: FC<OwnProps & StateProps> = ({
         {isLoading ? (
           <Spinner color="white" />
         ) : (
-          <i className="icon-check" />
+          <i className="icon icon-check" />
         )}
       </FloatingActionButton>
     </div>

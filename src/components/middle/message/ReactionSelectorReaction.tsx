@@ -1,24 +1,25 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, { memo } from '../../../lib/teact/teact';
 
-import type { FC } from '../../../lib/teact/teact';
 import type { ApiAvailableReaction, ApiReaction } from '../../../api/types';
 
-import { IS_COMPACT_MENU } from '../../../util/environment';
 import { createClassNameBuilder } from '../../../util/buildClassName';
-import useMedia from '../../../hooks/useMedia';
+import { REM } from '../../common/helpers/mediaDimensions';
+
 import useFlag from '../../../hooks/useFlag';
+import useMedia from '../../../hooks/useMedia';
 
 import AnimatedSticker from '../../common/AnimatedSticker';
 
 import './ReactionSelectorReaction.scss';
 
-const REACTION_SIZE = IS_COMPACT_MENU ? 24 : 32;
+const REACTION_SIZE = 2 * REM;
 
 type OwnProps = {
   reaction: ApiAvailableReaction;
-  previewIndex: number;
   isReady?: boolean;
   chosen?: boolean;
+  noAppearAnimation?: boolean;
   onToggleReaction: (reaction: ApiReaction) => void;
 };
 
@@ -26,18 +27,18 @@ const cn = createClassNameBuilder('ReactionSelectorReaction');
 
 const ReactionSelectorReaction: FC<OwnProps> = ({
   reaction,
-  previewIndex,
   isReady,
+  noAppearAnimation,
   chosen,
   onToggleReaction,
 }) => {
-  const mediaData = useMedia(`document${reaction.selectAnimation?.id}`, !isReady);
-
-  const [isActivated, activate, deactivate] = useFlag();
+  const mediaAppearData = useMedia(`sticker${reaction.appearAnimation?.id}`, !isReady || noAppearAnimation);
+  const mediaData = useMedia(`document${reaction.selectAnimation?.id}`, !isReady || noAppearAnimation);
+  const staticIconData = useMedia(`document${reaction.staticIcon?.id}`, !noAppearAnimation);
   const [isAnimationLoaded, markAnimationLoaded] = useFlag();
 
-  const shouldRenderStatic = !isReady || !isAnimationLoaded;
-  const shouldRenderAnimated = Boolean(isReady && mediaData);
+  const [isFirstPlay, , unmarkIsFirstPlay] = useFlag(true);
+  const [isActivated, activate, deactivate] = useFlag();
 
   function handleClick() {
     onToggleReaction(reaction.reaction);
@@ -45,24 +46,38 @@ const ReactionSelectorReaction: FC<OwnProps> = ({
 
   return (
     <div
-      className={cn('&', IS_COMPACT_MENU && 'compact', chosen && 'chosen')}
+      className={cn('&', chosen && 'chosen')}
       onClick={handleClick}
-      onMouseEnter={isReady ? activate : undefined}
+      onMouseEnter={isReady && !isFirstPlay ? activate : undefined}
     >
-      {shouldRenderStatic && (
-        <div
-          className={cn('static')}
-          style={`background-position-x: ${previewIndex * -REACTION_SIZE}px;`}
+      {noAppearAnimation && (
+        <img
+          className={cn('static-icon')}
+          src={staticIconData}
+          alt=""
         />
       )}
-      {shouldRenderAnimated && (
+      {!isAnimationLoaded && !noAppearAnimation && (
         <AnimatedSticker
+          key={reaction.appearAnimation?.id}
+          tgsUrl={mediaAppearData}
+          play={isFirstPlay}
+          noLoop
+          size={REACTION_SIZE}
+          onEnded={unmarkIsFirstPlay}
+          forceAlways
+        />
+      )}
+      {!isFirstPlay && !noAppearAnimation && (
+        <AnimatedSticker
+          key={reaction.selectAnimation?.id}
           tgsUrl={mediaData}
           play={isActivated}
           noLoop
           size={REACTION_SIZE}
           onLoad={markAnimationLoaded}
           onEnded={deactivate}
+          forceAlways
         />
       )}
     </div>

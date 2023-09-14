@@ -1,14 +1,17 @@
-import { DEBUG, DEBUG_MORE, IS_TEST } from '../config';
 import { getActions } from '../global';
+
+import { DEBUG, DEBUG_MORE, IS_TEST } from '../config';
 import { formatShareText } from './deeplink';
-import { IS_ANDROID, IS_IOS, IS_SERVICE_WORKER_SUPPORTED } from './environment';
 import { validateFiles } from './files';
 import { notifyClientReady, playNotifySoundDebounced } from './notifications';
+import { IS_ANDROID, IS_IOS, IS_SERVICE_WORKER_SUPPORTED } from './windowEnvironment';
 
 type WorkerAction = {
   type: string;
   payload: Record<string, any>;
 };
+
+const IGNORE_WORKER_PATH = '/k/';
 
 function handleWorkerMessage(e: MessageEvent) {
   const action: WorkerAction = e.data;
@@ -21,9 +24,7 @@ function handleWorkerMessage(e: MessageEvent) {
   const payload = action.payload;
   switch (action.type) {
     case 'focusMessage':
-      if (dispatch.focusMessage) {
-        dispatch.focusMessage(payload as any);
-      }
+      dispatch.focusMessage?.(payload as any);
       break;
     case 'playNotificationSound':
       playNotifySoundDebounced(action.payload.id);
@@ -47,18 +48,20 @@ function subscribeToWorker() {
 if (IS_SERVICE_WORKER_SUPPORTED) {
   window.addEventListener('load', async () => {
     try {
-      if (!navigator.serviceWorker.controller) {
+      const controller = navigator.serviceWorker.controller;
+      if (!controller || controller.scriptURL.includes(IGNORE_WORKER_PATH)) {
         const registrations = await navigator.serviceWorker.getRegistrations();
-        if (registrations.length) {
+        const ourRegistrations = registrations.filter((r) => !r.scope.includes(IGNORE_WORKER_PATH));
+        if (ourRegistrations.length) {
           if (DEBUG) {
             // eslint-disable-next-line no-console
             console.log('[SW] Hard reload detected, re-enabling Service Worker');
           }
-          await Promise.all(registrations.map((r) => r.unregister()));
+          await Promise.all(ourRegistrations.map((r) => r.unregister()));
         }
       }
 
-      await navigator.serviceWorker.register(new URL('../serviceWorker.ts', import.meta.url));
+      await navigator.serviceWorker.register(new URL('../serviceWorker', import.meta.url));
 
       if (DEBUG) {
         // eslint-disable-next-line no-console
@@ -66,6 +69,9 @@ if (IS_SERVICE_WORKER_SUPPORTED) {
       }
 
       await navigator.serviceWorker.ready;
+
+      // Wait for registration to be available
+      await navigator.serviceWorker.getRegistration();
 
       if (navigator.serviceWorker.controller) {
         if (DEBUG) {

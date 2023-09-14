@@ -1,7 +1,9 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo } from '../../../lib/teact/teact';
-import useModuleLoader from '../../../hooks/useModuleLoader';
+import React from '../../../lib/teact/teact';
+
 import { Bundles } from '../../../util/moduleLoader';
+
+import useModuleLoader from '../../../hooks/useModuleLoader';
 
 type OwnProps = {
   isActive?: boolean;
@@ -14,4 +16,4 @@ const PhoneCallAsync: FC<OwnProps> = (props) => {
   return PhoneCall ? <PhoneCall /> : undefined;
 };
 
-export default memo(PhoneCallAsync);
+export default PhoneCallAsync;

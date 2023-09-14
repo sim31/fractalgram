@@ -1,8 +1,8 @@
 import type { ApiMessage } from '../../../api/types';
 import type { IAlbum } from '../../../types';
 
-import { getDayStartAt } from '../../../util/dateFormat';
 import { isActionMessage } from '../../../global/helpers';
+import { getDayStartAt } from '../../../util/dateFormat';
 
 type SenderGroup = (ApiMessage | IAlbum)[];
 
@@ -72,16 +72,8 @@ export function groupMessages(messages: ApiMessage[], firstUnreadId?: number) {
         nextMessage.id === firstUnreadId
         || message.senderId !== nextMessage.senderId
         || message.isOutgoing !== nextMessage.isOutgoing
-        || isActionMessage(message)
-        || isActionMessage(nextMessage)
-        || (
-          message.forwardInfo && nextMessage.forwardInfo
-          && (
-            message.forwardInfo.senderUserId !== nextMessage.forwardInfo.senderUserId
-            || message.forwardInfo.fromChatId !== nextMessage.forwardInfo.fromChatId
-            || message.forwardInfo.hiddenUserName !== nextMessage.forwardInfo.hiddenUserName
-          )
-        )
+        || (isActionMessage(message) && !message.content.action?.phoneCall)
+        || (isActionMessage(nextMessage) && !nextMessage.content.action?.phoneCall)
         || message.inlineButtons
         || nextMessage.inlineButtons
         || (nextMessage.date - message.date) > GROUP_INTERVAL_SECONDS

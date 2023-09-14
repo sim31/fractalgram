@@ -1,18 +1,20 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback, useMemo } from '../../../lib/teact/teact';
+import React, { memo, useCallback } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiChat, ApiChatMember, ApiUser } from '../../../api/types';
 
-import { selectChat } from '../../../global/selectors';
 import { getHasAdminRight, getUserFullName, isChatChannel } from '../../../global/helpers';
-import useLang from '../../../hooks/useLang';
-import useHistoryBack from '../../../hooks/useHistoryBack';
+import { selectChat, selectChatFullInfo } from '../../../global/selectors';
+import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
+
 import useFlag from '../../../hooks/useFlag';
+import useHistoryBack from '../../../hooks/useHistoryBack';
+import useLang from '../../../hooks/useLang';
 
 import PrivateChatInfo from '../../common/PrivateChatInfo';
-import ListItem from '../../ui/ListItem';
 import FloatingActionButton from '../../ui/FloatingActionButton';
+import ListItem, { type MenuItemContextAction } from '../../ui/ListItem';
 import RemoveGroupUserModal from './RemoveGroupUserModal';
 
 type OwnProps = {
@@ -24,6 +26,7 @@ type OwnProps = {
 type StateProps = {
   chat?: ApiChat;
   usersById: Record<string, ApiUser>;
+  removedMembers: ApiChatMember[];
   canDeleteMembers?: boolean;
   isChannel?: boolean;
 };
@@ -32,6 +35,7 @@ const ManageChatRemovedUsers: FC<OwnProps & StateProps> = ({
   chat,
   usersById,
   canDeleteMembers,
+  removedMembers,
   isChannel,
   onClose,
   isActive,
@@ -46,14 +50,6 @@ const ManageChatRemovedUsers: FC<OwnProps & StateProps> = ({
     onBack: onClose,
   });
 
-  const removedMembers = useMemo(() => {
-    if (!chat || !chat.fullInfo || !chat.fullInfo.kickedMembers) {
-      return [];
-    }
-
-    return chat.fullInfo.kickedMembers;
-  }, [chat]);
-
   const getRemovedBy = useCallback((member: ApiChatMember) => {
     if (!member.kickedByUserId) {
       return undefined;
@@ -67,7 +63,7 @@ const ManageChatRemovedUsers: FC<OwnProps & StateProps> = ({
     return lang('UserRemovedBy', getUserFullName(kickedByUser));
   }, [lang, usersById]);
 
-  const getContextActions = useCallback((member: ApiChatMember) => {
+  const getContextActions = useCallback((member: ApiChatMember): MenuItemContextAction[] | undefined => {
     if (!chat) {
       return undefined;
     }
@@ -110,7 +106,7 @@ const ManageChatRemovedUsers: FC<OwnProps & StateProps> = ({
               onClick={openRemoveUserModal}
               ariaLabel={lang('Channel.EditAdmin.Permission.BanUsers')}
             >
-              <i className="icon-add-user-filled" />
+              <i className="icon icon-add-user-filled" />
             </FloatingActionButton>
           )}
           {chat && canDeleteMembers && (
@@ -136,6 +132,7 @@ export default memo(withGlobal<OwnProps>(
       chat,
       usersById,
       canDeleteMembers,
+      removedMembers: selectChatFullInfo(global, chatId)?.kickedMembers || MEMO_EMPTY_ARRAY,
       isChannel: chat && isChatChannel(chat),
     };
   },

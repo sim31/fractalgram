@@ -1,29 +1,32 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  memo, useRef, useCallback, useState, useMemo,
+  memo, useMemo, useRef, useState,
 } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
 import type { ApiChat, ApiTopic } from '../../api/types';
 
-import { REM } from './helpers/mediaDimensions';
 import { CHAT_HEIGHT_PX } from '../../config';
-import renderText from './helpers/renderText';
 import { getCanPostInChat, isUserId } from '../../global/helpers';
-import useInfiniteScroll from '../../hooks/useInfiniteScroll';
-import useLang from '../../hooks/useLang';
-import useKeyboardListNavigation from '../../hooks/useKeyboardListNavigation';
-import useInputFocusOnOpen from '../../hooks/useInputFocusOnOpen';
+import buildClassName from '../../util/buildClassName';
+import { REM } from './helpers/mediaDimensions';
+import renderText from './helpers/renderText';
 
-import Loading from '../ui/Loading';
-import Modal from '../ui/Modal';
-import InputText from '../ui/InputText';
+import useInfiniteScroll from '../../hooks/useInfiniteScroll';
+import useInputFocusOnOpen from '../../hooks/useInputFocusOnOpen';
+import useKeyboardListNavigation from '../../hooks/useKeyboardListNavigation';
+import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
+
 import Button from '../ui/Button';
 import InfiniteScroll from '../ui/InfiniteScroll';
+import InputText from '../ui/InputText';
 import ListItem from '../ui/ListItem';
+import Loading from '../ui/Loading';
+import Modal from '../ui/Modal';
+import Transition from '../ui/Transition';
 import GroupChatInfo from './GroupChatInfo';
 import PrivateChatInfo from './PrivateChatInfo';
-import Transition from '../ui/Transition';
 import TopicIcon from './TopicIcon';
 
 import './ChatOrUserPicker.scss';
@@ -35,6 +38,7 @@ export type OwnProps = {
   isOpen: boolean;
   searchPlaceholder: string;
   search: string;
+  className?: string;
   loadMore?: NoneToVoidFunction;
   onSearchChange: (search: string) => void;
   onSelectChatOrUser: (chatOrUserId: string, threadId?: number) => void;
@@ -53,6 +57,7 @@ const ChatOrUserPicker: FC<OwnProps> = ({
   chatsById,
   search,
   searchPlaceholder,
+  className,
   loadMore,
   onSearchChange,
   onSelectChatOrUser,
@@ -76,9 +81,9 @@ const ChatOrUserPicker: FC<OwnProps> = ({
   const activeKey = forumId ? TOPIC_LIST_SLIDE : CHAT_LIST_SLIDE;
   const viewportOffset = chatOrUserIds!.indexOf(viewportIds![0]);
 
-  const resetSearch = useCallback(() => {
+  const resetSearch = useLastCallback(() => {
     onSearchChange('');
-  }, [onSearchChange]);
+  });
   useInputFocusOnOpen(searchRef, isOpen && activeKey === CHAT_LIST_SLIDE, resetSearch);
   useInputFocusOnOpen(topicSearchRef, isOpen && activeKey === TOPIC_LIST_SLIDE);
 
@@ -106,18 +111,18 @@ const ChatOrUserPicker: FC<OwnProps> = ({
     return [Object.keys(result).map(Number), result];
   }, [chatsById, forumId, topicSearch]);
 
-  const handleHeaderBackClick = useCallback(() => {
+  const handleHeaderBackClick = useLastCallback(() => {
     setForumId(undefined);
     setTopicSearch('');
-  }, []);
+  });
 
-  const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSearchChange = useLastCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     onSearchChange(e.currentTarget.value);
-  }, [onSearchChange]);
+  });
 
-  const handleTopicSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleTopicSearchChange = useLastCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setTopicSearch(e.currentTarget.value);
-  }, []);
+  });
 
   const handleKeyDown = useKeyboardListNavigation(containerRef, isOpen, (index) => {
     if (viewportIds && viewportIds.length > 0) {
@@ -138,7 +143,7 @@ const ChatOrUserPicker: FC<OwnProps> = ({
     }
   }, '.ListItem-button', true);
 
-  const handleClick = useCallback((e: React.MouseEvent, chatId: string) => {
+  const handleClick = useLastCallback((e: React.MouseEvent, chatId: string) => {
     const chat = chatsById?.[chatId];
     if (chat?.isForum) {
       if (!chat.topics) loadTopics({ chatId });
@@ -147,18 +152,18 @@ const ChatOrUserPicker: FC<OwnProps> = ({
     } else {
       onSelectChatOrUser(chatId);
     }
-  }, [chatsById, loadTopics, onSelectChatOrUser, resetSearch]);
+  });
 
-  const handleTopicClick = useCallback((e: React.MouseEvent, topicId: number) => {
+  const handleTopicClick = useLastCallback((e: React.MouseEvent, topicId: number) => {
     onSelectChatOrUser(forumId!, topicId);
-  }, [forumId, onSelectChatOrUser]);
+  });
 
   function renderTopicList() {
     return (
       <>
         <div className="modal-header" dir={lang.isRtl ? 'rtl' : undefined}>
           <Button round color="translucent" size="smaller" ariaLabel={lang('Back')} onClick={handleHeaderBackClick}>
-            <i className="icon-arrow-left" />
+            <i className="icon icon-arrow-left" />
           </Button>
           <InputText
             ref={topicSearchRef}
@@ -211,7 +216,7 @@ const ChatOrUserPicker: FC<OwnProps> = ({
             ariaLabel={lang('Close')}
             onClick={onClose}
           >
-            <i className="icon-close" />
+            <i className="icon icon-close" />
           </Button>
           <InputText
             ref={searchRef}
@@ -262,11 +267,11 @@ const ChatOrUserPicker: FC<OwnProps> = ({
   return (
     <Modal
       isOpen={isOpen}
-      className="ChatOrUserPicker"
+      className={buildClassName('ChatOrUserPicker', className)}
       onClose={onClose}
       onCloseAnimationEnd={onCloseAnimationEnd}
     >
-      <Transition activeKey={activeKey} name="slide-fade">
+      <Transition activeKey={activeKey} name="slideFade" slideClassName="ChatOrUserPicker_slide">
         {() => {
           return activeKey === TOPIC_LIST_SLIDE ? renderTopicList() : renderChatList();
         }}

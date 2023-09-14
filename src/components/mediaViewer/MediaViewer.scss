@@ -35,7 +35,7 @@
     }
   }
 
-  body.animation-level-2 & {
+  body:not(.no-media-viewer-animations) & {
     transition-duration: 0.3s !important;
   }
 
@@ -97,6 +97,14 @@
         padding: 0.5rem;
       }
     }
+
+    body.is-electron.is-macos & {
+      -webkit-app-region: drag;
+    }
+
+    body.is-electron.is-macos #Main:not(.is-fullscreen) & {
+      padding-left: 5rem;
+    }
   }
 
   & > .Transition,
@@ -130,7 +138,7 @@
     opacity: 0;
     transition: opacity 0.15s;
     outline: none;
-    cursor: pointer;
+    cursor: var(--custom-cursor, pointer);
     z-index: 1;
 
     @media (max-width: 600px) {

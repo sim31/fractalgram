@@ -2,9 +2,12 @@ import type { ChangeEvent } from 'react';
 import type { FC, TeactNode } from '../../lib/teact/teact';
 import React, { memo, useCallback, useRef } from '../../lib/teact/teact';
 
+import type { IconName } from '../../types/icons';
+
 import buildClassName from '../../util/buildClassName';
-import useLang from '../../hooks/useLang';
 import renderText from '../common/helpers/renderText';
+
+import useLang from '../../hooks/useLang';
 
 import Spinner from './Spinner';
 
@@ -17,7 +20,7 @@ type OwnProps = {
   label: TeactNode;
   subLabel?: string;
   checked: boolean;
-  rightIcon?: string;
+  rightIcon?: IconName;
   disabled?: boolean;
   tabIndex?: number;
   round?: boolean;
@@ -27,7 +30,7 @@ type OwnProps = {
   className?: string;
   onChange?: (e: ChangeEvent<HTMLInputElement>) => void;
   onCheck?: (isChecked: boolean) => void;
-  onClickLabel?: (e: React.MouseEvent) => void;
+  onClickLabel?: (e: React.MouseEvent, value?: string) => void;
 };
 
 const Checkbox: FC<OwnProps> = ({
@@ -54,6 +57,10 @@ const Checkbox: FC<OwnProps> = ({
   const labelRef = useRef<HTMLLabelElement>(null);
 
   const handleChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    if (disabled) {
+      return;
+    }
+
     if (onChange) {
       onChange(event);
     }
@@ -61,11 +68,11 @@ const Checkbox: FC<OwnProps> = ({
     if (onCheck) {
       onCheck(event.currentTarget.checked);
     }
-  }, [onChange, onCheck]);
+  }, [disabled, onChange, onCheck]);
 
   function handleClick(event: React.MouseEvent) {
     if (event.target !== labelRef.current) {
-      onClickLabel?.(event);
+      onClickLabel?.(event, value);
     }
   }
 
@@ -104,7 +111,7 @@ const Checkbox: FC<OwnProps> = ({
       <div className="Checkbox-main">
         <span className="label" dir="auto">
           {typeof label === 'string' ? renderText(label) : label}
-          {rightIcon && <i className={`icon-${rightIcon} right-icon`} />}
+          {rightIcon && <i className={`icon icon-${rightIcon} right-icon`} />}
         </span>
         {subLabel && <span className="subLabel" dir="auto">{renderText(subLabel)}</span>}
       </div>

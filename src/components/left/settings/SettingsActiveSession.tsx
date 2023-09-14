@@ -4,16 +4,17 @@ import { getActions, withGlobal } from '../../../global';
 
 import type { ApiSession } from '../../../api/types';
 
-import { formatDateTimeToString } from '../../../util/dateFormat';
-import useLang from '../../../hooks/useLang';
-import useCurrentOrPrev from '../../../hooks/useCurrentOrPrev';
-import getSessionIcon from './helpers/getSessionIcon';
 import buildClassName from '../../../util/buildClassName';
+import { formatDateTimeToString } from '../../../util/dateFormat';
+import getSessionIcon from './helpers/getSessionIcon';
 
+import useCurrentOrPrev from '../../../hooks/useCurrentOrPrev';
+import useLang from '../../../hooks/useLang';
+
+import Button from '../../ui/Button';
 import ListItem from '../../ui/ListItem';
 import Modal from '../../ui/Modal';
 import Switcher from '../../ui/Switcher';
-import Button from '../../ui/Button';
 
 import styles from './SettingsActiveSession.module.scss';
 
@@ -62,7 +63,7 @@ const SettingsActiveSession: FC<OwnProps & StateProps> = ({
     return (
       <div className="modal-header-condensed" dir={lang.isRtl ? 'rtl' : undefined}>
         <Button round color="translucent" size="smaller" ariaLabel={lang('Close')} onClick={onClose}>
-          <i className="icon-close" />
+          <i className="icon icon-close" />
         </Button>
         <div className="modal-title">{lang('SessionPreview.Title')}</div>
         <Button

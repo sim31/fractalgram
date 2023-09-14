@@ -2,17 +2,19 @@ import React, {
   memo, useMemo, useRef,
 } from '../../lib/teact/teact';
 
-import type { ApiFormattedText, ApiMessage } from '../../api/types';
+import type { ApiFormattedText, ApiMessage, ApiStory } from '../../api/types';
 import type { ObserveFn } from '../../hooks/useIntersectionObserver';
-
 import { ApiMessageEntityTypes } from '../../api/types';
+
+import { extractMessageText, getMessageText, stripCustomEmoji } from '../../global/helpers';
 import trimText from '../../util/trimText';
-import { getMessageText, stripCustomEmoji } from '../../global/helpers';
 import { renderTextWithEntities } from './helpers/renderTextWithEntities';
+
 import useSyncEffect from '../../hooks/useSyncEffect';
+import useUniqueId from '../../hooks/useUniqueId';
 
 interface OwnProps {
-  message: ApiMessage;
+  messageOrStory: ApiMessage | ApiStory;
   translatedText?: ApiFormattedText;
   isForAnimation?: boolean;
   emojiSize?: number;
@@ -24,12 +26,14 @@ interface OwnProps {
   observeIntersectionForPlaying?: ObserveFn;
   withTranslucentThumbs?: boolean;
   shouldRenderAsHtml?: boolean;
+  inChatList?: boolean;
+  forcePlayback?: boolean;
 }
 
 const MIN_CUSTOM_EMOJIS_FOR_SHARED_CANVAS = 3;
 
 function MessageText({
-  message,
+  messageOrStory,
   translatedText,
   isForAnimation,
   emojiSize,
@@ -41,6 +45,8 @@ function MessageText({
   observeIntersectionForPlaying,
   withTranslucentThumbs,
   shouldRenderAsHtml,
+  inChatList,
+  forcePlayback,
 }: OwnProps) {
   // eslint-disable-next-line no-null/no-null
   const sharedCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -49,11 +55,11 @@ function MessageText({
 
   const textCacheBusterRef = useRef(0);
 
-  const formattedText = translatedText || message.content.text || undefined;
-
+  const formattedText = translatedText || extractMessageText(messageOrStory, inChatList);
   const adaptedFormattedText = isForAnimation && formattedText ? stripCustomEmoji(formattedText) : formattedText;
-
   const { text, entities } = adaptedFormattedText || {};
+
+  const containerId = useUniqueId();
 
   useSyncEffect(() => {
     textCacheBusterRef.current += 1;
@@ -70,7 +76,7 @@ function MessageText({
   }, [entities]) || 0;
 
   if (!text) {
-    const contentNotSupportedText = getMessageText(message);
+    const contentNotSupportedText = getMessageText(messageOrStory);
     return contentNotSupportedText ? [trimText(contentNotSupportedText, truncateLength)] : undefined as any;
   }
 
@@ -79,13 +85,13 @@ function MessageText({
       {[
         withSharedCanvas && <canvas ref={sharedCanvasRef} className="shared-canvas" />,
         withSharedCanvas && <canvas ref={sharedCanvasHqRef} className="shared-canvas" />,
-        renderTextWithEntities(
-          trimText(text!, truncateLength),
+        renderTextWithEntities({
+          text: trimText(text!, truncateLength),
           entities,
           highlight,
           emojiSize,
           shouldRenderAsHtml,
-          message.id,
+          containerId,
           isSimple,
           isProtected,
           observeIntersectionForLoading,
@@ -93,8 +99,9 @@ function MessageText({
           withTranslucentThumbs,
           sharedCanvasRef,
           sharedCanvasHqRef,
-          textCacheBusterRef.current.toString(),
-        ),
+          cacheBuster: textCacheBusterRef.current.toString(),
+          forcePlayback,
+        }),
       ].flat().filter(Boolean)}
     </>
   );

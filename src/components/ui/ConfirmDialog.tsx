@@ -3,11 +3,13 @@ import React, { memo, useCallback, useRef } from '../../lib/teact/teact';
 
 import type { TextPart } from '../../types';
 
-import useLang from '../../hooks/useLang';
-import useKeyboardListNavigation from '../../hooks/useKeyboardListNavigation';
+import buildClassName from '../../util/buildClassName';
 
-import Modal from './Modal';
+import useKeyboardListNavigation from '../../hooks/useKeyboardListNavigation';
+import useLang from '../../hooks/useLang';
+
 import Button from './Button';
+import Modal from './Modal';
 
 type OwnProps = {
   isOpen: boolean;
@@ -21,6 +23,7 @@ type OwnProps = {
   confirmHandler: () => void;
   confirmIsDestructive?: boolean;
   areButtonsInColumn?: boolean;
+  className?: string;
   children?: React.ReactNode;
 };
 
@@ -36,6 +39,7 @@ const ConfirmDialog: FC<OwnProps> = ({
   confirmHandler,
   confirmIsDestructive,
   areButtonsInColumn,
+  className,
   children,
 }) => {
   const lang = useLang();
@@ -51,7 +55,7 @@ const ConfirmDialog: FC<OwnProps> = ({
 
   return (
     <Modal
-      className="confirm"
+      className={buildClassName('confirm', className)}
       title={title || lang('Telegram')}
       header={header}
       isOpen={isOpen}

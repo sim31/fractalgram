@@ -4,15 +4,16 @@ import React, {
   memo, useCallback, useEffect, useState,
 } from '../../../lib/teact/teact';
 
+import buildClassName from '../../../util/buildClassName';
+
 import useLang from '../../../hooks/useLang';
 
 import Button from '../../ui/Button';
+// import TextArea from '../../ui/TextArea';
+import Checkbox from '../../ui/Checkbox';
 import Modal from '../../ui/Modal';
 
 import './PollModal.scss';
-// import TextArea from '../../ui/TextArea';
-import Checkbox from '../../ui/Checkbox';
-import buildClassName from '../../../util/buildClassName';
 
 export type OwnProps = {
   isOpen: boolean;

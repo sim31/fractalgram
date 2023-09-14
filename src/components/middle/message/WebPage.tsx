@@ -1,24 +1,33 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback } from '../../../lib/teact/teact';
+import React, { memo } from '../../../lib/teact/teact';
+import { getActions } from '../../../global';
 
-import type { ApiMessage } from '../../../api/types';
+import type { ApiMessage, ApiTypeStory } from '../../../api/types';
 import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
 import type { ISettings } from '../../../types';
 
 import { getMessageWebPage } from '../../../global/helpers';
-import { calculateMediaDimensions } from './helpers/mediaDimensions';
-import renderText from '../../common/helpers/renderText';
-import trimText from '../../../util/trimText';
 import buildClassName from '../../../util/buildClassName';
+import trimText from '../../../util/trimText';
+import renderText from '../../common/helpers/renderText';
+import { calculateMediaDimensions } from './helpers/mediaDimensions';
+import { getWebpageButtonText } from './helpers/webpageType';
+
 import useAppLayout from '../../../hooks/useAppLayout';
+import useEnsureStory from '../../../hooks/useEnsureStory';
+import useLang from '../../../hooks/useLang';
+import useLastCallback from '../../../hooks/useLastCallback';
 
 import SafeLink from '../../common/SafeLink';
+import Button from '../../ui/Button';
+import BaseStory from './BaseStory';
 import Photo from './Photo';
 import Video from './Video';
 
 import './WebPage.scss';
 
 const MAX_TEXT_LENGTH = 170; // symbols
+const WEBPAGE_STORY_TYPE = 'telegram_story';
 
 type OwnProps = {
   message: ApiMessage;
@@ -28,10 +37,11 @@ type OwnProps = {
   canAutoPlay?: boolean;
   inPreview?: boolean;
   asForwarded?: boolean;
-  lastSyncTime?: number;
   isDownloading?: boolean;
   isProtected?: boolean;
+  isConnected?: boolean;
   theme: ISettings['theme'];
+  story?: ApiTypeStory;
   onMediaClick?: () => void;
   onCancelMediaTransfer?: () => void;
 };
@@ -44,19 +54,34 @@ const WebPage: FC<OwnProps> = ({
   canAutoPlay,
   inPreview,
   asForwarded,
-  lastSyncTime,
   isDownloading = false,
   isProtected,
+  isConnected,
+  story,
   theme,
   onMediaClick,
   onCancelMediaTransfer,
 }) => {
+  const { openTelegramLink } = getActions();
   const webPage = getMessageWebPage(message);
   const { isMobile } = useAppLayout();
 
-  const handleMediaClick = useCallback(() => {
+  const lang = useLang();
+
+  const handleMediaClick = useLastCallback(() => {
     onMediaClick!();
-  }, [onMediaClick]);
+  });
+
+  const handleQuickButtonClick = useLastCallback(() => {
+    if (!webPage) return;
+    openTelegramLink({
+      url: webPage.url,
+    });
+  });
+
+  const { story: storyData } = webPage || {};
+
+  useEnsureStory(storyData?.userId, storyData?.id, story);
 
   if (!webPage) {
     return undefined;
@@ -70,7 +95,11 @@ const WebPage: FC<OwnProps> = ({
     description,
     photo,
     video,
+    type,
   } = webPage;
+  const isStory = type === WEBPAGE_STORY_TYPE;
+  const isExpiredStory = story && 'isDeleted' in story;
+  const quickButtonLangKey = !inPreview && !isExpiredStory ? getWebpageButtonText(type) : undefined;
   const truncatedDescription = trimText(description, MAX_TEXT_LENGTH);
   const isArticle = Boolean(truncatedDescription || title || siteName);
   let isSquarePhoto = false;
@@ -87,7 +116,21 @@ const WebPage: FC<OwnProps> = ({
     !photo && !video && !inPreview && 'without-media',
     video && 'with-video',
     !isArticle && 'no-article',
+    quickButtonLangKey && 'with-quick-button',
   );
+
+  function renderQuickButton(langKey: string) {
+    return (
+      <Button
+        className="WebPage--quick-button"
+        size="tiny"
+        color="translucent-bordered"
+        onClick={handleQuickButtonClick}
+      >
+        {lang(langKey)}
+      </Button>
+    );
+  }
 
   return (
     <div
@@ -95,48 +138,53 @@ const WebPage: FC<OwnProps> = ({
       data-initial={(siteName || displayUrl)[0]}
       dir="auto"
     >
-      {photo && !video && (
-        <Photo
-          message={message}
-          observeIntersection={observeIntersection}
-          noAvatars={noAvatars}
-          canAutoLoad={canAutoLoad}
-          size={isSquarePhoto ? 'pictogram' : 'inline'}
-          asForwarded={asForwarded}
-          nonInteractive={!isMediaInteractive}
-          isDownloading={isDownloading}
-          isProtected={isProtected}
-          theme={theme}
-          onClick={isMediaInteractive ? handleMediaClick : undefined}
-          onCancelUpload={onCancelMediaTransfer}
-        />
-      )}
-      {isArticle && (
-        <div className="WebPage-text">
-          <SafeLink className="site-name" url={url} text={siteName || displayUrl} />
-          {!inPreview && title && (
-            <p className="site-title">{renderText(title)}</p>
-          )}
-          {truncatedDescription && (
-            <p className="site-description">{renderText(truncatedDescription, ['emoji', 'br'])}</p>
-          )}
-        </div>
-      )}
-      {!inPreview && video && (
-        <Video
-          message={message}
-          observeIntersectionForLoading={observeIntersection!}
-          noAvatars={noAvatars}
-          canAutoLoad={canAutoLoad}
-          canAutoPlay={canAutoPlay}
-          lastSyncTime={lastSyncTime}
-          asForwarded={asForwarded}
-          isDownloading={isDownloading}
-          isProtected={isProtected}
-          onClick={isMediaInteractive ? handleMediaClick : undefined}
-          onCancelUpload={onCancelMediaTransfer}
-        />
-      )}
+      <div className={buildClassName('WebPage--content', isStory && 'is-story')}>
+        {isStory && (
+          <BaseStory story={story} isProtected={isProtected} isConnected={isConnected} isPreview />
+        )}
+        {photo && !video && (
+          <Photo
+            message={message}
+            observeIntersection={observeIntersection}
+            noAvatars={noAvatars}
+            canAutoLoad={canAutoLoad}
+            size={isSquarePhoto ? 'pictogram' : 'inline'}
+            asForwarded={asForwarded}
+            nonInteractive={!isMediaInteractive}
+            isDownloading={isDownloading}
+            isProtected={isProtected}
+            theme={theme}
+            onClick={isMediaInteractive ? handleMediaClick : undefined}
+            onCancelUpload={onCancelMediaTransfer}
+          />
+        )}
+        {isArticle && (
+          <div className="WebPage-text">
+            <SafeLink className="site-name" url={url} text={siteName || displayUrl} />
+            {!inPreview && title && (
+              <p className="site-title">{renderText(title)}</p>
+            )}
+            {truncatedDescription && (
+              <p className="site-description">{renderText(truncatedDescription, ['emoji', 'br'])}</p>
+            )}
+          </div>
+        )}
+        {!inPreview && video && (
+          <Video
+            message={message}
+            observeIntersectionForLoading={observeIntersection!}
+            noAvatars={noAvatars}
+            canAutoLoad={canAutoLoad}
+            canAutoPlay={canAutoPlay}
+            asForwarded={asForwarded}
+            isDownloading={isDownloading}
+            isProtected={isProtected}
+            onClick={isMediaInteractive ? handleMediaClick : undefined}
+            onCancelUpload={onCancelMediaTransfer}
+          />
+        )}
+      </div>
+      {quickButtonLangKey && renderQuickButton(quickButtonLangKey)}
     </div>
   );
 };

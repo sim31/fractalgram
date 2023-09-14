@@ -1,26 +1,28 @@
 import BigInt from 'big-integer';
 import { Api as GramJs } from '../../../lib/gramjs';
+
 import type {
-  OnApiUpdate, ApiUser, ApiChat, ApiSticker,
+  ApiChat, ApiSticker,
+  ApiUser, OnApiUpdate,
 } from '../../types';
 
 import { COMMON_CHATS_LIMIT, PROFILE_PHOTOS_LIMIT } from '../../../config';
-import { invokeRequest } from './client';
-import { searchMessagesLocal } from './messages';
-import {
-  buildInputEntity,
-  buildInputPeer,
-  buildInputContact,
-  buildMtpPeerId,
-  getEntityTypeById,
-  buildInputEmojiStatus,
-} from '../gramjsBuilders';
-import { buildApiUser, buildApiUserFromFull, buildApiUsersAndStatuses } from '../apiBuilders/users';
 import { buildApiChatFromPreview } from '../apiBuilders/chats';
 import { buildApiPhoto } from '../apiBuilders/common';
-import { addEntitiesWithPhotosToLocalDb, addPhotoToLocalDb, addUserToLocalDb } from '../helpers';
 import { buildApiPeerId } from '../apiBuilders/peers';
+import { buildApiUser, buildApiUserFullInfo, buildApiUsersAndStatuses } from '../apiBuilders/users';
+import {
+  buildInputContact,
+  buildInputEmojiStatus,
+  buildInputEntity,
+  buildInputPeer,
+  buildMtpPeerId,
+  getEntityTypeById,
+} from '../gramjsBuilders';
+import { addEntitiesToLocalDb, addPhotoToLocalDb, addUserToLocalDb } from '../helpers';
 import localDb from '../localDb';
+import { invokeRequest } from './client';
+import { searchMessagesLocal } from './messages';
 
 let onUpdate: OnApiUpdate;
 
@@ -40,28 +42,28 @@ export async function fetchFullUser({
     return undefined;
   }
 
-  const fullInfo = await invokeRequest(new GramJs.users.GetFullUser({ id: input }));
+  const result = await invokeRequest(new GramJs.users.GetFullUser({ id: input }));
 
-  if (!fullInfo) {
+  if (!result) {
     return undefined;
   }
 
-  updateLocalDb(fullInfo);
-  addUserToLocalDb(fullInfo.users[0], true);
+  updateLocalDb(result);
+  addEntitiesToLocalDb(result.users);
 
-  if (fullInfo.fullUser.profilePhoto instanceof GramJs.Photo) {
-    localDb.photos[fullInfo.fullUser.profilePhoto.id.toString()] = fullInfo.fullUser.profilePhoto;
+  if (result.fullUser.profilePhoto instanceof GramJs.Photo) {
+    localDb.photos[result.fullUser.profilePhoto.id.toString()] = result.fullUser.profilePhoto;
   }
 
-  if (fullInfo.fullUser.personalPhoto instanceof GramJs.Photo) {
-    localDb.photos[fullInfo.fullUser.personalPhoto.id.toString()] = fullInfo.fullUser.personalPhoto;
+  if (result.fullUser.personalPhoto instanceof GramJs.Photo) {
+    localDb.photos[result.fullUser.personalPhoto.id.toString()] = result.fullUser.personalPhoto;
   }
 
-  if (fullInfo.fullUser.fallbackPhoto instanceof GramJs.Photo) {
-    localDb.photos[fullInfo.fullUser.fallbackPhoto.id.toString()] = fullInfo.fullUser.fallbackPhoto;
+  if (result.fullUser.fallbackPhoto instanceof GramJs.Photo) {
+    localDb.photos[result.fullUser.fallbackPhoto.id.toString()] = result.fullUser.fallbackPhoto;
   }
 
-  const botInfo = fullInfo.fullUser.botInfo;
+  const botInfo = result.fullUser.botInfo;
   if (botInfo?.descriptionPhoto instanceof GramJs.Photo) {
     localDb.photos[botInfo.descriptionPhoto.id.toString()] = botInfo.descriptionPhoto;
   }
@@ -69,8 +71,8 @@ export async function fetchFullUser({
     localDb.documents[botInfo.descriptionDocument.id.toString()] = botInfo.descriptionDocument;
   }
 
-  const userWithFullInfo = buildApiUserFromFull(fullInfo);
-  const user = buildApiUser(fullInfo.users[0]);
+  const fullInfo = buildApiUserFullInfo(result);
+  const user = buildApiUser(result.users[0])!;
 
   onUpdate({
     '@type': 'updateUser',
@@ -78,11 +80,11 @@ export async function fetchFullUser({
     user: {
       ...user,
       avatarHash: user?.avatarHash || undefined,
-      fullInfo: userWithFullInfo.fullInfo,
     },
+    fullInfo,
   });
 
-  return userWithFullInfo;
+  return { user, fullInfo };
 }
 
 export async function fetchCommonChats(id: string, accessHash?: string, maxId?: string) {
@@ -142,11 +144,7 @@ export async function fetchContactList() {
     return undefined;
   }
 
-  result.users.forEach((user) => {
-    if (user instanceof GramJs.User) {
-      addUserToLocalDb(user, true);
-    }
-  });
+  addEntitiesToLocalDb(result.users);
 
   const { users, userStatusesById } = buildApiUsersAndStatuses(result.users);
 
@@ -165,11 +163,7 @@ export async function fetchUsers({ users }: { users: ApiUser[] }) {
     return undefined;
   }
 
-  result.forEach((user) => {
-    if (user instanceof GramJs.User) {
-      addUserToLocalDb(user, true);
-    }
-  });
+  addEntitiesToLocalDb(result);
 
   return buildApiUsersAndStatuses(result);
 }
@@ -219,7 +213,9 @@ export function updateContact({
     lastName,
     phone: phoneNumber,
     ...(shouldSharePhoneNumber && { addPhonePrivacyException: shouldSharePhoneNumber }),
-  }), true);
+  }), {
+    shouldReturnTrue: true,
+  });
 }
 
 export async function deleteContact({
@@ -294,18 +290,30 @@ export function reportSpam(userOrChat: ApiUser | ApiChat) {
 
   return invokeRequest(new GramJs.messages.ReportSpam({
     peer: buildInputPeer(id, accessHash),
-  }), true);
+  }), {
+    shouldReturnTrue: true,
+  });
 }
 
 export function updateEmojiStatus(emojiStatus: ApiSticker, expires?: number) {
   return invokeRequest(new GramJs.account.UpdateEmojiStatus({
     emojiStatus: buildInputEmojiStatus(emojiStatus, expires),
-  }), true);
+  }), {
+    shouldReturnTrue: true,
+  });
+}
+
+export function saveCloseFriends(userIds: string[]) {
+  const id = userIds.map((userId) => buildMtpPeerId(userId, 'user'));
+
+  return invokeRequest(new GramJs.contacts.EditCloseFriends({ id }), {
+    shouldReturnTrue: true,
+  });
 }
 
 function updateLocalDb(result: (GramJs.photos.Photos | GramJs.photos.PhotosSlice | GramJs.messages.Chats)) {
   if ('chats' in result) {
-    addEntitiesWithPhotosToLocalDb(result.chats);
+    addEntitiesToLocalDb(result.chats);
   }
 
   if ('photos' in result) {
@@ -313,6 +321,6 @@ function updateLocalDb(result: (GramJs.photos.Photos | GramJs.photos.PhotosSlice
   }
 
   if ('users' in result) {
-    addEntitiesWithPhotosToLocalDb(result.users);
+    addEntitiesToLocalDb(result.users);
   }
 }

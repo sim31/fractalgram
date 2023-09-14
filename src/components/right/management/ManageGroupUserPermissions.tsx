@@ -4,23 +4,24 @@ import React, {
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { ApiChat, ApiChatBannedRights } from '../../../api/types';
+import type { ApiChat, ApiChatBannedRights, ApiChatMember } from '../../../api/types';
 import { ManagementScreens } from '../../../types';
 
-import { selectChat } from '../../../global/selectors';
-import stopEvent from '../../../util/stopEvent';
+import { selectChat, selectChatFullInfo } from '../../../global/selectors';
 import buildClassName from '../../../util/buildClassName';
-import useManagePermissions from '../hooks/useManagePermissions';
-import useLang from '../../../hooks/useLang';
+import stopEvent from '../../../util/stopEvent';
+
 import useFlag from '../../../hooks/useFlag';
 import useHistoryBack from '../../../hooks/useHistoryBack';
+import useLang from '../../../hooks/useLang';
+import useManagePermissions from '../hooks/useManagePermissions';
 
 import PrivateChatInfo from '../../common/PrivateChatInfo';
-import ListItem from '../../ui/ListItem';
 import Checkbox from '../../ui/Checkbox';
-import FloatingActionButton from '../../ui/FloatingActionButton';
-import Spinner from '../../ui/Spinner';
 import ConfirmDialog from '../../ui/ConfirmDialog';
+import FloatingActionButton from '../../ui/FloatingActionButton';
+import ListItem from '../../ui/ListItem';
+import Spinner from '../../ui/Spinner';
 
 type OwnProps = {
   chatId: string;
@@ -33,6 +34,8 @@ type OwnProps = {
 
 type StateProps = {
   chat?: ApiChat;
+  hasFullInfo?: boolean;
+  members?: ApiChatMember[];
   isFormFullyDisabled?: boolean;
 };
 
@@ -45,6 +48,8 @@ const ITEMS_COUNT = 9;
 const ManageGroupUserPermissions: FC<OwnProps & StateProps> = ({
   chat,
   selectedChatMemberId,
+  hasFullInfo,
+  members,
   onScreenSelect,
   isFormFullyDisabled,
   onClose,
@@ -53,12 +58,12 @@ const ManageGroupUserPermissions: FC<OwnProps & StateProps> = ({
   const { updateChatMemberBannedRights } = getActions();
 
   const selectedChatMember = useMemo(() => {
-    if (!chat || !chat.fullInfo || !chat.fullInfo.members) {
+    if (!members) {
       return undefined;
     }
 
-    return chat.fullInfo.members.find(({ userId }) => userId === selectedChatMemberId);
-  }, [chat, selectedChatMemberId]);
+    return members.find(({ userId }) => userId === selectedChatMemberId);
+  }, [members, selectedChatMemberId]);
 
   const {
     permissions, havePermissionChanged, isLoading, handlePermissionChange, setIsLoading,
@@ -74,10 +79,10 @@ const ManageGroupUserPermissions: FC<OwnProps & StateProps> = ({
   });
 
   useEffect(() => {
-    if (chat?.fullInfo && selectedChatMemberId && !selectedChatMember) {
+    if (hasFullInfo && selectedChatMemberId && !selectedChatMember) {
       onScreenSelect(ManagementScreens.GroupPermissions);
     }
-  }, [chat, onScreenSelect, selectedChatMember, selectedChatMemberId]);
+  }, [chat, hasFullInfo, onScreenSelect, selectedChatMember, selectedChatMemberId]);
 
   const handleSavePermissions = useCallback(() => {
     if (!chat || !selectedChatMemberId) {
@@ -142,7 +147,7 @@ const ManageGroupUserPermissions: FC<OwnProps & StateProps> = ({
 
           <h3 className="section-heading mt-4" dir="auto">{lang('UserRestrictionsCanDo')}</h3>
 
-          <div className="ListItem no-selection">
+          <div className="ListItem">
             <Checkbox
               name="sendPlain"
               checked={!permissions.sendPlain}
@@ -153,7 +158,7 @@ const ManageGroupUserPermissions: FC<OwnProps & StateProps> = ({
             />
           </div>
 
-          <div className="ListItem no-selection">
+          <div className="ListItem">
             <Checkbox
               name="sendMedia"
               checked={!permissions.sendMedia}
@@ -173,7 +178,7 @@ const ManageGroupUserPermissions: FC<OwnProps & StateProps> = ({
                 isMediaDropdownOpen && 'DropdownList--open',
               )}
             >
-              <div className="ListItem no-selection">
+              <div className="ListItem">
                 <Checkbox
                   name="sendPhotos"
                   checked={!permissions.sendPhotos}
@@ -184,7 +189,7 @@ const ManageGroupUserPermissions: FC<OwnProps & StateProps> = ({
                 />
               </div>
 
-              <div className="ListItem no-selection">
+              <div className="ListItem">
                 <Checkbox
                   name="sendVideos"
                   checked={!permissions.sendVideos}
@@ -195,7 +200,7 @@ const ManageGroupUserPermissions: FC<OwnProps & StateProps> = ({
                 />
               </div>
 
-              <div className="ListItem no-selection">
+              <div className="ListItem">
                 <Checkbox
                   name="sendStickers"
                   checked={!permissions.sendStickers && !permissions.sendGifs}
@@ -206,7 +211,7 @@ const ManageGroupUserPermissions: FC<OwnProps & StateProps> = ({
                 />
               </div>
 
-              <div className="ListItem no-selection">
+              <div className="ListItem">
                 <Checkbox
                   name="sendAudios"
                   checked={!permissions.sendAudios}
@@ -217,7 +222,7 @@ const ManageGroupUserPermissions: FC<OwnProps & StateProps> = ({
                 />
               </div>
 
-              <div className="ListItem no-selection">
+              <div className="ListItem">
                 <Checkbox
                   name="sendDocs"
                   checked={!permissions.sendDocs}
@@ -228,7 +233,7 @@ const ManageGroupUserPermissions: FC<OwnProps & StateProps> = ({
                 />
               </div>
 
-              <div className="ListItem no-selection">
+              <div className="ListItem">
                 <Checkbox
                   name="sendVoices"
                   checked={!permissions.sendVoices}
@@ -239,7 +244,7 @@ const ManageGroupUserPermissions: FC<OwnProps & StateProps> = ({
                 />
               </div>
 
-              <div className="ListItem no-selection">
+              <div className="ListItem">
                 <Checkbox
                   name="sendRoundvideos"
                   checked={!permissions.sendRoundvideos}
@@ -250,7 +255,7 @@ const ManageGroupUserPermissions: FC<OwnProps & StateProps> = ({
                 />
               </div>
 
-              <div className="ListItem no-selection">
+              <div className="ListItem">
                 <Checkbox
                   name="embedLinks"
                   checked={!permissions.embedLinks}
@@ -261,7 +266,7 @@ const ManageGroupUserPermissions: FC<OwnProps & StateProps> = ({
                 />
               </div>
 
-              <div className="ListItem no-selection">
+              <div className="ListItem">
                 <Checkbox
                   name="sendPolls"
                   checked={!permissions.sendPolls}
@@ -276,7 +281,7 @@ const ManageGroupUserPermissions: FC<OwnProps & StateProps> = ({
 
           <div className={buildClassName('part', isMediaDropdownOpen && 'shifted')}>
 
-            <div className="ListItem no-selection">
+            <div className="ListItem">
               <Checkbox
                 name="inviteUsers"
                 checked={!permissions.inviteUsers}
@@ -286,7 +291,7 @@ const ManageGroupUserPermissions: FC<OwnProps & StateProps> = ({
                 onChange={handlePermissionChange}
               />
             </div>
-            <div className="ListItem no-selection">
+            <div className="ListItem">
               <Checkbox
                 name="pinMessages"
                 checked={!permissions.pinMessages}
@@ -296,7 +301,7 @@ const ManageGroupUserPermissions: FC<OwnProps & StateProps> = ({
                 onChange={handlePermissionChange}
               />
             </div>
-            <div className="ListItem no-selection">
+            <div className="ListItem">
               <Checkbox
                 name="changeInfo"
                 checked={!permissions.changeInfo}
@@ -307,7 +312,7 @@ const ManageGroupUserPermissions: FC<OwnProps & StateProps> = ({
               />
             </div>
             {isForum && (
-              <div className="ListItem no-selection">
+              <div className="ListItem">
                 <Checkbox
                   name="manageTopics"
                   checked={!permissions.manageTopics}
@@ -344,7 +349,7 @@ const ManageGroupUserPermissions: FC<OwnProps & StateProps> = ({
         {isLoading ? (
           <Spinner color="white" />
         ) : (
-          <i className="icon-check" />
+          <i className="icon icon-check" />
         )}
       </FloatingActionButton>
 
@@ -363,8 +368,14 @@ const ManageGroupUserPermissions: FC<OwnProps & StateProps> = ({
 export default memo(withGlobal<OwnProps>(
   (global, { chatId, isPromotedByCurrentUser }): StateProps => {
     const chat = selectChat(global, chatId)!;
+    const fullInfo = selectChatFullInfo(global, chatId);
     const isFormFullyDisabled = !(chat.isCreator || isPromotedByCurrentUser);
 
-    return { chat, isFormFullyDisabled };
+    return {
+      chat,
+      isFormFullyDisabled,
+      hasFullInfo: Boolean(fullInfo),
+      members: fullInfo?.members,
+    };
   },
 )(ManageGroupUserPermissions));

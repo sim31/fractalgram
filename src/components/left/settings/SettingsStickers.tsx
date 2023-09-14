@@ -1,30 +1,31 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, {
   memo, useCallback, useMemo, useRef,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
-import { SettingsScreens } from '../../../types';
-import type { ISettings } from '../../../types';
 import type {
   ApiAvailableReaction,
   ApiReaction,
   ApiSticker,
   ApiStickerSet,
 } from '../../../api/types';
+import type { ISettings } from '../../../types';
+import { SettingsScreens } from '../../../types';
 
-import renderText from '../../common/helpers/renderText';
+import { selectCanPlayAnimatedEmojis } from '../../../global/selectors';
 import { pick } from '../../../util/iteratees';
 import { REM } from '../../common/helpers/mediaDimensions';
+import renderText from '../../common/helpers/renderText';
 
-import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
 import useHistoryBack from '../../../hooks/useHistoryBack';
+import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
 import useLang from '../../../hooks/useLang';
 
 import ReactionStaticEmoji from '../../common/ReactionStaticEmoji';
+import StickerSetCard from '../../common/StickerSetCard';
 import Checkbox from '../../ui/Checkbox';
 import ListItem from '../../ui/ListItem';
-import StickerSetCard from '../../common/StickerSetCard';
 
 const DEFAULT_REACTION_SIZE = 1.5 * REM;
 
@@ -36,14 +37,14 @@ type OwnProps = {
 
 type StateProps =
   Pick<ISettings, (
-    'shouldSuggestStickers' |
-    'shouldLoopStickers'
+    'shouldSuggestStickers' | 'shouldUpdateStickerSetOrder'
   )> & {
     addedSetIds?: string[];
     customEmojiSetIds?: string[];
     stickerSetsById: Record<string, ApiStickerSet>;
     defaultReaction?: ApiReaction;
     availableReactions?: ApiAvailableReaction[];
+    canPlayAnimatedEmojis: boolean;
   };
 
 const SettingsStickers: FC<OwnProps & StateProps> = ({
@@ -53,8 +54,9 @@ const SettingsStickers: FC<OwnProps & StateProps> = ({
   stickerSetsById,
   defaultReaction,
   shouldSuggestStickers,
-  shouldLoopStickers,
+  shouldUpdateStickerSetOrder,
   availableReactions,
+  canPlayAnimatedEmojis,
   onReset,
   onScreenSelect,
 }) => {
@@ -74,12 +76,12 @@ const SettingsStickers: FC<OwnProps & StateProps> = ({
     });
   }, [openStickerSet]);
 
-  const handleSuggestStickersChange = useCallback((newValue: boolean) => {
-    setSettingOption({ shouldSuggestStickers: newValue });
+  const handleSuggestStickerSetOrderChange = useCallback((newValue: boolean) => {
+    setSettingOption({ shouldUpdateStickerSetOrder: newValue });
   }, [setSettingOption]);
 
-  const handleShouldLoopStickersChange = useCallback((newValue: boolean) => {
-    setSettingOption({ shouldLoopStickers: newValue });
+  const handleSuggestStickersChange = useCallback((newValue: boolean) => {
+    setSettingOption({ shouldSuggestStickers: newValue });
   }, [setSettingOption]);
 
   const stickerSets = useMemo(() => (
@@ -98,11 +100,6 @@ const SettingsStickers: FC<OwnProps & StateProps> = ({
           label={lang('SuggestStickers')}
           checked={shouldSuggestStickers}
           onCheck={handleSuggestStickersChange}
-        />
-        <Checkbox
-          label={lang('LoopAnimatedStickers')}
-          checked={shouldLoopStickers}
-          onCheck={handleShouldLoopStickersChange}
         />
         <ListItem
           className="mt-4"
@@ -129,6 +126,19 @@ const SettingsStickers: FC<OwnProps & StateProps> = ({
           </ListItem>
         )}
       </div>
+      <div className="settings-item">
+        <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>
+          {lang('InstalledStickers.DynamicPackOrder')}
+        </h4>
+        <Checkbox
+          label={lang('InstalledStickers.DynamicPackOrder')}
+          checked={shouldUpdateStickerSetOrder}
+          onCheck={handleSuggestStickerSetOrderChange}
+        />
+        <p className="settings-item-description mt-3" dir="auto">
+          {lang('InstalledStickers.DynamicPackOrderInfo')}
+        </p>
+      </div>
       {stickerSets && (
         <div className="settings-item">
           <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>
@@ -141,6 +151,7 @@ const SettingsStickers: FC<OwnProps & StateProps> = ({
                 stickerSet={stickerSet}
                 observeIntersection={observeIntersectionForCovers}
                 onClick={handleStickerSetClick}
+                noPlay={!canPlayAnimatedEmojis}
               />
             ))}
           </div>
@@ -158,13 +169,14 @@ export default memo(withGlobal<OwnProps>(
     return {
       ...pick(global.settings.byKey, [
         'shouldSuggestStickers',
-        'shouldLoopStickers',
+        'shouldUpdateStickerSetOrder',
       ]),
       addedSetIds: global.stickers.added.setIds,
       customEmojiSetIds: global.customEmojis.added.setIds,
       stickerSetsById: global.stickers.setsById,
       defaultReaction: global.config?.defaultReaction,
       availableReactions: global.availableReactions,
+      canPlayAnimatedEmojis: selectCanPlayAnimatedEmojis(global),
     };
   },
 )(SettingsStickers));

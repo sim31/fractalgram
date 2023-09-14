@@ -1,40 +1,42 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useMemo, useRef,
+  memo, useEffect, useMemo, useRef,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
 import type { ApiChat, ApiMessage, ApiUser } from '../../../api/types';
 
+import { isUserId, stripCustomEmoji } from '../../../global/helpers';
 import {
+  selectCanAnimateInterface,
   selectChat,
   selectChatMessage,
-  selectSender,
-  selectForwardedSender,
-  selectUser,
   selectCurrentMessageList,
-  selectReplyingToId,
   selectEditingId,
-  selectEditingScheduledId,
   selectEditingMessage,
+  selectEditingScheduledId,
+  selectForwardedSender,
   selectIsChatWithSelf,
   selectIsCurrentUserPremium,
+  selectReplyingToId,
+  selectSender,
   selectTabState,
+  selectUser,
 } from '../../../global/selectors';
-import captureEscKeyListener from '../../../util/captureEscKeyListener';
 import buildClassName from '../../../util/buildClassName';
-import { isUserId, stripCustomEmoji } from '../../../global/helpers';
+import captureEscKeyListener from '../../../util/captureEscKeyListener';
 
-import useAsyncRendering from '../../right/hooks/useAsyncRendering';
-import useShowTransition from '../../../hooks/useShowTransition';
-import useLang from '../../../hooks/useLang';
 import useContextMenuHandlers from '../../../hooks/useContextMenuHandlers';
-import useContextMenuPosition from '../../../hooks/useContextMenuPosition';
+import useLang from '../../../hooks/useLang';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useMenuPosition from '../../../hooks/useMenuPosition';
+import useShowTransition from '../../../hooks/useShowTransition';
+import useAsyncRendering from '../../right/hooks/useAsyncRendering';
 
-import Button from '../../ui/Button';
 import EmbeddedMessage from '../../common/EmbeddedMessage';
-import MenuItem from '../../ui/MenuItem';
+import Button from '../../ui/Button';
 import Menu from '../../ui/Menu';
+import MenuItem from '../../ui/MenuItem';
 import MenuSeparator from '../../ui/MenuSeparator';
 
 import './ComposerEmbeddedMessage.scss';
@@ -50,6 +52,7 @@ type StateProps = {
   noCaptions?: boolean;
   forwardsHaveCaptions?: boolean;
   isCurrentUserPremium?: boolean;
+  isContextMenuDisabled?: boolean;
 };
 
 type OwnProps = {
@@ -71,6 +74,7 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
   forwardsHaveCaptions,
   shouldForceShowEditing,
   isCurrentUserPremium,
+  isContextMenuDisabled,
   onClear,
 }) => {
   const {
@@ -100,7 +104,7 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
     shouldRender, transitionClassNames,
   } = useShowTransition(canAnimate && isShown, undefined, !shouldAnimate, undefined, !shouldAnimate);
 
-  const clearEmbedded = useCallback(() => {
+  const clearEmbedded = useLastCallback(() => {
     if (replyingToId && !shouldForceShowEditing) {
       setReplyingToId({ messageId: undefined });
     } else if (editingId) {
@@ -109,44 +113,45 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
       exitForwardMode();
     }
     onClear?.();
-  }, [
-    replyingToId, shouldForceShowEditing, editingId, forwardedMessagesCount, onClear, setReplyingToId, setEditingId,
-    exitForwardMode,
-  ]);
+  });
 
   useEffect(() => (isShown ? captureEscKeyListener(clearEmbedded) : undefined), [isShown, clearEmbedded]);
 
-  const handleMessageClick = useCallback((): void => {
+  const handleMessageClick = useLastCallback((): void => {
     if (isForwarding) return;
     focusMessage({ chatId: message!.chatId, messageId: message!.id, noForumTopicPanel: true });
-  }, [focusMessage, isForwarding, message]);
+  });
 
-  const handleClearClick = useCallback((e: React.MouseEvent<HTMLButtonElement, MouseEvent>): void => {
+  const handleClearClick = useLastCallback((e: React.MouseEvent<HTMLButtonElement, MouseEvent>): void => {
     e.stopPropagation();
     clearEmbedded();
-  }, [clearEmbedded]);
+  });
 
-  const handleChangeRecipientClick = useCallback(() => {
+  const handleChangeRecipientClick = useLastCallback(() => {
     changeForwardRecipient();
-  }, [changeForwardRecipient]);
+  });
 
   const {
     isContextMenuOpen, contextMenuPosition, handleContextMenu,
     handleContextMenuClose, handleContextMenuHide,
   } = useContextMenuHandlers(ref);
 
-  const getTriggerElement = useCallback(() => ref.current, []);
-  const getRootElement = useCallback(() => ref.current!, []);
-  const getMenuElement = useCallback(() => ref.current!.querySelector('.forward-context-menu .bubble'), []);
+  const getTriggerElement = useLastCallback(() => ref.current);
+  const getRootElement = useLastCallback(() => ref.current!);
+  const getMenuElement = useLastCallback(() => ref.current!.querySelector('.forward-context-menu .bubble'));
 
   const {
     positionX, positionY, transformOriginX, transformOriginY, style: menuStyle,
-  } = useContextMenuPosition(
+  } = useMenuPosition(
     contextMenuPosition,
     getTriggerElement,
     getRootElement,
     getMenuElement,
   );
+
+  useEffect(() => {
+    if (!shouldRender) handleContextMenuClose();
+  }, [handleContextMenuClose, shouldRender]);
 
   const className = buildClassName('ComposerEmbeddedMessage', transitionClassNames);
 
@@ -187,9 +192,9 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
 
   return (
     <div className={className} ref={ref} onContextMenu={handleContextMenu} onClick={handleContextMenu}>
-      <div>
+      <div className="ComposerEmbeddedMessage_inner">
         <div className="embedded-left-icon">
-          <i className={leftIcon} />
+          <i className={buildClassName('icon', leftIcon)} />
         </div>
         <EmbeddedMessage
           className="inside-input"
@@ -198,7 +203,7 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
           customText={customText}
           title={editingId ? lang('EditMessage') : noAuthors ? lang('HiddenSendersNameDescription') : undefined}
           onClick={handleMessageClick}
-          hasContextMenu={isForwarding}
+          hasContextMenu={isForwarding && !isContextMenuDisabled}
         />
         <Button
           className="embedded-cancel"
@@ -208,9 +213,9 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
           ariaLabel={lang('Cancel')}
           onClick={handleClearClick}
         >
-          <i className="icon-close" />
+          <i className="icon icon-close" />
         </Button>
-        {isForwarding && (
+        {isForwarding && !isContextMenuDisabled && (
           <Menu
             isOpen={isContextMenuOpen}
             transformOriginX={transformOriginX}
@@ -224,7 +229,7 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
           >
             <MenuItem
               icon={!noAuthors ? 'message-succeeded' : undefined}
-              customIcon={noAuthors ? <i className="icon-placeholder" /> : undefined}
+              customIcon={noAuthors ? <i className="icon icon-placeholder" /> : undefined}
               // eslint-disable-next-line react/jsx-no-bind
               onClick={() => setForwardNoAuthors({
                 noAuthors: false,
@@ -234,7 +239,7 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
             </MenuItem>
             <MenuItem
               icon={noAuthors ? 'message-succeeded' : undefined}
-              customIcon={!noAuthors ? <i className="icon-placeholder" /> : undefined}
+              customIcon={!noAuthors ? <i className="icon icon-placeholder" /> : undefined}
               // eslint-disable-next-line react/jsx-no-bind
               onClick={() => setForwardNoAuthors({
                 noAuthors: true,
@@ -247,7 +252,7 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
                 <MenuSeparator />
                 <MenuItem
                   icon={!noCaptions ? 'message-succeeded' : undefined}
-                  customIcon={noCaptions ? <i className="icon-placeholder" /> : undefined}
+                  customIcon={noCaptions ? <i className="icon icon-placeholder" /> : undefined}
                   // eslint-disable-next-line react/jsx-no-bind
                   onClick={() => setForwardNoCaptions({
                     noCaptions: false,
@@ -257,7 +262,7 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
                 </MenuItem>
                 <MenuItem
                   icon={noCaptions ? 'message-succeeded' : undefined}
-                  customIcon={!noCaptions ? <i className="icon-placeholder" /> : undefined}
+                  customIcon={!noCaptions ? <i className="icon icon-placeholder" /> : undefined}
                   // eslint-disable-next-line react/jsx-no-bind
                   onClick={() => setForwardNoCaptions({
                     noCaptions: true,
@@ -295,7 +300,7 @@ export default memo(withGlobal<OwnProps>(
     const editingId = messageListType === 'scheduled'
       ? selectEditingScheduledId(global, chatId)
       : selectEditingId(global, chatId, threadId);
-    const shouldAnimate = global.settings.byKey.animationLevel >= 1;
+    const shouldAnimate = selectCanAnimateInterface(global);
     const isForwarding = toChatId === chatId;
     const forwardedMessages = forwardMessageIds?.map((id) => selectChatMessage(global, fromChatId!, id)!);
 
@@ -335,6 +340,9 @@ export default memo(withGlobal<OwnProps>(
       forward?.content.text && Object.keys(forward.content).length > 1
     ));
 
+    const isContextMenuDisabled = isForwarding && forwardMessageIds!.length === 1
+      && Boolean(message?.content.storyData);
+
     return {
       replyingToId,
       editingId,
@@ -346,6 +354,7 @@ export default memo(withGlobal<OwnProps>(
       noCaptions,
       forwardsHaveCaptions,
       isCurrentUserPremium: selectIsCurrentUserPremium(global),
+      isContextMenuDisabled,
     };
   },
 )(ComposerEmbeddedMessage));

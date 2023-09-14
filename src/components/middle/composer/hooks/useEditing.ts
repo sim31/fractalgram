@@ -1,19 +1,27 @@
-import { useCallback, useEffect, useState } from '../../../../lib/teact/teact';
+import { useEffect, useState } from '../../../../lib/teact/teact';
 import { getActions } from '../../../../global';
 
 import type { ApiFormattedText, ApiMessage } from '../../../../api/types';
 import type { MessageListType } from '../../../../global/types';
 import type { Signal } from '../../../../util/signals';
+import { ApiMessageEntityTypes } from '../../../../api/types';
 
-import useEffectWithPrevDeps from '../../../../hooks/useEffectWithPrevDeps';
 import { EDITABLE_INPUT_CSS_SELECTOR } from '../../../../config';
-import parseMessageInput from '../../../../util/parseMessageInput';
-import focusEditableElement from '../../../../util/focusEditableElement';
+import { requestMeasure, requestNextMutation } from '../../../../lib/fasterdom/fasterdom';
 import { hasMessageMedia } from '../../../../global/helpers';
+import focusEditableElement from '../../../../util/focusEditableElement';
+import parseMessageInput from '../../../../util/parseMessageInput';
 import { getTextWithEntitiesAsHtml } from '../../../common/helpers/renderTextWithEntities';
-import { fastRaf } from '../../../../util/schedulers';
+
+import { useDebouncedResolver } from '../../../../hooks/useAsyncResolvers';
 import useBackgroundMode from '../../../../hooks/useBackgroundMode';
 import useBeforeUnload from '../../../../hooks/useBeforeUnload';
+import useDerivedSignal from '../../../../hooks/useDerivedSignal';
+import useEffectWithPrevDeps from '../../../../hooks/useEffectWithPrevDeps';
+import useLastCallback from '../../../../hooks/useLastCallback';
+
+const URL_ENTITIES = new Set<string>([ApiMessageEntityTypes.TextUrl, ApiMessageEntityTypes.Url]);
+const DEBOUNCE_MS = 300;
 
 const useEditing = (
   getHtml: Signal<string>,
@@ -28,8 +36,8 @@ const useEditing = (
   editingDraft?: ApiFormattedText,
   replyingToId?: number,
 ): [VoidFunction, VoidFunction, boolean] => {
-  const { editMessage, setEditingDraft } = getActions();
-  const [shouldForceShowEditing, setShouldForceShowEditing] = useState<boolean>();
+  const { editMessage, setEditingDraft, toggleMessageWebPage } = getActions();
+  const [shouldForceShowEditing, setShouldForceShowEditing] = useState(false);
 
   useEffectWithPrevDeps(([prevEditedMessage, prevReplyingToId]) => {
     if (!editedMessage) {
@@ -51,15 +59,29 @@ const useEditing = (
 
     setHtml(html);
     setShouldForceShowEditing(true);
-    // `fastRaf` would execute syncronously in this case
-    requestAnimationFrame(() => {
+
+    requestNextMutation(() => {
       const messageInput = document.querySelector<HTMLDivElement>(EDITABLE_INPUT_CSS_SELECTOR);
       if (messageInput) {
         focusEditableElement(messageInput, true);
       }
     });
-    // eslint-disable-next-line react-hooks-static-deps/exhaustive-deps -- `as const` not yet supported by linter
-  }, [editedMessage, replyingToId, setHtml] as const);
+  }, [editedMessage, replyingToId, editingDraft, setHtml]);
+
+  useEffect(() => {
+    if (!editedMessage) {
+      return;
+    }
+
+    const shouldSetNoWebPage = !('webPage' in editedMessage.content)
+      && editedMessage.content.text?.entities?.some((entity) => URL_ENTITIES.has(entity.type));
+
+    toggleMessageWebPage({
+      chatId,
+      threadId,
+      noWebPage: shouldSetNoWebPage,
+    });
+  }, [chatId, threadId, editedMessage]);
 
   useEffect(() => {
     if (!editedMessage) return undefined;
@@ -73,26 +95,54 @@ const useEditing = (
     };
   }, [chatId, editedMessage, getHtml, setEditingDraft, threadId, type]);
 
-  const restoreNewDraftAfterEditing = useCallback(() => {
-    if (!draft) return;
-    // Run 1 frame after editing draft reset
-    fastRaf(() => {
-      setHtml(getTextWithEntitiesAsHtml(draft));
-      const messageInput = document.querySelector<HTMLDivElement>(EDITABLE_INPUT_CSS_SELECTOR);
-      if (messageInput) {
-        requestAnimationFrame(() => {
-          focusEditableElement(messageInput, true);
-        });
-      }
-    });
-  }, [draft, setHtml]);
+  const detectLinkDebounced = useDebouncedResolver(() => {
+    if (!editedMessage) return false;
 
-  const handleEditCancel = useCallback(() => {
+    const edited = parseMessageInput(getHtml());
+    return !('webPage' in editedMessage.content)
+      && editedMessage.content.text?.entities?.some((entity) => URL_ENTITIES.has(entity.type))
+      && !(edited.entities?.some((entity) => URL_ENTITIES.has(entity.type)));
+  }, [editedMessage, getHtml], DEBOUNCE_MS, true);
+
+  const getShouldResetNoWebPageDebounced = useDerivedSignal(detectLinkDebounced, [detectLinkDebounced, getHtml], true);
+
+  useEffectWithPrevDeps(([prevEditedMessage]) => {
+    if (!editedMessage || prevEditedMessage?.id !== editedMessage.id) {
+      return;
+    }
+
+    if (getShouldResetNoWebPageDebounced()) {
+      toggleMessageWebPage({
+        chatId,
+        threadId,
+        noWebPage: false,
+      });
+    }
+  }, [editedMessage, chatId, getHtml, threadId, getShouldResetNoWebPageDebounced]);
+
+  const restoreNewDraftAfterEditing = useLastCallback(() => {
+    if (!draft) return;
+
+    // Run one frame after editing draft reset
+    requestMeasure(() => {
+      setHtml(getTextWithEntitiesAsHtml(draft));
+
+      // Wait one more frame until new HTML is rendered
+      requestNextMutation(() => {
+        const messageInput = document.querySelector<HTMLDivElement>(EDITABLE_INPUT_CSS_SELECTOR);
+        if (messageInput) {
+          focusEditableElement(messageInput, true);
+        }
+      });
+    });
+  });
+
+  const handleEditCancel = useLastCallback(() => {
     resetComposer();
     restoreNewDraftAfterEditing();
-  }, [resetComposer, restoreNewDraftAfterEditing]);
+  });
 
-  const handleEditComplete = useCallback(() => {
+  const handleEditComplete = useLastCallback(() => {
     const { text, entities } = parseMessageInput(getHtml());
 
     if (!editedMessage) {
@@ -105,15 +155,16 @@ const useEditing = (
     }
 
     editMessage({
+      messageList: { chatId, threadId, type },
       text,
       entities,
     });
 
     resetComposer();
     restoreNewDraftAfterEditing();
-  }, [editMessage, editedMessage, getHtml, openDeleteModal, resetComposer, restoreNewDraftAfterEditing]);
+  });
 
-  const handleBlur = useCallback(() => {
+  const handleBlur = useLastCallback(() => {
     if (!editedMessage) return;
     const edited = parseMessageInput(getHtml());
     const update = edited.text.length ? edited : undefined;
@@ -121,7 +172,7 @@ const useEditing = (
     setEditingDraft({
       chatId, threadId, type, text: update,
     });
-  }, [chatId, editedMessage, getHtml, setEditingDraft, threadId, type]);
+  });
 
   useBackgroundMode(handleBlur);
   useBeforeUnload(handleBlur);

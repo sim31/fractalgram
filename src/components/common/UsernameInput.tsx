@@ -1,9 +1,8 @@
+import type { FC } from '../../lib/teact/teact';
 import React, {
-  useState, useCallback, memo, useEffect, useMemo,
+  memo, useCallback, useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
 import { getActions } from '../../global';
-
-import type { FC } from '../../lib/teact/teact';
 
 import { TME_LINK_PREFIX } from '../../config';
 import { debounce } from '../../util/schedulers';
@@ -88,7 +87,17 @@ const UsernameInput: FC<OwnProps> = ({
   }, [asLink, currentUsername]);
 
   const handleUsernameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const newUsername = e.target.value.trim().replace(LINK_PREFIX_REGEX, '');
+    const value = e.target.value.trim();
+    // Prevent prefix editing
+    if (asLink && !value.match(LINK_PREFIX_REGEX)) {
+      if (!value.length) {
+        setUsername('');
+        onChange?.('');
+      }
+      return;
+    }
+    const newUsername = value.replace(LINK_PREFIX_REGEX, '');
+
     setUsername(newUsername);
 
     const isValid = isUsernameValid(newUsername);

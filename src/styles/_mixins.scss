@@ -1,17 +1,28 @@
 // @optimization
 @mixin while-transition() {
-  .Transition > div:not(.Transition__slide--active) & {
+  .Transition_slide:not(.Transition_slide-active) & {
     @content;
   }
 }
 
-@mixin overflow-y-overlay() {
-  @supports (overflow-y: overlay) {
-    overflow-y: overlay;
+@mixin adapt-padding-to-scrollbar($padding) {
+  padding-inline-end: calc($padding - var(--scrollbar-width));
+}
 
-    //Workaround for Android <= 9
-    overflow-x: hidden;
-  }
+@mixin adapt-margin-to-scrollbar($margin) {
+  margin-inline-end: calc($margin - var(--scrollbar-width));
+}
+
+@mixin gradient-border-top($width, $cutout: 0px) {
+  mask-image: linear-gradient(transparent $cutout, black $width);
+}
+
+@mixin gradient-border-bottom($width, $cutout: 0px) {
+  mask-image: linear-gradient(to top, transparent $cutout, black $width);
+}
+
+@mixin gradient-border-top-bottom($top, $bottom) {
+  mask-image: linear-gradient(transparent 0%, black $top, black calc(100% - $bottom), transparent 100%);
 }
 
 @mixin reset-range() {
@@ -29,7 +40,7 @@
 
     &::-ms-track {
       width: 100%;
-      cursor: pointer;
+      cursor: var(--custom-cursor, pointer);
 
       background: transparent;
       border-color: transparent;
@@ -45,11 +56,45 @@
     }
 
     &::-webkit-slider-runnable-track {
-      cursor: pointer;
+      cursor: var(--custom-cursor, pointer);
     }
 
     &::-moz-range-track, &::-moz-range-progress {
-      cursor: pointer;
+      cursor: var(--custom-cursor, pointer);
     }
+  }
+}
+
+@mixin header-mobile {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: 2.875rem;
+  box-shadow: 0 0.125rem 0.125rem var(--color-light-shadow);
+
+  display: flex;
+  flex-direction: row-reverse;
+  padding-top: 0.375rem;
+  padding-bottom: 0.375rem;
+  padding-left: max(0.75rem, env(safe-area-inset-left));
+  padding-right: max(0.5rem, env(safe-area-inset-right));
+  background: var(--color-background);
+
+  // Target: Old Firefox (Waterfox Classic)
+  @supports not (padding-left: max(0.75rem, env(safe-area-inset-left))) {
+    padding-left: 0.75rem;
+    padding-right: 0.5rem;
+  }
+
+  &::before {
+    content: "";
+    display: block;
+    position: absolute;
+    top: -0.1875rem;
+    left: 0;
+    right: 0;
+    height: 0.125rem;
+    box-shadow: 0 0.125rem 0.125rem var(--color-light-shadow);
   }
 }

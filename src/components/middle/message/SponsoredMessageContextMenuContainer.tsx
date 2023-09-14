@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback } from '../../../lib/teact/teact';
+import React, { memo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiSponsoredMessage } from '../../../api/types';
@@ -8,8 +8,9 @@ import type { IAnchorPosition } from '../../../types';
 import { selectIsCurrentUserPremium, selectIsPremiumPurchaseBlocked } from '../../../global/selectors';
 import buildClassName from '../../../util/buildClassName';
 
-import useShowTransition from '../../../hooks/useShowTransition';
 import useFlag from '../../../hooks/useFlag';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useShowTransition from '../../../hooks/useShowTransition';
 
 import MessageContextMenu from './MessageContextMenu';
 
@@ -34,21 +35,30 @@ const SponsoredMessageContextMenuContainer: FC<OwnProps & StateProps> = ({
   onCloseAnimationEnd,
   canBuyPremium,
 }) => {
-  const { openPremiumModal } = getActions();
+  const { openPremiumModal, showDialog } = getActions();
 
   const [isMenuOpen, , closeMenu] = useFlag(true);
   const { transitionClassNames } = useShowTransition(isMenuOpen, onCloseAnimationEnd, undefined, false);
 
-  const handleAboutAdsOpen = useCallback(() => {
+  const handleAboutAdsOpen = useLastCallback(() => {
     onAboutAds();
     closeMenu();
-  }, [closeMenu, onAboutAds]);
+  });
 
-  const handleSponsoredHide = useCallback(() => {
+  const handleSponsoredHide = useLastCallback(() => {
     closeMenu();
     openPremiumModal();
     onClose();
-  }, [closeMenu, onClose, openPremiumModal]);
+  });
+
+  const handleSponsorInfo = useLastCallback(() => {
+    closeMenu();
+    showDialog({
+      data: {
+        message: [message.sponsorInfo, message.additionalInfo].join('\n'),
+      },
+    });
+  });
 
   if (!anchor) {
     return undefined;
@@ -64,6 +74,7 @@ const SponsoredMessageContextMenuContainer: FC<OwnProps & StateProps> = ({
         onCloseAnimationEnd={closeMenu}
         onAboutAds={handleAboutAdsOpen}
         onSponsoredHide={canBuyPremium ? handleSponsoredHide : undefined}
+        onSponsorInfo={handleSponsorInfo}
       />
     </div>
   );

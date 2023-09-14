@@ -1,28 +1,30 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { useCallback, memo } from '../../lib/teact/teact';
+import React, { memo, useCallback } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type { ApiMessage } from '../../api/types';
 import type { IAlbum } from '../../types';
 
 import {
+  getPrivateChatUserId,
+  getUserFirstOrLastName,
+  isChatBasicGroup,
+  isChatSuperGroup,
+  isUserId,
+} from '../../global/helpers';
+import {
   selectAllowedMessageActions,
+  selectBot,
   selectChat,
   selectCurrentMessageList,
   selectUser,
 } from '../../global/selectors';
-import {
-  isUserId,
-  getUserFirstOrLastName,
-  getPrivateChatUserId,
-  isChatBasicGroup,
-  isChatSuperGroup,
-} from '../../global/helpers';
 import renderText from './helpers/renderText';
+
 import useLang from '../../hooks/useLang';
 
-import Modal from '../ui/Modal';
 import Button from '../ui/Button';
+import Modal from '../ui/Modal';
 
 export type OwnProps = {
   isOpen: boolean;
@@ -123,8 +125,9 @@ export default memo(withGlobal<OwnProps>(
     const contactName = chat && isUserId(chat.id)
       ? getUserFirstOrLastName(selectUser(global, getPrivateChatUserId(chat)!))
       : undefined;
+    const isChatWithBot = Boolean(selectBot(global, message.chatId));
 
-    const willDeleteForCurrentUserOnly = chat && isChatBasicGroup(chat) && !canDeleteForAll;
+    const willDeleteForCurrentUserOnly = (chat && isChatBasicGroup(chat) && !canDeleteForAll) || isChatWithBot;
     const willDeleteForAll = chat && isChatSuperGroup(chat);
 
     return {

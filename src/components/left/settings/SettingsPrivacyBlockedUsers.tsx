@@ -5,19 +5,20 @@ import { getActions, withGlobal } from '../../../global';
 import type { ApiChat, ApiCountryCode, ApiUser } from '../../../api/types';
 
 import { CHAT_HEIGHT_PX } from '../../../config';
-import { formatPhoneNumberWithCode } from '../../../util/phoneNumber';
 import { getMainUsername, isUserId } from '../../../global/helpers';
 import buildClassName from '../../../util/buildClassName';
-import useLang from '../../../hooks/useLang';
-import useHistoryBack from '../../../hooks/useHistoryBack';
-import useFlag from '../../../hooks/useFlag';
+import { formatPhoneNumberWithCode } from '../../../util/phoneNumber';
 
-import ListItem from '../../ui/ListItem';
-import FloatingActionButton from '../../ui/FloatingActionButton';
+import useFlag from '../../../hooks/useFlag';
+import useHistoryBack from '../../../hooks/useHistoryBack';
+import useLang from '../../../hooks/useLang';
+
 import Avatar from '../../common/Avatar';
+import FullNameTitle from '../../common/FullNameTitle';
+import FloatingActionButton from '../../ui/FloatingActionButton';
+import ListItem from '../../ui/ListItem';
 import Loading from '../../ui/Loading';
 import BlockUserModal from './BlockUserModal';
-import FullNameTitle from '../../common/FullNameTitle';
 
 type OwnProps = {
   isActive?: boolean;
@@ -39,13 +40,13 @@ const SettingsPrivacyBlockedUsers: FC<OwnProps & StateProps> = ({
   blockedIds,
   phoneCodeList,
 }) => {
-  const { unblockContact } = getActions();
+  const { unblockUser } = getActions();
 
   const lang = useLang();
   const [isBlockUserModalOpen, openBlockUserModal, closeBlockUserModal] = useFlag();
-  const handleUnblockClick = useCallback((contactId: string) => {
-    unblockContact({ contactId });
-  }, [unblockContact]);
+  const handleUnblockClick = useCallback((userId: string) => {
+    unblockUser({ userId });
+  }, [unblockUser]);
 
   useHistoryBack({
     isActive,
@@ -53,13 +54,13 @@ const SettingsPrivacyBlockedUsers: FC<OwnProps & StateProps> = ({
   });
 
   const blockedUsernamesById = useMemo(() => {
-    return blockedIds.reduce((acc, contactId) => {
-      const isPrivate = isUserId(contactId);
-      const user = isPrivate ? usersByIds[contactId] : undefined;
+    return blockedIds.reduce((acc, userId) => {
+      const isPrivate = isUserId(userId);
+      const user = isPrivate ? usersByIds[userId] : undefined;
       const mainUsername = user && !user.phoneNumber && getMainUsername(user);
 
       if (mainUsername) {
-        acc[contactId] = mainUsername;
+        acc[userId] = mainUsername;
       }
 
       return acc;
@@ -68,9 +69,9 @@ const SettingsPrivacyBlockedUsers: FC<OwnProps & StateProps> = ({
 
   function renderContact(contactId: string, i: number, viewportOffset: number) {
     const isPrivate = isUserId(contactId);
-    const user = isPrivate ? usersByIds[contactId] : undefined;
-    const chat = !isPrivate ? chatsByIds[contactId] : undefined;
-    const userOrChat = user || chat;
+    const user = usersByIds[contactId];
+    const chat = chatsByIds[contactId];
+    const peer = user || chat;
 
     const className = buildClassName(
       'Chat chat-item-clickable blocked-list-item small-icon',
@@ -81,7 +82,7 @@ const SettingsPrivacyBlockedUsers: FC<OwnProps & StateProps> = ({
 
     return (
       <ListItem
-        key={contactId}
+        key={`blocked_${contactId}`}
         className={className}
         ripple
         narrow
@@ -94,9 +95,12 @@ const SettingsPrivacyBlockedUsers: FC<OwnProps & StateProps> = ({
         }]}
         style={`top: ${(viewportOffset + i) * CHAT_HEIGHT_PX}px;`}
       >
-        <Avatar size="medium" user={user} chat={chat} />
+        <Avatar
+          size="medium"
+          peer={peer}
+        />
         <div className="contact-info" dir="auto">
-          {userOrChat && <FullNameTitle peer={userOrChat} />}
+          {peer && <FullNameTitle peer={peer} />}
           {user?.phoneNumber && (
             <div className="contact-phone" dir="auto">{formatPhoneNumberWithCode(phoneCodeList, user.phoneNumber)}</div>
           )}
@@ -117,7 +121,7 @@ const SettingsPrivacyBlockedUsers: FC<OwnProps & StateProps> = ({
 
         <div className="chat-list custom-scroll">
           {blockedIds?.length ? (
-            <div className="scroll-container">
+            <div className="scroll-container settings-item">
               {blockedIds!.map((contactId, i) => renderContact(contactId, i, 0))}
             </div>
           ) : blockedIds && !blockedIds.length ? (
@@ -133,7 +137,7 @@ const SettingsPrivacyBlockedUsers: FC<OwnProps & StateProps> = ({
         onClick={openBlockUserModal}
         ariaLabel={lang('BlockContact')}
       >
-        <i className="icon-add" />
+        <i className="icon icon-add" />
       </FloatingActionButton>
       <BlockUserModal
         isOpen={isBlockUserModalOpen}

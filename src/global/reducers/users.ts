@@ -1,13 +1,13 @@
-import type { TabState, GlobalState, TabArgs } from '../types';
-import type { ApiUser, ApiUserStatus } from '../../api/types';
+import type { ApiUser, ApiUserFullInfo, ApiUserStatus } from '../../api/types';
+import type { GlobalState, TabArgs, TabState } from '../types';
 
+import { areDeepEqual } from '../../util/areDeepEqual';
+import { getCurrentTabId } from '../../util/establishMultitabRole';
 import { omit, pick } from '../../util/iteratees';
 import { MEMO_EMPTY_ARRAY } from '../../util/memo';
+import { selectTabState } from '../selectors';
 import { updateChat } from './chats';
 import { updateTabState } from './tabs';
-import { selectTabState } from '../selectors';
-import { getCurrentTabId } from '../../util/establishMultitabRole';
-import { areDeepEqual } from '../../util/areDeepEqual';
 
 export function replaceUsers<T extends GlobalState>(global: T, newById: Record<string, ApiUser>): T {
   return {
@@ -83,15 +83,21 @@ export function addUsers<T extends GlobalState>(global: T, newById: Record<strin
   let isUpdated = false;
 
   const addedById = Object.keys(newById).reduce<Record<string, ApiUser>>((acc, id) => {
-    if (!byId[id] || (byId[id].isMin && !newById[id].isMin)) {
-      const updatedUser = getUpdatedUser(global, id, newById[id]);
-      if (updatedUser) {
-        acc[id] = updatedUser;
-        if (!isUpdated) {
-          isUpdated = true;
-        }
+    const existingUser = byId[id];
+    const newUser = newById[id];
+
+    if (existingUser && !existingUser.isMin && (newUser.isMin || existingUser.accessHash === newUser.accessHash)) {
+      return acc;
+    }
+
+    const updatedUser = getUpdatedUser(global, id, newUser);
+    if (updatedUser) {
+      acc[id] = updatedUser;
+      if (!isUpdated) {
+        isUpdated = true;
       }
     }
+
     return acc;
   }, {});
 
@@ -115,15 +121,8 @@ function getUpdatedUser(global: GlobalState, userId: string, userUpdate: Partial
   const user = byId[userId];
   const omitProps: (keyof ApiUser)[] = [];
 
-  const shouldIgnoreUndefinedFields = userUpdate.isMin && user && !user.isMin;
-  if (shouldIgnoreUndefinedFields) {
-    omitProps.push('isMin', 'accessHash');
-    Object.keys(userUpdate).forEach((key) => {
-      const prop = key as keyof ApiUser;
-      if (userUpdate[prop] === undefined) {
-        omitProps.push(prop);
-      }
-    });
+  if (userUpdate.isMin && user && !user.isMin) {
+    return undefined; // Do not apply updates from min constructor
   }
 
   if (areDeepEqual(user?.usernames, userUpdate.usernames)) {
@@ -133,7 +132,7 @@ function getUpdatedUser(global: GlobalState, userId: string, userUpdate: Partial
   const updatedUser = {
     ...user,
     ...omit(userUpdate, omitProps),
-  };
+  } as ApiUser;
 
   if (!updatedUser.id || !updatedUser.type) {
     return undefined;
@@ -160,6 +159,17 @@ export function deleteContact<T extends GlobalState>(global: T, userId: string):
       isContact: undefined,
     },
   });
+
+  global = {
+    ...global,
+    stories: {
+      ...global.stories,
+      orderedUserIds: {
+        active: global.stories.orderedUserIds.active.filter((id) => id !== userId),
+        archived: global.stories.orderedUserIds.archived.filter((id) => id !== userId),
+      },
+    },
+  };
 
   return updateChat(global, userId, {
     settings: undefined,
@@ -189,19 +199,13 @@ export function updateUserSearchFetchingStatus<T extends GlobalState>(
 }
 
 export function updateUserBlockedState<T extends GlobalState>(global: T, userId: string, isBlocked: boolean): T {
-  const { byId } = global.users;
-  const user = byId[userId];
-  if (!user || !user.fullInfo) {
+  const { fullInfoById } = global.users;
+  const fullInfo = fullInfoById[userId];
+  if (!fullInfo) {
     return global;
   }
 
-  return updateUser(global, userId, {
-    ...user,
-    fullInfo: {
-      ...user.fullInfo,
-      isBlocked,
-    },
-  });
+  return updateUserFullInfo(global, userId, { isBlocked });
 }
 
 export function replaceUserStatuses<T extends GlobalState>(global: T, newById: Record<string, ApiUserStatus>): T {
@@ -210,6 +214,26 @@ export function replaceUserStatuses<T extends GlobalState>(global: T, newById: R
     users: {
       ...global.users,
       statusesById: newById,
+    },
+  };
+}
+
+export function updateUserFullInfo<T extends GlobalState>(
+  global: T, userId: string, fullInfo: Partial<ApiUserFullInfo>,
+): T {
+  const userFullInfo = global.users.fullInfoById[userId];
+
+  return {
+    ...global,
+    users: {
+      ...global.users,
+      fullInfoById: {
+        ...global.users.fullInfoById,
+        [userId]: {
+          ...userFullInfo,
+          ...fullInfo,
+        },
+      },
     },
   };
 }

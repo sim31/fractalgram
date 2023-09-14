@@ -1,43 +1,51 @@
+import type { RefObject } from 'react';
 import React, {
-  memo, useCallback, useEffect, useRef, useState,
+  memo, useEffect, useState,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { FC } from '../../lib/teact/teact';
 import type { GlobalState } from '../../global/types';
+import type { FoldersActions } from '../../hooks/reducers/useFoldersReducer';
+import type { ReducerAction } from '../../hooks/useReducer';
 import { LeftColumnContent, SettingsScreens } from '../../types';
 
-import { IS_MAC_OS, IS_PWA, LAYERS_ANIMATION_NAME } from '../../util/environment';
+import { selectCurrentChat, selectIsForumPanelOpen, selectTabState } from '../../global/selectors';
 import captureEscKeyListener from '../../util/captureEscKeyListener';
-import { selectTabState, selectCurrentChat, selectIsForumPanelOpen } from '../../global/selectors';
+import { IS_APP, IS_MAC_OS, LAYERS_ANIMATION_NAME } from '../../util/windowEnvironment';
+
 import useFoldersReducer from '../../hooks/reducers/useFoldersReducer';
-import { useResize } from '../../hooks/useResize';
 import { useHotkeys } from '../../hooks/useHotkeys';
+import useLastCallback from '../../hooks/useLastCallback';
 import useSyncEffect from '../../hooks/useSyncEffect';
 
 import Transition from '../ui/Transition';
-import LeftMain from './main/LeftMain';
-import Settings from './settings/Settings.async';
-import NewChat from './newChat/NewChat.async';
 import ArchivedChats from './ArchivedChats.async';
+import LeftMain from './main/LeftMain';
+import NewChat from './newChat/NewChat.async';
+import Settings from './settings/Settings.async';
 
 import './LeftColumn.scss';
+
+interface OwnProps {
+  ref: RefObject<HTMLDivElement>;
+}
 
 type StateProps = {
   searchQuery?: string;
   searchDate?: number;
   isFirstChatFolderActive: boolean;
   shouldSkipHistoryAnimations?: boolean;
-  leftColumnWidth?: number;
   currentUserId?: string;
   hasPasscode?: boolean;
   nextSettingsScreen?: SettingsScreens;
+  nextFoldersAction?: ReducerAction<FoldersActions>;
   isChatOpen: boolean;
   isUpdateAvailable?: boolean;
   isForumPanelOpen?: boolean;
   forumPanelChatId?: string;
   isClosingSearch?: boolean;
   archiveSettings: GlobalState['archiveSettings'];
+  isArchivedStoryRibbonShown?: boolean;
 };
 
 enum ContentType {
@@ -54,22 +62,24 @@ enum ContentType {
 const RENDER_COUNT = Object.keys(ContentType).length / 2;
 const RESET_TRANSITION_DELAY_MS = 250;
 
-const LeftColumn: FC<StateProps> = ({
+function LeftColumn({
+  ref,
   searchQuery,
   searchDate,
   isFirstChatFolderActive,
   shouldSkipHistoryAnimations,
-  leftColumnWidth,
   currentUserId,
   hasPasscode,
   nextSettingsScreen,
+  nextFoldersAction,
   isChatOpen,
   isUpdateAvailable,
   isForumPanelOpen,
   forumPanelChatId,
   isClosingSearch,
   archiveSettings,
-}) => {
+  isArchivedStoryRibbonShown,
+}: OwnProps & StateProps) {
   const {
     setGlobalSearchQuery,
     setGlobalSearchClosing,
@@ -78,14 +88,10 @@ const LeftColumn: FC<StateProps> = ({
     setGlobalSearchDate,
     loadPasswordInfo,
     clearTwoFaError,
-    setLeftColumnWidth,
-    resetLeftColumnWidth,
     openChat,
     requestNextSettingsScreen,
   } = getActions();
 
-  // eslint-disable-next-line no-null/no-null
-  const resizeRef = useRef<HTMLDivElement>(null);
   const [content, setContent] = useState<LeftColumnContent>(LeftColumnContent.ChatList);
   const [settingsScreen, setSettingsScreen] = useState(SettingsScreens.Main);
   const [contactsFilter, setContactsFilter] = useState<string>('');
@@ -112,9 +118,10 @@ const LeftColumn: FC<StateProps> = ({
       break;
   }
 
-  const handleReset = useCallback((forceReturnToChatList?: true | Event) => {
+  const handleReset = useLastCallback((forceReturnToChatList?: true | Event) => {
     function fullReset() {
       setContent(LeftColumnContent.ChatList);
+      setSettingsScreen(SettingsScreens.Main);
       setContactsFilter('');
       setGlobalSearchClosing({ isClosing: true });
       resetChatCreation();
@@ -157,6 +164,7 @@ const LeftColumn: FC<StateProps> = ({
         case SettingsScreens.Notifications:
         case SettingsScreens.DataStorage:
         case SettingsScreens.Privacy:
+        case SettingsScreens.Performance:
         case SettingsScreens.ActiveSessions:
         case SettingsScreens.Language:
         case SettingsScreens.Stickers:
@@ -284,12 +292,17 @@ const LeftColumn: FC<StateProps> = ({
           setSettingsScreen(SettingsScreens.Folders);
           return;
 
+        case SettingsScreens.FoldersShare:
+          setSettingsScreen(SettingsScreens.FoldersEditFolder);
+          return;
+
         case SettingsScreens.FoldersIncludedChatsFromChatList:
         case SettingsScreens.FoldersExcludedChatsFromChatList:
           setSettingsScreen(SettingsScreens.FoldersEditFolderFromChatList);
           return;
 
         case SettingsScreens.FoldersEditFolderFromChatList:
+        case SettingsScreens.FoldersEditFolderInvites:
           setContent(LeftColumnContent.ChatList);
           setSettingsScreen(SettingsScreens.Main);
           return;
@@ -314,12 +327,9 @@ const LeftColumn: FC<StateProps> = ({
     }
 
     fullReset();
-  }, [
-    content, isFirstChatFolderActive, setGlobalSearchClosing, resetChatCreation, setGlobalSearchQuery,
-    setGlobalSearchDate, setGlobalSearchChatId, settingsScreen, hasPasscode,
-  ]);
+  });
 
-  const handleSearchQuery = useCallback((query: string) => {
+  const handleSearchQuery = useLastCallback((query: string) => {
     if (content === LeftColumnContent.Contacts) {
       setContactsFilter(query);
       return;
@@ -330,53 +340,67 @@ const LeftColumn: FC<StateProps> = ({
     if (query !== searchQuery) {
       setGlobalSearchQuery({ query });
     }
-  }, [content, searchQuery, setGlobalSearchQuery]);
+  });
 
-  const handleTopicSearch = useCallback(() => {
+  const handleTopicSearch = useLastCallback(() => {
     setContent(LeftColumnContent.GlobalSearch);
     setGlobalSearchQuery({ query: '' });
     setGlobalSearchChatId({ id: forumPanelChatId });
-  }, [forumPanelChatId, setGlobalSearchChatId, setGlobalSearchQuery]);
+  });
 
   useEffect(
-    () => (content !== LeftColumnContent.ChatList || (isFirstChatFolderActive && !isChatOpen && !isForumPanelOpen)
-      ? captureEscKeyListener(() => handleReset())
-      : undefined),
+    () => {
+      const isArchived = content === LeftColumnContent.Archived;
+      const isChatList = content === LeftColumnContent.ChatList;
+      const noChatOrForumOpen = !isChatOpen && !isForumPanelOpen;
+      // We listen for escape key only in these cases:
+      // 1. When we are in archived chats and no chat or forum is open.
+      // 2. When we are in any other screen except chat list and archived chat list.
+      // 3. When we are in chat list and first chat folder is active and no chat or forum is open.
+      if ((isArchived && noChatOrForumOpen) || (!isChatList && !isArchived)
+        || (isFirstChatFolderActive && noChatOrForumOpen)) {
+        return captureEscKeyListener(() => {
+          handleReset();
+        });
+      } else {
+        return undefined;
+      }
+    },
     [isFirstChatFolderActive, content, handleReset, isChatOpen, isForumPanelOpen],
   );
 
-  const handleHotkeySearch = useCallback((e: KeyboardEvent) => {
+  const handleHotkeySearch = useLastCallback((e: KeyboardEvent) => {
     if (content === LeftColumnContent.GlobalSearch) {
       return;
     }
 
     e.preventDefault();
     setContent(LeftColumnContent.GlobalSearch);
-  }, [content]);
+  });
 
-  const handleHotkeySavedMessages = useCallback((e: KeyboardEvent) => {
+  const handleHotkeySavedMessages = useLastCallback((e: KeyboardEvent) => {
     e.preventDefault();
     openChat({ id: currentUserId, shouldReplaceHistory: true });
-  }, [currentUserId, openChat]);
+  });
 
-  const handleArchivedChats = useCallback((e: KeyboardEvent) => {
+  const handleArchivedChats = useLastCallback((e: KeyboardEvent) => {
     e.preventDefault();
     setContent(LeftColumnContent.Archived);
-  }, []);
+  });
 
-  const handleHotkeySettings = useCallback((e: KeyboardEvent) => {
+  const handleHotkeySettings = useLastCallback((e: KeyboardEvent) => {
     e.preventDefault();
     setContent(LeftColumnContent.Settings);
-  }, []);
+  });
 
   useHotkeys({
     'Mod+Shift+F': handleHotkeySearch,
     'Mod+Shift+S': handleHotkeySavedMessages,
-    ...(IS_PWA && {
+    ...(IS_APP && {
       'Mod+0': handleHotkeySavedMessages,
       'Mod+9': handleArchivedChats,
     }),
-    ...(IS_MAC_OS && IS_PWA && { 'Mod+,': handleHotkeySettings }),
+    ...(IS_MAC_OS && IS_APP && { 'Mod+,': handleHotkeySettings }),
   });
 
   useEffect(() => {
@@ -393,112 +417,106 @@ const LeftColumn: FC<StateProps> = ({
       setSettingsScreen(nextSettingsScreen);
       requestNextSettingsScreen({ screen: undefined });
     }
-  }, [nextSettingsScreen, requestNextSettingsScreen]);
 
-  const {
-    initResize, resetResize, handleMouseUp,
-  } = useResize(resizeRef, (n) => setLeftColumnWidth({
-    leftColumnWidth: n,
-  }), resetLeftColumnWidth, leftColumnWidth, '--left-column-width');
+    if (nextFoldersAction) {
+      foldersDispatch(nextFoldersAction);
+    }
+  }, [foldersDispatch, nextFoldersAction, nextSettingsScreen, requestNextSettingsScreen]);
 
-  const handleSettingsScreenSelect = useCallback((screen: SettingsScreens) => {
+  const handleSettingsScreenSelect = useLastCallback((screen: SettingsScreens) => {
     setContent(LeftColumnContent.Settings);
     setSettingsScreen(screen);
-  }, []);
+  });
+
+  function renderContent(isActive: boolean) {
+    switch (contentType) {
+      case ContentType.Archived:
+        return (
+          <ArchivedChats
+            isActive={isActive}
+            onReset={handleReset}
+            onTopicSearch={handleTopicSearch}
+            foldersDispatch={foldersDispatch}
+            onSettingsScreenSelect={handleSettingsScreenSelect}
+            onLeftColumnContentChange={setContent}
+            isForumPanelOpen={isForumPanelOpen}
+            archiveSettings={archiveSettings}
+            isStoryRibbonShown={isArchivedStoryRibbonShown}
+          />
+        );
+      case ContentType.Settings:
+        return (
+          <Settings
+            isActive={isActive}
+            currentScreen={settingsScreen}
+            foldersState={foldersState}
+            foldersDispatch={foldersDispatch}
+            onScreenSelect={handleSettingsScreenSelect}
+            onReset={handleReset}
+            shouldSkipTransition={shouldSkipHistoryAnimations}
+          />
+        );
+      case ContentType.NewChannel:
+        return (
+          <NewChat
+            key={lastResetTime}
+            isActive={isActive}
+            isChannel
+            content={content}
+            onContentChange={setContent}
+            onReset={handleReset}
+          />
+        );
+      case ContentType.NewGroup:
+        return (
+          <NewChat
+            key={lastResetTime}
+            isActive={isActive}
+            content={content}
+            onContentChange={setContent}
+            onReset={handleReset}
+          />
+        );
+      default:
+        return (
+          <LeftMain
+            content={content}
+            isClosingSearch={isClosingSearch}
+            searchQuery={searchQuery}
+            searchDate={searchDate}
+            contactsFilter={contactsFilter}
+            foldersDispatch={foldersDispatch}
+            onContentChange={setContent}
+            onSearchQuery={handleSearchQuery}
+            onSettingsScreenSelect={handleSettingsScreenSelect}
+            onReset={handleReset}
+            shouldSkipTransition={shouldSkipHistoryAnimations}
+            isUpdateAvailable={isUpdateAvailable}
+            isForumPanelOpen={isForumPanelOpen}
+            onTopicSearch={handleTopicSearch}
+          />
+        );
+    }
+  }
 
   return (
-    <div
+    <Transition
+      ref={ref}
+      name={shouldSkipHistoryAnimations ? 'none' : LAYERS_ANIMATION_NAME}
+      renderCount={RENDER_COUNT}
+      activeKey={contentType}
+      shouldCleanup
+      cleanupExceptionKey={ContentType.Main}
+      shouldWrap
+      wrapExceptionKey={ContentType.Main}
       id="LeftColumn"
-      ref={resizeRef}
     >
-      <Transition
-        name={shouldSkipHistoryAnimations ? 'none' : LAYERS_ANIMATION_NAME}
-        renderCount={RENDER_COUNT}
-        activeKey={contentType}
-        shouldCleanup
-        cleanupExceptionKey={ContentType.Main}
-      >
-        {(isActive) => {
-          switch (contentType) {
-            case ContentType.Archived:
-              return (
-                <ArchivedChats
-                  isActive={isActive}
-                  onReset={handleReset}
-                  onTopicSearch={handleTopicSearch}
-                  foldersDispatch={foldersDispatch}
-                  onSettingsScreenSelect={handleSettingsScreenSelect}
-                  onLeftColumnContentChange={setContent}
-                  isForumPanelOpen={isForumPanelOpen}
-                  archiveSettings={archiveSettings}
-                />
-              );
-            case ContentType.Settings:
-              return (
-                <Settings
-                  isActive={isActive}
-                  currentScreen={settingsScreen}
-                  foldersState={foldersState}
-                  foldersDispatch={foldersDispatch}
-                  onScreenSelect={handleSettingsScreenSelect}
-                  onReset={handleReset}
-                  shouldSkipTransition={shouldSkipHistoryAnimations}
-                />
-              );
-            case ContentType.NewChannel:
-              return (
-                <NewChat
-                  key={lastResetTime}
-                  isActive={isActive}
-                  isChannel
-                  content={content}
-                  onContentChange={setContent}
-                  onReset={handleReset}
-                />
-              );
-            case ContentType.NewGroup:
-              return (
-                <NewChat
-                  key={lastResetTime}
-                  isActive={isActive}
-                  content={content}
-                  onContentChange={setContent}
-                  onReset={handleReset}
-                />
-              );
-            default:
-              return (
-                <LeftMain
-                  content={content}
-                  isClosingSearch={isClosingSearch}
-                  searchQuery={searchQuery}
-                  searchDate={searchDate}
-                  contactsFilter={contactsFilter}
-                  foldersDispatch={foldersDispatch}
-                  onContentChange={setContent}
-                  onSearchQuery={handleSearchQuery}
-                  onSettingsScreenSelect={handleSettingsScreenSelect}
-                  onReset={handleReset}
-                  shouldSkipTransition={shouldSkipHistoryAnimations}
-                  isUpdateAvailable={isUpdateAvailable}
-                  isForumPanelOpen={isForumPanelOpen}
-                  onTopicSearch={handleTopicSearch}
-                />
-              );
-          }
-        }}
-      </Transition>
-      <div
-        className="resize-handle"
-        onMouseDown={initResize}
-        onMouseUp={handleMouseUp}
-        onDoubleClick={resetResize}
-      />
-    </div>
+      {renderContent}
+    </Transition>
   );
-};
+}
 
-export default memo(withGlobal(
+export default memo(withGlobal<OwnProps>(
   (global): StateProps => {
     const tabState = selectTabState(global);
     const {
@@ -509,9 +527,12 @@ export default memo(withGlobal(
       shouldSkipHistoryAnimations,
       activeChatFolder,
       nextSettingsScreen,
+      nextFoldersAction,
+      storyViewer: {
+        isArchivedRibbonShown,
+      },
     } = tabState;
     const {
-      leftColumnWidth,
       currentUserId,
       passcode: {
         hasPasscode,
@@ -530,16 +551,17 @@ export default memo(withGlobal(
       searchDate: date,
       isFirstChatFolderActive: activeChatFolder === 0,
       shouldSkipHistoryAnimations,
-      leftColumnWidth,
       currentUserId,
       hasPasscode,
       nextSettingsScreen,
+      nextFoldersAction,
       isChatOpen,
       isUpdateAvailable,
       isForumPanelOpen,
       forumPanelChatId,
       isClosingSearch: tabState.globalSearch.isClosing,
       archiveSettings,
+      isArchivedStoryRibbonShown: isArchivedRibbonShown,
     };
   },
 )(LeftColumn));

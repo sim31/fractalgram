@@ -1,9 +1,11 @@
-import type { GroupCallParticipant } from '../../../lib/secret-sauce';
-import { THRESHOLD } from '../../../lib/secret-sauce';
 import type { FC } from '../../../lib/teact/teact';
 import React, { memo, useMemo } from '../../../lib/teact/teact';
 
+import type { GroupCallParticipant } from '../../../lib/secret-sauce';
+
+import { THRESHOLD } from '../../../lib/secret-sauce';
 import { LOCAL_TGS_URLS } from '../../common/helpers/animatedAssets';
+
 import usePrevious from '../../../hooks/usePrevious';
 
 import AnimatedIcon from '../../common/AnimatedIcon';
@@ -11,11 +13,13 @@ import AnimatedIcon from '../../common/AnimatedIcon';
 type OwnProps = {
   participant: GroupCallParticipant;
   noColor?: boolean;
+  className?: string;
 };
 
 const OutlinedMicrophoneIcon: FC<OwnProps> = ({
   participant,
   noColor,
+  className,
 }) => {
   const { isMuted, isMutedByMe } = participant;
   const isSpeaking = (participant.amplitude || 0) > THRESHOLD;
@@ -51,21 +55,36 @@ const OutlinedMicrophoneIcon: FC<OwnProps> = ({
     // eslint-disable-next-line
   }, [isMuted, shouldRaiseHand, isRaiseHand]);
 
-  const microphoneColor: [number, number, number] | undefined = useMemo(() => {
-    return noColor ? [0xff, 0xff, 0xff] : (
-      isRaiseHand ? [0x4d, 0xa6, 0xe0]
-        : (shouldRaiseHand || isMutedByMe ? [0xFF, 0x70, 0x6F] : (
-          isSpeaking ? [0x57, 0xBC, 0x6C] : [0x84, 0x8D, 0x94]
-        ))
-    );
+  const microphoneColor: string = useMemo(() => {
+    if (noColor) {
+      return '#ffffff';
+    }
+
+    if (isRaiseHand) {
+      return '#4da6e0';
+    }
+
+    if (shouldRaiseHand || isMutedByMe) {
+      return '#ff706f';
+    }
+
+    if (isSpeaking) {
+      return '#57bc6c';
+    }
+
+    return '#aaaaaa';
   }, [noColor, isRaiseHand, shouldRaiseHand, isMutedByMe, isSpeaking]);
 
   return (
     <AnimatedIcon
       tgsUrl={LOCAL_TGS_URLS.VoiceOutlined}
+      play={playSegment.toString()}
       playSegment={playSegment}
       size={28}
       color={microphoneColor}
+      className={className}
+      forceAlways
+      nonInteractive
     />
   );
 };

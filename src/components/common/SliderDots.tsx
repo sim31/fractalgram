@@ -2,10 +2,11 @@ import type { FC } from '../../lib/teact/teact';
 import React, { memo, useCallback } from '../../lib/teact/teact';
 
 import buildClassName from '../../util/buildClassName';
+import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
+
+import Button from '../ui/Button';
 
 import styles from './SliderDots.module.scss';
-import { IS_TOUCH_ENV } from '../../util/environment';
-import Button from '../ui/Button';
 
 type OwnProps = {
   length: number;
@@ -45,7 +46,7 @@ const SliderDots: FC<OwnProps> = ({
           round
           onClick={handleGoBack}
         >
-          <i className="icon-previous" />
+          <i className="icon icon-previous" />
         </Button>
       )}
       <div className={styles.root} style={`--start-from: ${startFrom}; --length: ${length}; --count: ${count};`}>
@@ -80,7 +81,7 @@ const SliderDots: FC<OwnProps> = ({
           disabled={active === length - 1}
           onClick={handleGoForward}
         >
-          <i className="icon-next" />
+          <i className="icon icon-next" />
         </Button>
       )}
     </div>

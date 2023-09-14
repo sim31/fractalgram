@@ -1,26 +1,27 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, {
-  memo, useCallback, useMemo, useRef,
+  memo, useMemo, useRef,
 } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
-import type { ActiveReaction } from '../../../global/types';
 import type { ApiAvailableReaction, ApiReaction, ApiStickerSet } from '../../../api/types';
+import type { ActiveReaction } from '../../../global/types';
 import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
 
-import buildClassName from '../../../util/buildClassName';
 import { isSameReaction } from '../../../global/helpers';
+import buildClassName from '../../../util/buildClassName';
 import { REM } from '../../common/helpers/mediaDimensions';
 
-import useMedia from '../../../hooks/useMedia';
-import useShowTransition from '../../../hooks/useShowTransition';
 import useFlag from '../../../hooks/useFlag';
 import { useIsIntersecting } from '../../../hooks/useIntersectionObserver';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useMedia from '../../../hooks/useMedia';
+import useShowTransition from '../../../hooks/useShowTransition';
 import useCustomEmoji from '../../common/hooks/useCustomEmoji';
 
+import AnimatedSticker from '../../common/AnimatedSticker';
 import CustomEmoji from '../../common/CustomEmoji';
 import ReactionStaticEmoji from '../../common/ReactionStaticEmoji';
-import AnimatedSticker from '../../common/AnimatedSticker';
 import CustomEmojiEffect from './CustomEmojiEffect';
 
 import styles from './ReactionAnimatedEmoji.module.scss';
@@ -31,6 +32,7 @@ type OwnProps = {
   availableReactions?: ApiAvailableReaction[];
   genericEffects?: ApiStickerSet;
   observeIntersection?: ObserveFn;
+  withEffects?: boolean;
 };
 
 const CENTER_ICON_SIZE = 2.5 * REM;
@@ -42,6 +44,7 @@ const ReactionAnimatedEmoji: FC<OwnProps> = ({
   activeReactions,
   availableReactions,
   observeIntersection,
+  withEffects,
 }) => {
   const { stopActiveReaction } = getActions();
 
@@ -55,7 +58,7 @@ const ReactionAnimatedEmoji: FC<OwnProps> = ({
   ), [availableReactions, reaction]);
   const centerIconId = availableReaction?.centerIcon?.id;
 
-  const customEmoji = useCustomEmoji(isCustom ? reaction.documentId : undefined);
+  const { customEmoji } = useCustomEmoji(isCustom ? reaction.documentId : undefined);
 
   const assignedEffectId = useMemo(() => {
     if (!isCustom) return availableReaction?.aroundAnimation?.id;
@@ -93,16 +96,16 @@ const ReactionAnimatedEmoji: FC<OwnProps> = ({
     activeReactions?.find((active) => isSameReaction(active.reaction, reaction))
   ), [activeReactions, reaction]);
 
-  const shouldPlay = Boolean(activeReaction && (isCustom || mediaDataCenterIcon) && mediaDataEffect);
+  const shouldPlay = Boolean(withEffects && activeReaction && (isCustom || mediaDataCenterIcon) && mediaDataEffect);
   const {
     shouldRender: shouldRenderAnimation,
     transitionClassNames: animationClassNames,
   } = useShowTransition(shouldPlay, undefined, true, 'slow');
 
-  const handleEnded = useCallback(() => {
+  const handleEnded = useLastCallback(() => {
     if (!activeReaction?.messageId) return;
     stopActiveReaction({ messageId: activeReaction.messageId, reaction });
-  }, [activeReaction?.messageId, reaction, stopActiveReaction]);
+  });
 
   const [isAnimationLoaded, markAnimationLoaded, unmarkAnimationLoaded] = useFlag();
   const shouldRenderStatic = !isCustom && (!shouldPlay || !isAnimationLoaded);
@@ -132,7 +135,7 @@ const ReactionAnimatedEmoji: FC<OwnProps> = ({
             tgsUrl={mediaDataEffect}
             play={isIntersecting}
             noLoop
-            forceOnHeavyAnimation
+            forceAlways
             onEnded={handleEnded}
           />
           {isCustom ? (
@@ -145,7 +148,7 @@ const ReactionAnimatedEmoji: FC<OwnProps> = ({
               tgsUrl={mediaDataCenterIcon}
               play={isIntersecting}
               noLoop
-              forceOnHeavyAnimation
+              forceAlways
               onLoad={markAnimationLoaded}
               onEnded={unmarkAnimationLoaded}
             />

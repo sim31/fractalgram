@@ -5,12 +5,14 @@ import React, {
 } from '../../lib/teact/teact';
 
 import { MIN_PASSWORD_LENGTH } from '../../config';
-import { IS_TOUCH_ENV } from '../../util/environment';
+import { requestMutation } from '../../lib/fasterdom/fasterdom';
 import buildClassName from '../../util/buildClassName';
 import stopEvent from '../../util/stopEvent';
+import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
+
+import useAppLayout from '../../hooks/useAppLayout';
 import useLang from '../../hooks/useLang';
 import useTimeout from '../../hooks/useTimeout';
-import useAppLayout from '../../hooks/useAppLayout';
 
 import Button from '../ui/Button';
 
@@ -72,7 +74,7 @@ const PasswordForm: FC<OwnProps> = ({
 
   useEffect(() => {
     if (error) {
-      requestAnimationFrame(() => {
+      requestMutation(() => {
         inputRef.current!.focus();
         inputRef.current!.select();
       });
@@ -140,13 +142,13 @@ const PasswordForm: FC<OwnProps> = ({
         />
         <label>{error || hint || placeholder}</label>
         <div
-          className="toggle-password"
+          className="div-button toggle-password"
           onClick={togglePasswordVisibility}
           role="button"
           tabIndex={0}
           title="Toggle password visibility"
         >
-          <i className={isPasswordVisible ? 'icon-eye' : 'icon-eye-closed'} />
+          <i className={buildClassName('icon', isPasswordVisible ? 'icon-eye' : 'icon-eye-closed')} />
         </div>
       </div>
       {description && <p className="description">{description}</p>}

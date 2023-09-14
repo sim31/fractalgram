@@ -1,6 +1,7 @@
 import type { FC } from '../../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useState, useMemo,
+  memo, useCallback, useEffect, useMemo,
+  useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
@@ -9,15 +10,16 @@ import type {
 } from '../../../api/types';
 
 import { isSameReaction } from '../../../global/helpers';
-import { selectChat } from '../../../global/selectors';
-import useLang from '../../../hooks/useLang';
+import { selectChat, selectChatFullInfo } from '../../../global/selectors';
+
 import useHistoryBack from '../../../hooks/useHistoryBack';
+import useLang from '../../../hooks/useLang';
 
 import ReactionStaticEmoji from '../../common/ReactionStaticEmoji';
 import Checkbox from '../../ui/Checkbox';
 import FloatingActionButton from '../../ui/FloatingActionButton';
-import Spinner from '../../ui/Spinner';
 import RadioGroup from '../../ui/RadioGroup';
+import Spinner from '../../ui/Spinner';
 
 type OwnProps = {
   chatId: string;
@@ -142,7 +144,7 @@ const ManageReactions: FC<OwnProps & StateProps> = ({
               {lang('AvailableReactions')}
             </h3>
             {availableActiveReactions?.map(({ reaction, title }) => (
-              <div className="ListItem no-selection">
+              <div className="ListItem">
                 <Checkbox
                   name={reaction.emoticon}
                   checked={localEnabledReactions?.allowed.some((r) => isSameReaction(reaction, r))}
@@ -169,7 +171,7 @@ const ManageReactions: FC<OwnProps & StateProps> = ({
         {isLoading ? (
           <Spinner color="white" />
         ) : (
-          <i className="icon-check" />
+          <i className="icon icon-check" />
         )}
       </FloatingActionButton>
     </div>
@@ -181,7 +183,7 @@ export default memo(withGlobal<OwnProps>(
     const chat = selectChat(global, chatId)!;
 
     return {
-      enabledReactions: chat.fullInfo?.enabledReactions,
+      enabledReactions: selectChatFullInfo(global, chatId)?.enabledReactions,
       availableReactions: global.availableReactions,
       chat,
     };

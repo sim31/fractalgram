@@ -1,11 +1,14 @@
-import { callApi } from '../api/gramjs';
+import { getActions, getGlobal, setGlobal } from '../global';
+
 import type {
-  ApiChat, ApiMessage, ApiPhoneCall, ApiUser, ApiUserReaction,
+  ApiChat, ApiMessage, ApiPeerReaction,
+  ApiPhoneCall, ApiUser,
 } from '../api/types';
 import { ApiMediaFormat } from '../api/types';
-import { renderActionMessageText } from '../components/common/helpers/renderActionMessageText';
-import { APP_NAME, DEBUG, IS_TEST } from '../config';
-import { getActions, getGlobal, setGlobal } from '../global';
+
+import {
+  APP_NAME, DEBUG, IS_ELECTRON, IS_TEST,
+} from '../config';
 import {
   getChatAvatarHash,
   getChatTitle,
@@ -13,7 +16,8 @@ import {
   getMessageRecentReaction,
   getMessageSenderName,
   getMessageSummaryText,
-  getPrivateChatUserId, getUserFullName,
+  getPrivateChatUserId,
+  getUserFullName,
   isActionMessage,
   isChatChannel,
   selectIsChatMuted,
@@ -21,17 +25,21 @@ import {
 } from '../global/helpers';
 import { addNotifyExceptions, replaceSettings } from '../global/reducers';
 import {
+  selectChat,
   selectChatMessage,
   selectCurrentMessageList,
-  selectTopicFromMessage,
   selectNotifyExceptions,
   selectNotifySettings,
+  selectTopicFromMessage,
   selectUser,
 } from '../global/selectors';
-import { IS_SERVICE_WORKER_SUPPORTED, IS_TOUCH_ENV } from './environment';
+import { callApi } from '../api/gramjs';
+import { renderActionMessageText } from '../components/common/helpers/renderActionMessageText';
+import { buildCollectionByKey } from './iteratees';
 import { translate } from './langProvider';
 import * as mediaLoader from './mediaLoader';
 import { debounce } from './schedulers';
+import { IS_SERVICE_WORKER_SUPPORTED, IS_TOUCH_ENV } from './windowEnvironment';
 
 function getDeviceToken(subscription: PushSubscription) {
   const data = subscription.toJSON();
@@ -42,7 +50,8 @@ function getDeviceToken(subscription: PushSubscription) {
 }
 
 function checkIfPushSupported() {
-  if (!IS_SERVICE_WORKER_SUPPORTED) return false;
+  if (!IS_SERVICE_WORKER_SUPPORTED || IS_ELECTRON) return false;
+
   if (!('showNotification' in ServiceWorkerRegistration.prototype)) {
     if (DEBUG) {
       // eslint-disable-next-line no-console
@@ -51,9 +60,7 @@ function checkIfPushSupported() {
     return false;
   }
 
-  // Check the current Notification permission.
-  // If its denied, it's a permanent block until the
-  // user changes the permission
+  // If permission is denied, it is blocked until the user manually changes their settings
   if (Notification.permission === 'denied') {
     if (DEBUG) {
       // eslint-disable-next-line no-console
@@ -70,10 +77,11 @@ function checkIfPushSupported() {
     }
     return false;
   }
+
   return true;
 }
 
-function checkIfNotificationsSupported() {
+export function checkIfNotificationsSupported() {
   // Let's check if the browser supports notifications
   if (!('Notification' in window)) {
     if (DEBUG) {
@@ -135,22 +143,26 @@ function checkIfShouldResubscribe(subscription: PushSubscription | null) {
   return Date.now() - global.push.subscribedAt > expirationTime;
 }
 
-async function requestPermission() {
-  if (!('Notification' in window)) return;
-  if (!['granted', 'denied'].includes(Notification.permission)) {
-    await Notification.requestPermission();
+export async function requestPermission() {
+  if (!('Notification' in window)) {
+    return false;
   }
+  let permission = Notification.permission;
+  if (!['granted', 'denied'].includes(permission)) {
+    permission = await Notification.requestPermission();
+  }
+  return permission === 'granted';
 }
 
 async function unsubscribeFromPush(subscription: PushSubscription | null) {
   const global = getGlobal();
-  const dispatch = getActions();
+  const { deleteDeviceToken } = getActions();
   if (subscription) {
     try {
       const deviceToken = getDeviceToken(subscription);
       await callApi('unregisterDevice', deviceToken);
       await subscription.unsubscribe();
-      dispatch.deleteDeviceToken();
+      deleteDeviceToken();
       return;
     } catch (error) {
       if (DEBUG) {
@@ -161,7 +173,7 @@ async function unsubscribeFromPush(subscription: PushSubscription | null) {
   }
   if (global.push) {
     await callApi('unregisterDevice', global.push.deviceToken);
-    dispatch.deleteDeviceToken();
+    deleteDeviceToken();
   }
 }
 
@@ -193,11 +205,45 @@ async function loadNotificationSettings() {
   return selectNotifySettings(global);
 }
 
+// Load custom emoji from the api if it's not cached already
+async function loadCustomEmoji(id: string) {
+  let global = getGlobal();
+  if (global.customEmojis.byId[id]) return;
+  const customEmoji = await callApi('fetchCustomEmoji', {
+    documentId: [id],
+  });
+  if (!customEmoji) return;
+  global = getGlobal();
+  global = {
+    ...global,
+    customEmojis: {
+      ...global.customEmojis,
+      byId: {
+        ...global.customEmojis.byId,
+        ...buildCollectionByKey(customEmoji, 'id'),
+      },
+    },
+  };
+  setGlobal(global);
+}
+
+let isSubscriptionFailed = false;
+export function checkIfOfflinePushFailed() {
+  return isSubscriptionFailed;
+}
+
 export async function subscribe() {
+  const { setDeviceToken, updateWebNotificationSettings } = getActions();
+  let hasWebNotifications = false;
+  let hasPushNotifications = false;
   if (!checkIfPushSupported()) {
     // Ask for notification permissions only if service worker notifications are not supported
     // As pushManager.subscribe automatically triggers permission popup
-    await requestPermission();
+    hasWebNotifications = await requestPermission();
+    updateWebNotificationSettings({
+      hasWebNotifications,
+      hasPushNotifications,
+    });
     return;
   }
   const serviceWorkerRegistration = await navigator.serviceWorker.ready;
@@ -214,10 +260,11 @@ export async function subscribe() {
       console.log('[PUSH] Received push subscription: ', deviceToken);
     }
     await callApi('registerDevice', deviceToken);
-    getActions()
-      .setDeviceToken(deviceToken);
+    setDeviceToken(deviceToken);
+    hasPushNotifications = true;
+    hasWebNotifications = true;
   } catch (error: any) {
-    if (Notification.permission === 'denied' as NotificationPermission) {
+    if (Notification.permission === 'denied') {
       // The user denied the notification permission which
       // means we failed to subscribe and the user will need
       // to manually change the notification permission to
@@ -226,27 +273,33 @@ export async function subscribe() {
         // eslint-disable-next-line no-console
         console.warn('[PUSH] The user has blocked push notifications.');
       }
-    } else if (DEBUG) {
+    } else {
       // A problem occurred with the subscription, this can
       // often be down to an issue or lack of the gcm_sender_id
       // and / or gcm_user_visible_only
-      // eslint-disable-next-line no-console
-      console.log('[PUSH] Unable to subscribe to push.', error);
-
+      if (DEBUG) {
+        // eslint-disable-next-line no-console
+        console.log('[PUSH] Unable to subscribe to push.', error);
+      }
       // Request permissions and fall back to local notifications
       // if pushManager.subscribe was aborted due to invalid VAPID key.
-      if (error.code === DOMException.ABORT_ERR) {
-        await requestPermission();
+      if ([DOMException.ABORT_ERR, DOMException.NOT_SUPPORTED_ERR].includes(error.code)) {
+        isSubscriptionFailed = true;
+        hasWebNotifications = await requestPermission();
       }
     }
   }
+  updateWebNotificationSettings({
+    hasWebNotifications,
+    hasPushNotifications,
+  });
 }
 
-function checkIfShouldNotify(chat: ApiChat) {
+function checkIfShouldNotify(chat: ApiChat, message: Partial<ApiMessage>) {
   if (!areSettingsLoaded) return false;
   const global = getGlobal();
   const isMuted = selectIsChatMuted(chat, selectNotifySettings(global), selectNotifyExceptions(global));
-  if (isMuted || chat.isNotJoined || !chat.isListed) {
+  if ((isMuted && !message.isMentioned) || chat.isNotJoined || !chat.isListed) {
     return false;
   }
   // On touch devices show notifications when chat is not active
@@ -261,7 +314,7 @@ function checkIfShouldNotify(chat: ApiChat) {
   return !document.hasFocus();
 }
 
-function getNotificationContent(chat: ApiChat, message: ApiMessage, reaction?: ApiUserReaction) {
+function getNotificationContent(chat: ApiChat, message: ApiMessage, reaction?: ApiPeerReaction) {
   const global = getGlobal();
   const {
     replyToMessageId,
@@ -269,11 +322,14 @@ function getNotificationContent(chat: ApiChat, message: ApiMessage, reaction?: A
   let {
     senderId,
   } = message;
-  if (reaction) senderId = reaction.userId;
+  const hasReaction = Boolean(reaction);
+  if (hasReaction) senderId = reaction.peerId;
 
   const { isScreenLocked } = global.passcode;
-  const messageSender = senderId ? selectUser(global, senderId) : undefined;
+  const messageSenderChat = senderId ? selectChat(global, senderId) : undefined;
+  const messageSenderUser = senderId ? selectUser(global, senderId) : undefined;
   const messageAction = getMessageAction(message as ApiMessage);
+
   const actionTargetMessage = messageAction && replyToMessageId
     ? selectChatMessage(global, chat.id, replyToMessageId)
     : undefined;
@@ -287,7 +343,7 @@ function getNotificationContent(chat: ApiChat, message: ApiMessage, reaction?: A
       .filter(Boolean)
     : undefined;
   const privateChatUserId = getPrivateChatUserId(chat);
-  const privateChatUser = privateChatUserId ? selectUser(global, privateChatUserId) : undefined;
+  const isSelf = privateChatUserId === global.currentUserId;
 
   const topic = selectTopicFromMessage(global, message);
 
@@ -296,13 +352,13 @@ function getNotificationContent(chat: ApiChat, message: ApiMessage, reaction?: A
     !isScreenLocked
     && selectShouldShowMessagePreview(chat, selectNotifySettings(global), selectNotifyExceptions(global))
   ) {
-    if (isActionMessage(message)) {
-      const isChat = chat && (isChatChannel(chat) || message.senderId === message.chatId);
+    const isChat = chat && (isChatChannel(chat) || message.senderId === message.chatId);
 
+    if (isActionMessage(message)) {
       body = renderActionMessageText(
         translate,
         message,
-        !isChat ? messageSender : undefined,
+        !isChat ? messageSenderUser : undefined,
         isChat ? chat : undefined,
         actionTargetUsers,
         actionTargetMessage,
@@ -312,8 +368,13 @@ function getNotificationContent(chat: ApiChat, message: ApiMessage, reaction?: A
       ) as string;
     } else {
       // TODO[forums] Support ApiChat
-      const senderName = getMessageSenderName(translate, chat.id, messageSender);
-      const summary = getMessageSummaryText(translate, message, false, 60, false);
+      const senderName = getMessageSenderName(translate, chat.id, isChat ? messageSenderChat : messageSenderUser);
+      let summary = getMessageSummaryText(translate, message, hasReaction, 60);
+
+      if (hasReaction) {
+        const emoji = getReactionEmoji(reaction);
+        summary = translate('PushReactText', [emoji, summary]);
+      }
 
       body = senderName ? `${senderName}: ${summary}` : summary;
     }
@@ -321,7 +382,7 @@ function getNotificationContent(chat: ApiChat, message: ApiMessage, reaction?: A
     body = 'New message';
   }
 
-  let title = isScreenLocked ? APP_NAME : getChatTitle(translate, chat, privateChatUser);
+  let title = isScreenLocked ? APP_NAME : getChatTitle(translate, chat, isSelf);
 
   if (message.isSilent) {
     title += ' 🔕';
@@ -339,6 +400,18 @@ async function getAvatar(chat: ApiChat | ApiUser) {
     mediaData = mediaLoader.getFromMemory(imageHash);
   }
   return mediaData;
+}
+
+function getReactionEmoji(reaction: ApiPeerReaction) {
+  let emoji;
+  if ('emoticon' in reaction.reaction) {
+    emoji = reaction.reaction.emoticon;
+  }
+  if ('documentId' in reaction.reaction) {
+    // eslint-disable-next-line eslint-multitab-tt/no-immediate-global
+    emoji = getGlobal().customEmojis.byId[reaction.reaction.documentId]?.emoji;
+  }
+  return emoji || '❤️';
 }
 
 export async function notifyAboutCall({
@@ -380,10 +453,10 @@ export async function notifyAboutMessage({
   isReaction = false,
 }: { chat: ApiChat; message: Partial<ApiMessage>; isReaction?: boolean }) {
   const { hasWebNotifications } = await loadNotificationSettings();
-  if (!checkIfShouldNotify(chat)) return;
+  if (!checkIfShouldNotify(chat, message)) return;
   const areNotificationsSupported = checkIfNotificationsSupported();
   if (!hasWebNotifications || !areNotificationsSupported) {
-    if (!message.isSilent && !isReaction) {
+    if (!message.isSilent && !isReaction && !IS_ELECTRON) {
       // Only play sound if web notifications are disabled
       playNotifySoundDebounced(String(message.id) || chat.id);
     }
@@ -397,6 +470,11 @@ export async function notifyAboutMessage({
   const activeReaction = getMessageRecentReaction(message);
   // Do not notify about reactions on messages that are not outgoing
   if (isReaction && !activeReaction) return;
+
+  // If this is a custom emoji reaction we need to make sure it is loaded
+  if (isReaction && activeReaction && 'documentId' in activeReaction.reaction) {
+    await loadCustomEmoji(activeReaction.reaction.documentId);
+  }
 
   const icon = await getAvatar(chat);
 
@@ -452,7 +530,7 @@ export async function notifyAboutMessage({
     // Play sound when notification is displayed
     notification.onshow = () => {
       // TODO Update when reaction badges are implemented
-      if (isReaction || message.isSilent) return;
+      if (isReaction || message.isSilent || IS_ELECTRON) return;
       playNotifySoundDebounced(String(message.id) || chat.id);
     };
   }

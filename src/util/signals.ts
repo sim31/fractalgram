@@ -1,4 +1,5 @@
 import type { CallbackManager } from './callbacks';
+
 import { createCallbackManager } from './callbacks';
 
 interface SignalState<T> {
@@ -12,6 +13,8 @@ export type Signal<T = any> = ((() => T) & {
   readonly [SIGNAL_MARK]: symbol;
   subscribe: (cb: AnyToVoidFunction) => NoneToVoidFunction;
 });
+
+export type SignalSetter = (newValue: any) => void;
 
 export function isSignal(obj: any): obj is Signal {
   return typeof obj === 'function' && SIGNAL_MARK in obj;

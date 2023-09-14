@@ -1,17 +1,18 @@
+import type { FC } from '../../lib/teact/teact';
 import React, { memo, useCallback, useRef } from '../../lib/teact/teact';
 import { withGlobal } from '../../global';
 
 import type { TabState } from '../../global/types';
-import type { FC } from '../../lib/teact/teact';
 
-import { pick } from '../../util/iteratees';
-import buildStyle from '../../util/buildStyle';
+import { requestMeasure } from '../../lib/fasterdom/fasterdom';
 import { selectTabState } from '../../global/selectors';
+import buildStyle from '../../util/buildStyle';
+import { pick } from '../../util/iteratees';
 
-import useWindowSize from '../../hooks/useWindowSize';
-import useSyncEffect from '../../hooks/useSyncEffect';
-import useForceUpdate from '../../hooks/useForceUpdate';
 import useAppLayout from '../../hooks/useAppLayout';
+import useForceUpdate from '../../hooks/useForceUpdate';
+import useSyncEffect from '../../hooks/useSyncEffect';
+import useWindowSize from '../../hooks/useWindowSize';
 
 import styles from './ConfettiContainer.module.scss';
 
@@ -162,7 +163,7 @@ const ConfettiContainer: FC<StateProps> = ({ confetti }) => {
     });
     confettiRef.current = confettiRef.current.filter((c) => !confettiToRemove.includes(c));
     if (confettiRef.current.length) {
-      requestAnimationFrame(updateCanvas);
+      requestMeasure(updateCanvas);
     } else {
       isRafStartedRef.current = false;
     }
@@ -175,7 +176,7 @@ const ConfettiContainer: FC<StateProps> = ({ confetti }) => {
       hideTimeout = setTimeout(forceUpdate, CONFETTI_FADEOUT_TIMEOUT);
       if (!isRafStartedRef.current) {
         isRafStartedRef.current = true;
-        requestAnimationFrame(updateCanvas);
+        requestMeasure(updateCanvas);
       }
     }
     return () => {

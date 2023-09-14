@@ -1,24 +1,24 @@
-import React, {
-  memo, useCallback, useEffect, useRef,
-} from '../../../lib/teact/teact';
+import type { FC } from '../../../lib/teact/teact';
+import React, { memo, useRef } from '../../../lib/teact/teact';
 
 import type { ApiSticker } from '../../../api/types';
-import type { FC } from '../../../lib/teact/teact';
 
+import animateHorizontalScroll from '../../../util/animateHorizontalScroll';
 import buildClassName from '../../../util/buildClassName';
 import findInViewport from '../../../util/findInViewport';
 import isFullyVisible from '../../../util/isFullyVisible';
-import fastSmoothScrollHorizontal from '../../../util/fastSmoothScrollHorizontal';
 
-import useShowTransition from '../../../hooks/useShowTransition';
-import usePrevDuringAnimation from '../../../hooks/usePrevDuringAnimation';
-import { useKeyboardNavigation } from './hooks/useKeyboardNavigation';
+import useEffectWithPrevDeps from '../../../hooks/useEffectWithPrevDeps';
 import useHorizontalScroll from '../../../hooks/useHorizontalScroll';
 import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
+import useLastCallback from '../../../hooks/useLastCallback';
+import usePrevDuringAnimation from '../../../hooks/usePrevDuringAnimation';
+import useShowTransition from '../../../hooks/useShowTransition';
+import { useKeyboardNavigation } from './hooks/useKeyboardNavigation';
 
 import Loading from '../../ui/Loading';
-import EmojiButton from './EmojiButton';
 import CustomEmojiButton from './CustomEmojiButton';
+import EmojiButton from './EmojiButton';
 
 import './EmojiTooltip.scss';
 
@@ -50,7 +50,7 @@ function setItemVisible(index: number, containerRef: Record<string, any>) {
     const position = index > visibleIndexes[visibleIndexes.length - 1] ? 'start' : 'end';
     const newLeft = position === 'start' ? index * EMOJI_BUTTON_WIDTH : 0;
 
-    fastSmoothScrollHorizontal(container, newLeft);
+    animateHorizontalScroll(container, newLeft);
   }
 }
 
@@ -90,43 +90,48 @@ const EmojiTooltip: FC<OwnProps> = ({
     observe: observeIntersection,
   } = useIntersectionObserver({ rootRef: containerRef, throttleMs: INTERSECTION_THROTTLE, isDisabled: !isOpen });
 
-  const handleSelectEmoji = useCallback((emoji: Emoji) => {
+  const handleSelectEmoji = useLastCallback((emoji: Emoji) => {
     onEmojiSelect(emoji.native);
     addRecentEmoji({ emoji: emoji.id });
-  }, [addRecentEmoji, onEmojiSelect]);
+  });
 
-  const handleCustomEmojiSelect = useCallback((emoji: ApiSticker) => {
+  const handleCustomEmojiSelect = useLastCallback((emoji: ApiSticker) => {
     onCustomEmojiSelect(emoji);
     addRecentCustomEmoji({ documentId: emoji.id });
-  }, [addRecentCustomEmoji, onCustomEmojiSelect]);
+  });
 
-  const handleSelect = useCallback((emoji: Emoji | ApiSticker) => {
+  const handleSelect = useLastCallback((emoji: Emoji | ApiSticker) => {
     if ('native' in emoji) {
       handleSelectEmoji(emoji);
     } else {
       handleCustomEmojiSelect(emoji);
     }
-  }, [handleCustomEmojiSelect, handleSelectEmoji]);
+  });
 
-  const handleClick = useCallback((native: string, id: string) => {
+  const handleClick = useLastCallback((native: string, id: string) => {
     onEmojiSelect(native);
     addRecentEmoji({ emoji: id });
-  }, [addRecentEmoji, onEmojiSelect]);
+  });
 
-  const handleCustomEmojiClick = useCallback((emoji: ApiSticker) => {
+  const handleCustomEmojiClick = useLastCallback((emoji: ApiSticker) => {
     onCustomEmojiSelect(emoji);
     addRecentCustomEmoji({ documentId: emoji.id });
-  }, [addRecentCustomEmoji, onCustomEmojiSelect]);
+  });
 
   const selectedIndex = useKeyboardNavigation({
     isActive: isOpen,
     isHorizontal: true,
     items: listEmojis,
+    shouldRemoveSelectionOnReset: true,
     onSelect: handleSelect,
     onClose,
   });
 
-  useEffect(() => {
+  useEffectWithPrevDeps(([prevSelectedIndex]) => {
+    if (prevSelectedIndex === undefined || prevSelectedIndex === -1) {
+      return;
+    }
+
     setItemVisible(selectedIndex, containerRef);
   }, [selectedIndex]);
 

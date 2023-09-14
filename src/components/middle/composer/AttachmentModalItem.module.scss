@@ -58,6 +58,11 @@
   overflow: hidden;
 
   backdrop-filter: blur(10px);
+
+  :global(body.no-menu-blur) & {
+    background-color: #707579;
+    backdrop-filter: none;
+  }
 }
 
 .action-item {
@@ -68,10 +73,14 @@
 
   transition: 0.2s background-color ease-in-out;
 
-  cursor: pointer;
+  cursor: var(--custom-cursor, pointer);
 
   &:hover {
     background-color: rgba(0, 0, 0, 0.15);
+  }
+
+  @media (max-width: 600px) {
+    font-size: 1.25rem;
   }
 }
 

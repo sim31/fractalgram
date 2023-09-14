@@ -5,13 +5,13 @@ import { getActions, withGlobal } from '../../../global';
 import type { ApiPrivacySettings } from '../../../types';
 import { SettingsScreens } from '../../../types';
 
-import { selectIsCurrentUserPremium } from '../../../global/selectors';
+import { selectCanSetPasscode, selectIsCurrentUserPremium } from '../../../global/selectors';
 
-import useLang from '../../../hooks/useLang';
 import useHistoryBack from '../../../hooks/useHistoryBack';
+import useLang from '../../../hooks/useLang';
 
-import ListItem from '../../ui/ListItem';
 import Checkbox from '../../ui/Checkbox';
+import ListItem from '../../ui/ListItem';
 
 type OwnProps = {
   isActive?: boolean;
@@ -23,6 +23,7 @@ type StateProps = {
   isCurrentUserPremium?: boolean;
   hasPassword?: boolean;
   hasPasscode?: boolean;
+  canSetPasscode?: boolean;
   blockedCount: number;
   webAuthCount: number;
   isSensitiveEnabled?: boolean;
@@ -62,10 +63,11 @@ const SettingsPrivacy: FC<OwnProps & StateProps> = ({
   privacyPhoneP2P,
   onScreenSelect,
   onReset,
+  canSetPasscode,
 }) => {
   const {
     loadPrivacySettings,
-    loadBlockedContacts,
+    loadBlockedUsers,
     loadAuthorizations,
     loadContentSettings,
     updateContentSettings,
@@ -77,12 +79,12 @@ const SettingsPrivacy: FC<OwnProps & StateProps> = ({
   } = getActions();
 
   useEffect(() => {
-    loadBlockedContacts();
+    loadBlockedUsers();
     loadAuthorizations();
     loadPrivacySettings();
     loadContentSettings();
     loadWebAuthorizations();
-  }, [loadBlockedContacts, loadAuthorizations, loadPrivacySettings, loadContentSettings, loadWebAuthorizations]);
+  }, []);
 
   useEffect(() => {
     if (isActive) {
@@ -158,21 +160,23 @@ const SettingsPrivacy: FC<OwnProps & StateProps> = ({
           {lang('BlockedUsers')}
           <span className="settings-item__current-value">{blockedCount || ''}</span>
         </ListItem>
-        <ListItem
-          icon="key"
-          narrow
-          // eslint-disable-next-line react/jsx-no-bind
-          onClick={() => onScreenSelect(
-            hasPasscode ? SettingsScreens.PasscodeEnabled : SettingsScreens.PasscodeDisabled,
-          )}
-        >
-          <div className="multiline-menu-item">
-            <span className="title">{lang('Passcode')}</span>
-            <span className="subtitle" dir="auto">
-              {lang(hasPasscode ? 'PasswordOn' : 'PasswordOff')}
-            </span>
-          </div>
-        </ListItem>
+        {canSetPasscode && (
+          <ListItem
+            icon="key"
+            narrow
+            // eslint-disable-next-line react/jsx-no-bind
+            onClick={() => onScreenSelect(
+              hasPasscode ? SettingsScreens.PasscodeEnabled : SettingsScreens.PasscodeDisabled,
+            )}
+          >
+            <div className="multiline-menu-item">
+              <span className="title">{lang('Passcode')}</span>
+              <span className="subtitle" dir="auto">
+                {lang(hasPasscode ? 'PasswordOn' : 'PasswordOff')}
+              </span>
+            </div>
+          </ListItem>
+        )}
         <ListItem
           icon="lock"
           narrow
@@ -285,12 +289,12 @@ const SettingsPrivacy: FC<OwnProps & StateProps> = ({
           narrow
           disabled={!isCurrentUserPremium}
           allowDisabledClick
-          rightElement={!isCurrentUserPremium && <i className="icon-lock-badge settings-icon-locked" />}
+          rightElement={!isCurrentUserPremium && <i className="icon icon-lock-badge settings-icon-locked" />}
           className="no-icon"
           onClick={handleVoiceMessagesClick}
         >
           <div className="multiline-menu-item">
-            <span className="title">{lang('PrivacyVoiceMessages')}</span>
+            <span className="title">{lang('PrivacyVoiceMessagesTitle')}</span>
             <span className="subtitle" dir="auto">
               {getVisibilityValue(privacyVoiceMessages)}
             </span>
@@ -390,6 +394,7 @@ export default memo(withGlobal<OwnProps>(
       privacyPhoneCall: privacy.phoneCall,
       privacyPhoneP2P: privacy.phoneP2P,
       canDisplayChatInTitle,
+      canSetPasscode: selectCanSetPasscode(global),
     };
   },
 )(SettingsPrivacy));

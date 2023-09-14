@@ -1,19 +1,22 @@
 import type { FC } from '../../lib/teact/teact';
 import React, { memo, useRef } from '../../lib/teact/teact';
 
-import { formatIntegerCompact } from '../../util/textFormat';
-import useLang from '../../hooks/useLang';
-import useContextMenuHandlers from '../../hooks/useContextMenuHandlers';
-import buildClassName from '../../util/buildClassName';
+import type { IconName } from '../../types/icons';
 
-import Menu from '../ui/Menu';
+import buildClassName from '../../util/buildClassName';
+import { formatIntegerCompact } from '../../util/textFormat';
+
+import useContextMenuHandlers from '../../hooks/useContextMenuHandlers';
+import useLang from '../../hooks/useLang';
+
 import Button from '../ui/Button';
+import Menu from '../ui/Menu';
 import MenuItem from '../ui/MenuItem';
 
 import styles from './ScrollDownButton.module.scss';
 
 type OwnProps = {
-  icon: string;
+  icon: IconName;
   ariaLabelLang: string;
   unreadCount?: number;
   onClick: VoidFunction;
@@ -50,7 +53,7 @@ const ScrollDownButton: FC<OwnProps> = ({
         onContextMenu={handleContextMenu}
         ariaLabel={lang(ariaLabelLang)}
       >
-        <i className={buildClassName(styles.icon, `icon-${icon}`)} />
+        <i className={buildClassName(styles.icon, 'icon', `icon-${icon}`)} />
       </Button>
       {Boolean(unreadCount) && <div className={styles.unreadCount}>{formatIntegerCompact(unreadCount)}</div>}
       {onReadAll && (

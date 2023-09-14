@@ -3,8 +3,8 @@
   /* stylelint-disable-next-line plugin/no-low-performance-animation-properties */
   transition: height 150ms ease-out, opacity 150ms ease-out;
 
-  body.animation-level-0 & {
-    transition: none !important;
+  body.no-page-transitions & {
+    transition: opacity 150ms ease-out;
   }
 
   .select-mode-active + .middle-column-footer & {
@@ -16,7 +16,7 @@
   }
 
   // TODO Remove duplication with `.ComposerEmbeddedMessage`
-  & > div {
+  &_inner {
     display: flex;
     align-items: center;
     padding-right: 0.625rem;
@@ -27,6 +27,10 @@
 
   .ComposerEmbeddedMessage + & {
     margin-top: 0.75rem;
+
+    body.no-message-composer-animations & {
+      transition: opacity 150ms ease-out;
+    }
   }
 
   & &-left-icon {
@@ -76,21 +80,20 @@
     }
 
     .site-title,
+    .site-name,
     .site-description {
       flex: 1;
       max-width: 100%;
       max-height: 1rem;
+
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
     }
 
     .site-title {
       margin-top: 0.125rem;
       margin-bottom: 0.1875rem;
-    }
-
-    .site-description {
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
     }
   }
 }

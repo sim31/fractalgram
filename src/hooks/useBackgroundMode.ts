@@ -1,44 +1,54 @@
-import { useCallback, useEffect, useRef } from '../lib/teact/teact';
+import { useEffect } from '../lib/teact/teact';
+
+import { createCallbackManager } from '../util/callbacks';
+import useLastCallback from './useLastCallback';
+
+const blurCallbacks = createCallbackManager();
+const focusCallbacks = createCallbackManager();
+
+let isFocused = document.hasFocus();
+
+window.addEventListener('blur', () => {
+  if (!isFocused) {
+    return;
+  }
+
+  isFocused = false;
+  blurCallbacks.runCallbacks();
+});
+
+window.addEventListener('focus', () => {
+  isFocused = true;
+  focusCallbacks.runCallbacks();
+});
 
 export default function useBackgroundMode(
   onBlur?: AnyToVoidFunction,
   onFocus?: AnyToVoidFunction,
+  isDisabled = false,
 ) {
-  const wasBlurred = useRef<boolean>(false);
-  const handleBlur = useCallback(() => {
-    if (wasBlurred.current) {
-      return;
-    }
-
-    onBlur?.();
-    wasBlurred.current = true;
-  }, [onBlur]);
-  const handleFocus = useCallback(() => {
-    onFocus?.();
-    wasBlurred.current = false;
-  }, [onFocus]);
+  const lastOnBlur = useLastCallback(onBlur);
+  const lastOnFocus = useLastCallback(onFocus);
 
   useEffect(() => {
-    if (onBlur && !document.hasFocus()) {
-      handleBlur();
+    if (isDisabled) {
+      return undefined;
     }
 
-    if (onBlur) {
-      window.addEventListener('blur', handleBlur);
+    if (!isFocused) {
+      lastOnBlur();
     }
 
-    if (onFocus) {
-      window.addEventListener('focus', handleFocus);
-    }
+    blurCallbacks.addCallback(lastOnBlur);
+    focusCallbacks.addCallback(lastOnFocus);
 
     return () => {
-      if (onFocus) {
-        window.removeEventListener('focus', handleFocus);
-      }
-
-      if (onBlur) {
-        window.removeEventListener('blur', handleBlur);
-      }
+      focusCallbacks.removeCallback(lastOnFocus);
+      blurCallbacks.removeCallback(lastOnBlur);
     };
-  }, [handleBlur, handleFocus, onBlur, onFocus]);
+  }, [isDisabled, lastOnBlur, lastOnFocus]);
+}
+
+export function isBackgroundModeActive() {
+  return !isFocused;
 }

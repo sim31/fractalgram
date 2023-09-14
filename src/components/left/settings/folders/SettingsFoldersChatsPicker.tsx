@@ -1,26 +1,31 @@
 import type { FC } from '../../../../lib/teact/teact';
 import React, {
-  useCallback, useRef, useEffect, memo,
+  memo, useCallback, useEffect, useRef, useState,
 } from '../../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../../global';
 
-import { isUserId } from '../../../../global/helpers';
 import type { FolderChatType } from '../../../../hooks/reducers/useFoldersReducer';
+
+import { requestMutation } from '../../../../lib/fasterdom/fasterdom';
+import { isUserId } from '../../../../global/helpers';
+import { selectCurrentLimit } from '../../../../global/selectors/limits';
+import buildClassName from '../../../../util/buildClassName';
+
 import {
-  INCLUDED_CHAT_TYPES,
   EXCLUDED_CHAT_TYPES,
+  INCLUDED_CHAT_TYPES,
 } from '../../../../hooks/reducers/useFoldersReducer';
 import useInfiniteScroll from '../../../../hooks/useInfiniteScroll';
 import useLang from '../../../../hooks/useLang';
-import { selectCurrentLimit } from '../../../../global/selectors/limits';
 
-import Checkbox from '../../../ui/Checkbox';
-import InputText from '../../../ui/InputText';
-import ListItem from '../../../ui/ListItem';
-import PrivateChatInfo from '../../../common/PrivateChatInfo';
 import GroupChatInfo from '../../../common/GroupChatInfo';
 import PickerSelectedItem from '../../../common/PickerSelectedItem';
+import PrivateChatInfo from '../../../common/PrivateChatInfo';
+import Checkbox from '../../../ui/Checkbox';
+import FloatingActionButton from '../../../ui/FloatingActionButton';
 import InfiniteScroll from '../../../ui/InfiniteScroll';
+import InputText from '../../../ui/InputText';
+import ListItem from '../../../ui/ListItem';
 import Loading from '../../../ui/Loading';
 
 import '../../../common/Picker.scss';
@@ -32,9 +37,12 @@ type OwnProps = {
   selectedIds: string[];
   selectedChatTypes: string[];
   filterValue?: string;
+  shouldHideChatTypes?: boolean;
   onSelectedIdsChange: (ids: string[]) => void;
   onSelectedChatTypesChange: (types: string[]) => void;
   onFilterChange: (value: string) => void;
+  onSaveFilter: VoidFunction;
+  isActive?: boolean;
 };
 
 // Focus slows down animation, also it breaks transition layout in Chrome
@@ -53,20 +61,30 @@ const SettingsFoldersChatsPicker: FC<OwnProps & StateProps> = ({
   selectedIds,
   selectedChatTypes,
   filterValue,
+  shouldHideChatTypes,
   onSelectedIdsChange,
   onSelectedChatTypesChange,
   onFilterChange,
   maxChats,
+  onSaveFilter,
+  isActive,
 }) => {
   const { openLimitReachedModal } = getActions();
   // eslint-disable-next-line no-null/no-null
   const inputRef = useRef<HTMLInputElement>(null);
   const chatTypes = mode === 'included' ? INCLUDED_CHAT_TYPES : EXCLUDED_CHAT_TYPES;
   const shouldMinimize = selectedIds.length + selectedChatTypes.length > MAX_FULL_ITEMS;
+  const [isTouched, setIsTouched] = useState(false);
+
+  useEffect(() => {
+    if (!isActive) {
+      setIsTouched(false);
+    }
+  }, [isActive]);
 
   useEffect(() => {
     setTimeout(() => {
-      requestAnimationFrame(() => {
+      requestMutation(() => {
         inputRef.current!.focus();
       });
     }, FOCUS_DELAY_MS);
@@ -85,6 +103,7 @@ const SettingsFoldersChatsPicker: FC<OwnProps & StateProps> = ({
       }
       newSelectedIds.push(id);
     }
+    setIsTouched(true);
     onSelectedIdsChange(newSelectedIds);
   }, [selectedIds, onSelectedIdsChange, maxChats, mode, openLimitReachedModal]);
 
@@ -95,6 +114,7 @@ const SettingsFoldersChatsPicker: FC<OwnProps & StateProps> = ({
     } else {
       newSelectedChatTypes.push(key);
     }
+    setIsTouched(true);
     onSelectedChatTypesChange(newSelectedChatTypes);
   }, [selectedChatTypes, onSelectedChatTypesChange]);
 
@@ -132,7 +152,7 @@ const SettingsFoldersChatsPicker: FC<OwnProps & StateProps> = ({
         onClick={() => handleChatTypeClick(type.key)}
         ripple
       >
-        <i className={`icon-${type.icon}`} />
+        <i className={buildClassName('icon', `icon-${type.icon}`)} />
         <h3 className="chat-type" dir="auto">{lang(type.title)}</h3>
         <Checkbox
           label=""
@@ -191,18 +211,22 @@ const SettingsFoldersChatsPicker: FC<OwnProps & StateProps> = ({
         />
       </div>
       <InfiniteScroll
-        className="picker-list custom-scroll"
+        className="picker-list custom-scroll fab-padding-bottom"
         itemSelector=".chat-item"
         items={viewportIds}
         onLoadMore={getMore}
       >
         {(!viewportIds || !viewportIds.length || viewportIds.includes(chatIds[0])) && (
           <div key="header">
-            <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>
-              {lang('FilterChatTypes')}
-            </h4>
-            {chatTypes.map(renderChatType)}
-            <div className="picker-list-divider" />
+            {!shouldHideChatTypes && (
+              <>
+                <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>
+                  {lang('FilterChatTypes')}
+                </h4>
+                {chatTypes.map(renderChatType)}
+                <div className="picker-list-divider" />
+              </>
+            )}
             <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>
               {lang('FilterChats')}
             </h4>
@@ -217,6 +241,14 @@ const SettingsFoldersChatsPicker: FC<OwnProps & StateProps> = ({
           <Loading key="loading" />
         )}
       </InfiniteScroll>
+
+      <FloatingActionButton
+        isShown={isTouched}
+        onClick={onSaveFilter}
+        ariaLabel={lang('Save')}
+      >
+        <i className="icon icon-check" />
+      </FloatingActionButton>
     </div>
   );
 };

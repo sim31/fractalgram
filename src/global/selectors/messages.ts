@@ -1,29 +1,31 @@
 import type {
-  GlobalState, MessageListType, TabArgs, Thread, TabThread, ChatTranslatedMessages,
-  AccountMap, ChatConsensusMessages, ExtUser,
-} from '../types';
-import type {
   ApiChat,
   ApiMessage,
   ApiMessageEntityCustomEmoji,
   ApiMessageOutgoingStatus,
+  ApiPoll,
   ApiStickerSetInfo,
   ApiUser,
-  ApiPoll,
 } from '../../api/types';
+import type { Rank } from '../../config';
+import type {
+  AccountMap, ChatConsensusMessages, ChatTranslatedMessages,
+  ExtUser,
+  GlobalState, MessageListType, TabArgs, TabThread, Thread,
+} from '../types';
 import { ApiMessageEntityTypes, MAIN_THREAD_ID } from '../../api/types';
 
-import type { Rank } from '../../config';
 import {
-  GENERAL_TOPIC_ID, LOCAL_MESSAGE_MIN_ID, REPLIES_USER_ID, SERVICE_NOTIFICATIONS_USER_ID,
+  GENERAL_TOPIC_ID, REPLIES_USER_ID, SERVICE_NOTIFICATIONS_USER_ID,
 } from '../../config';
+import { getCurrentTabId } from '../../util/establishMultitabRole';
+import { findLast } from '../../util/iteratees';
+import { MEMO_EMPTY_ARRAY } from '../../util/memo';
+import { getServerTime } from '../../util/serverTime';
+import { IS_TRANSLATION_SUPPORTED } from '../../util/windowEnvironment';
 import {
-  selectChat, selectChatBot, selectChatUsers, selectIsChatWithSelf,
-} from './chats';
-import {
-  selectIsCurrentUserPremium, selectIsUserOrChatContact, selectUser, selectUserStatus,
-} from './users';
-import {
+  canSendReaction,
+  getAllowedAttachmentOptions,
   getCanPostInChat,
   getHasAdminRight,
   getMessageAudio,
@@ -42,19 +44,26 @@ import {
   isChatSuperGroup,
   isCommonBoxChat,
   isForwardedMessage,
-  isMessageLocal,
+  isLocalMessageId, isMessageFailed, isMessageLocal,
+  isMessageTranslatable,
   isOwnMessage,
   isServiceNotificationMessage,
   isUserId,
   isUserRightBanned,
-  canSendReaction, getAllowedAttachmentOptions,
 } from '../helpers';
-import { findLast } from '../../util/iteratees';
+import {
+  selectChat, selectChatFullInfo, selectChatUsers, selectIsChatWithSelf, selectRequestedChatTranslationLanguage,
+} from './chats';
+import { selectUserStory } from './stories';
 import { selectIsStickerFavorite } from './symbols';
-import { getServerTime } from '../../util/serverTime';
-import { MEMO_EMPTY_ARRAY } from '../../util/memo';
 import { selectTabState } from './tabs';
-import { getCurrentTabId } from '../../util/establishMultitabRole';
+import {
+  selectBot,
+  selectIsCurrentUserPremium,
+  selectIsUserOrChatContact,
+  selectUser,
+  selectUserStatus,
+} from './users';
 
 const MESSAGE_EDIT_ALLOWED_TIME = 172800; // 48 hours
 
@@ -100,7 +109,8 @@ export function selectChatRankingPolls(global: GlobalState, chatId: string) {
 export function selectChatMemberAccountMap(
   global: GlobalState, chat: ApiChat, platform?: string,
 ): AccountMap | undefined {
-  const u = selectChatUsers(global, chat);
+  const fullChatInfo = selectChatFullInfo(global, chat.id);
+  const u = selectChatUsers(global, fullChatInfo);
   if (!u?.every((val) => val !== undefined)) {
     return undefined;
   }
@@ -261,10 +271,23 @@ export function selectListedIds<T extends GlobalState>(global: T, chatId: string
   return selectThreadParam(global, chatId, threadId, 'listedIds');
 }
 
-export function selectOutlyingIds<T extends GlobalState>(
-  global: T, chatId: string, threadId: number, ...[tabId = getCurrentTabId()]: TabArgs<T>
+export function selectOutlyingListByMessageId<T extends GlobalState>(
+  global: T, chatId: string, threadId: number, messageId: number,
 ) {
-  return selectTabThreadParam(global, chatId, threadId, 'outlyingIds', tabId);
+  const outlyingLists = selectOutlyingLists(global, chatId, threadId);
+  if (!outlyingLists) {
+    return undefined;
+  }
+
+  return outlyingLists.find((list) => {
+    return list[0] <= messageId && list[list.length - 1] >= messageId;
+  });
+}
+
+export function selectOutlyingLists<T extends GlobalState>(
+  global: T, chatId: string, threadId: number,
+) {
+  return selectThreadParam(global, chatId, threadId, 'outlyingLists');
 }
 
 export function selectCurrentMessageIds<T extends GlobalState>(
@@ -445,7 +468,7 @@ export function selectIsViewportNewest<T extends GlobalState>(
   }
 
   // Edge case: outgoing `lastMessage` is updated with a delay to optimize animation
-  if (lastMessageId > LOCAL_MESSAGE_MIN_ID && !selectChatMessage(global, chatId, lastMessageId)) {
+  if (isLocalMessageId(lastMessageId) && !selectChatMessage(global, chatId, lastMessageId)) {
     return true;
   }
 
@@ -502,10 +525,13 @@ export function selectFocusedMessageId<T extends GlobalState>(
 }
 
 export function selectIsMessageFocused<T extends GlobalState>(
-  global: T, message: ApiMessage,
+  global: T, message: ApiMessage, currentThreadId: number,
   ...[tabId = getCurrentTabId()]: TabArgs<T>
 ) {
   const focusedId = selectFocusedMessageId(global, message.chatId, tabId);
+  const threadId = selectTabState(global, tabId).focusedMessage?.threadId;
+
+  if (currentThreadId !== threadId) return false;
 
   return focusedId ? focusedId === message.id || focusedId === message.previousLocalId : false;
 }
@@ -554,6 +580,11 @@ export function selectReplySender<T extends GlobalState>(global: T, message: Api
 export function selectForwardedSender<T extends GlobalState>(
   global: T, message: ApiMessage,
 ): ApiUser | ApiChat | undefined {
+  const isStoryForward = Boolean(message.content.storyData);
+  if (isStoryForward) {
+    return selectUser(global, message.content.storyData!.userId);
+  }
+
   const { forwardInfo } = message;
   if (!forwardInfo) {
     return undefined;
@@ -649,9 +680,12 @@ export function selectAllowedMessageActions<T extends GlobalState>(global: T, me
   const isBasicGroup = isChatBasicGroup(chat);
   const isSuperGroup = isChatSuperGroup(chat);
   const isChannel = isChatChannel(chat);
+  const isBotChat = Boolean(selectBot(global, chat.id));
   const isLocal = isMessageLocal(message);
+  const isFailed = isMessageFailed(message);
   const isServiceNotification = isServiceNotificationMessage(message);
   const isOwn = isOwnMessage(message);
+  const isForwarded = isForwardedMessage(message);
   const isAction = isActionMessage(message);
   const { content } = message;
   const messageTopic = selectTopicFromMessage(global, message);
@@ -667,7 +701,7 @@ export function selectAllowedMessageActions<T extends GlobalState>(global: T, me
       content.sticker || content.contact || content.poll || content.action || content.audio
       || (content.video?.isRound) || content.location || content.invoice
     )
-    && !isForwardedMessage(message)
+    && !isForwarded
     && !message.viaBotId
     && !chat.isForbidden
   );
@@ -694,7 +728,7 @@ export function selectAllowedMessageActions<T extends GlobalState>(global: T, me
     canPin = !canUnpin;
   }
 
-  const canDelete = !isLocal && !isServiceNotification && (
+  const canDelete = (!isLocal || isFailed) && !isServiceNotification && (
     isPrivate
     || isOwn
     || isBasicGroup
@@ -705,20 +739,28 @@ export function selectAllowedMessageActions<T extends GlobalState>(global: T, me
   const canReport = !isPrivate && !isOwn;
 
   const canDeleteForAll = canDelete && !chat.isForbidden && (
-    (isPrivate && !isChatWithSelf)
+    (isPrivate && !isChatWithSelf && !isBotChat)
     || (isBasicGroup && (
       isOwn || getHasAdminRight(chat, 'deleteMessages') || chat.isCreator
     ))
   );
 
-  const canEdit = !isLocal && !isAction && isMessageEditable && (
-    isOwn
-    || (isChannel && (chat.isCreator || getHasAdminRight(chat, 'editMessages')))
-  );
+  const hasMessageEditRight = isOwn || (isChannel && (chat.isCreator || getHasAdminRight(chat, 'editMessages')));
+
+  const canEdit = !isLocal && !isAction && isMessageEditable && hasMessageEditRight;
+
+  const story = content.storyData
+    ? selectUserStory(global, content.storyData.userId, content.storyData.id)
+    : (content.webPage?.story
+      ? selectUserStory(global, content.webPage.story.userId, content.webPage.story.id)
+      : undefined
+    );
 
   const isChatProtected = selectIsChatProtected(global, message.chatId);
+  const isStoryForwardForbidden = story && ('isDeleted' in story || ('noForwards' in story && story.noForwards));
   const canForward = (
-    !isLocal && !isAction && !isChatProtected && (message.isForwardingAllowed || isServiceNotification)
+    !isLocal && !isAction && !isChatProtected && !isStoryForwardForbidden
+    && (message.isForwardingAllowed || isServiceNotification)
   );
 
   const hasSticker = Boolean(message.content.sticker);
@@ -726,8 +768,8 @@ export function selectAllowedMessageActions<T extends GlobalState>(global: T, me
   const canFaveSticker = !isAction && hasSticker && !hasFavoriteSticker;
   const canUnfaveSticker = !isAction && hasFavoriteSticker;
   const canCopy = !isAction;
-  const canCopyLink = !isAction && (isChannel || isSuperGroup);
-  const canSelect = !isAction;
+  const canCopyLink = !isLocal && !isAction && (isChannel || isSuperGroup);
+  const canSelect = !isLocal && !isAction;
 
   const canDownload = Boolean(content.webPage?.document || content.webPage?.video || content.webPage?.photo
     || content.audio || content.voice || content.photo || content.video || content.document || content.sticker);
@@ -736,7 +778,7 @@ export function selectAllowedMessageActions<T extends GlobalState>(global: T, me
 
   const poll = content.poll;
   const canRevote = !poll?.summary.closed && !poll?.summary.quiz && poll?.results.results?.some((r) => r.isChosen);
-  const canClosePoll = isOwn && poll && !poll.summary.closed;
+  const canClosePoll = hasMessageEditRight && poll && !poll.summary.closed && !isForwarded;
 
   const noOptions = [
     canReply,
@@ -843,14 +885,17 @@ export function selectIsDownloading<T extends GlobalState>(
   ...[tabId = getCurrentTabId()]: TabArgs<T>
 ) {
   const activeInChat = selectTabState(global, tabId).activeDownloads.byChatId[message.chatId];
-  return activeInChat ? activeInChat.includes(message.id) : false;
+  if (!activeInChat) return false;
+
+  return Boolean(message.isScheduled
+    ? activeInChat.scheduledIds?.includes(message.id) : activeInChat.ids?.includes(message.id));
 }
 
-export function selectActiveDownloadIds<T extends GlobalState>(
+export function selectActiveDownloads<T extends GlobalState>(
   global: T, chatId: string,
   ...[tabId = getCurrentTabId()]: TabArgs<T>
 ) {
-  return selectTabState(global, tabId).activeDownloads.byChatId[chatId] || MEMO_EMPTY_ARRAY;
+  return selectTabState(global, tabId).activeDownloads.byChatId[chatId];
 }
 
 export function selectUploadProgress<T extends GlobalState>(global: T, message: ApiMessage) {
@@ -869,16 +914,11 @@ export function selectRealLastReadId<T extends GlobalState>(global: T, chatId: s
       return undefined;
     }
 
-    if (!chat.lastMessage) {
+    if (!chat.lastMessage || chat.unreadCount) {
       return chat.lastReadInboxMessageId;
     }
 
-    if (isMessageLocal(chat.lastMessage)) {
-      return chat.lastMessage.id;
-    }
-
-    // Some previously read messages may be deleted
-    return Math.min(chat.lastMessage.id, chat.lastReadInboxMessageId);
+    return chat.lastMessage.id;
   } else {
     const threadInfo = selectThreadInfo(global, chatId, threadId);
     if (!threadInfo) {
@@ -896,7 +936,6 @@ export function selectRealLastReadId<T extends GlobalState>(global: T, chatId: s
 
 export function selectFirstUnreadId<T extends GlobalState>(
   global: T, chatId: string, threadId: number,
-  ...[tabId = getCurrentTabId()]: TabArgs<T>
 ) {
   const chat = selectChat(global, chatId);
 
@@ -912,10 +951,10 @@ export function selectFirstUnreadId<T extends GlobalState>(
     }
   }
 
-  const outlyingIds = selectOutlyingIds(global, chatId, threadId, tabId);
+  const outlyingLists = selectOutlyingLists(global, chatId, threadId);
   const listedIds = selectListedIds(global, chatId, threadId);
   const byId = selectChatMessages(global, chatId);
-  if (!byId || !(outlyingIds || listedIds)) {
+  if (!byId || !(outlyingLists?.length || listedIds)) {
     return undefined;
   }
 
@@ -943,8 +982,8 @@ export function selectFirstUnreadId<T extends GlobalState>(
     });
   }
 
-  if (outlyingIds) {
-    const found = findAfterLastReadId(outlyingIds);
+  if (outlyingLists?.length) {
+    const found = outlyingLists.map((list) => findAfterLastReadId(list)).filter(Boolean)[0];
     if (found) {
       return found;
     }
@@ -958,30 +997,6 @@ export function selectFirstUnreadId<T extends GlobalState>(
   }
 
   return undefined;
-}
-
-export function selectIsPollResultsOpen<T extends GlobalState>(
-  global: T,
-  ...[tabId = getCurrentTabId()]: TabArgs<T>
-) {
-  const { pollResults } = selectTabState(global, tabId);
-  return Boolean(pollResults.messageId);
-}
-
-export function selectIsCreateTopicPanelOpen<T extends GlobalState>(
-  global: T,
-  ...[tabId = getCurrentTabId()]: TabArgs<T>
-) {
-  const { createTopicPanel } = selectTabState(global, tabId);
-  return Boolean(createTopicPanel);
-}
-
-export function selectIsEditTopicPanelOpen<T extends GlobalState>(
-  global: T,
-  ...[tabId = getCurrentTabId()]: TabArgs<T>
-) {
-  const { editTopicPanel } = selectTabState(global, tabId);
-  return Boolean(editTopicPanel);
 }
 
 export function selectIsForwardModalOpen<T extends GlobalState>(
@@ -1235,26 +1250,6 @@ function canAutoLoadMedia<T extends GlobalState>({
   );
 }
 
-export function selectCanAutoPlayMedia<T extends GlobalState>(global: T, message: ApiMessage) {
-  const video = getMessageVideo(message) || getMessageWebPageVideo(message);
-  if (!video) {
-    return undefined;
-  }
-
-  const {
-    canAutoPlayVideos,
-    canAutoPlayGifs,
-  } = global.settings.byKey;
-
-  const asGif = video.isGif || video.isRound;
-
-  return (canAutoPlayVideos && !asGif) || (canAutoPlayGifs && asGif);
-}
-
-export function selectShouldLoopStickers<T extends GlobalState>(global: T) {
-  return global.settings.byKey.shouldLoopStickers;
-}
-
 export function selectLastServiceNotification<T extends GlobalState>(global: T) {
   const { serviceNotifications } = global;
   const maxId = Math.max(...serviceNotifications.map(({ id }) => id));
@@ -1320,7 +1315,7 @@ export function selectDefaultReaction<T extends GlobalState>(global: T, chatId: 
     return defaultReaction;
   }
 
-  const chatReactions = selectChat(global, chatId)?.fullInfo?.enabledReactions;
+  const chatReactions = selectChatFullInfo(global, chatId)?.enabledReactions;
   if (!chatReactions || !canSendReaction(defaultReaction, chatReactions)) {
     return undefined;
   }
@@ -1364,7 +1359,7 @@ export function selectShouldSchedule<T extends GlobalState>(
 
 export function selectCanScheduleUntilOnline<T extends GlobalState>(global: T, id: string) {
   const isChatWithSelf = selectIsChatWithSelf(global, id);
-  const chatBot = id === REPLIES_USER_ID && selectChatBot(global, id);
+  const chatBot = id === REPLIES_USER_ID && selectBot(global, id);
   return Boolean(
     !isChatWithSelf && !chatBot && isUserId(id) && selectUserStatus(global, id)?.wasOnline,
   );
@@ -1386,7 +1381,8 @@ export function selectMessageCustomEmojiSets<T extends GlobalState>(
   // If some emoji still loading, do not return empty array
   if (!documents.every(Boolean)) return undefined;
   const sets = documents.map((doc) => doc.stickerSetInfo);
-  const setsWithoutDuplicates = sets.reduce((acc, set) => {
+
+  return sets.reduce((acc, set) => {
     if ('shortName' in set) {
       if (acc.some((s) => 'shortName' in s && s.shortName === set.shortName)) {
         return acc;
@@ -1401,7 +1397,6 @@ export function selectMessageCustomEmojiSets<T extends GlobalState>(
     acc.push(set); // Optimization
     return acc;
   }, [] as ApiStickerSetInfo[]);
-  return setsWithoutDuplicates;
 }
 
 export function selectForwardsContainVoiceMessages<T extends GlobalState>(
@@ -1429,10 +1424,11 @@ export function selectMessageTranslations<T extends GlobalState>(
   return selectChatTranslations(global, chatId)?.byLangCode[toLanguageCode] || {};
 }
 
-export function selectRequestedTranslationLanguage<T extends GlobalState>(
-  global: T, chatId: string, messageId: number, tabId = getCurrentTabId(),
+export function selectRequestedMessageTranslationLanguage<T extends GlobalState>(
+  global: T, chatId: string, messageId: number, ...[tabId = getCurrentTabId()]: TabArgs<T>
 ): string | undefined {
-  return selectTabState(global, tabId).requestedTranslations.byChatId[chatId]?.manualMessages?.[messageId];
+  const requestedInChat = selectTabState(global, tabId).requestedTranslations.byChatId[chatId];
+  return requestedInChat?.toLanguage || requestedInChat?.manualMessages?.[messageId];
 }
 
 export function selectForwardsCanBeSentToChat<T extends GlobalState>(
@@ -1440,16 +1436,20 @@ export function selectForwardsCanBeSentToChat<T extends GlobalState>(
   toChatId: string,
   ...[tabId = getCurrentTabId()]: TabArgs<T>
 ) {
-  const { messageIds, fromChatId } = selectTabState(global, tabId).forwardMessages;
+  const { messageIds, storyId, fromChatId } = selectTabState(global, tabId).forwardMessages;
   const chat = selectChat(global, toChatId);
-  if (!messageIds || !chat) return false;
+  if ((!messageIds && !storyId) || !chat) return false;
+
+  if (storyId) {
+    return true;
+  }
 
   const chatMessages = selectChatMessages(global, fromChatId!);
   const {
     canSendVoices, canSendRoundVideos, canSendStickers, canSendDocuments, canSendAudios, canSendVideos,
     canSendPhotos, canSendGifs, canSendPlainText,
   } = getAllowedAttachmentOptions(chat);
-  return !messageIds.some((messageId) => {
+  return !messageIds!.some((messageId) => {
     const message = chatMessages[messageId];
     const isVoice = message.content.voice;
     const isRoundVideo = message.content.video?.isRound;
@@ -1472,4 +1472,20 @@ export function selectForwardsCanBeSentToChat<T extends GlobalState>(
       || (isGif && !canSendGifs)
       || (isPlainText && !canSendPlainText);
   });
+}
+
+export function selectCanTranslateMessage<T extends GlobalState>(
+  global: T, message: ApiMessage, detectedLanguage?: string, ...[tabId = getCurrentTabId()]: TabArgs<T>
+) {
+  const { canTranslate: isTranslationEnabled, doNotTranslate } = global.settings.byKey;
+
+  const canTranslateLanguage = !detectedLanguage || !doNotTranslate.includes(detectedLanguage);
+
+  const isTranslatable = isMessageTranslatable(message);
+
+  // Separate translations are disabled when chat translation enabled
+  const chatRequestedLanguage = selectRequestedChatTranslationLanguage(global, message.chatId, tabId);
+
+  return IS_TRANSLATION_SUPPORTED && isTranslationEnabled && canTranslateLanguage && isTranslatable
+    && !chatRequestedLanguage;
 }

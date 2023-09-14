@@ -1,79 +1,82 @@
-import {
-  addActionHandler, getGlobal, setGlobal,
-} from '../../index';
-
 import type { ApiChat, ApiMessage, ApiPoll } from '../../../api/types';
+import type { Rank } from '../../../config';
+import type {
+  AccountMap, ActionReturnType,
+  ConsensusResultOption,
+  ConsensusResults,
+  ExtPlatformInfo, ExtUser, GlobalState,
+  PollModalDefaults, TabState,
+} from '../../types';
 import { MAIN_THREAD_ID } from '../../../api/types';
 import { FocusDirection } from '../../../types';
-import type {
-  TabState, GlobalState, ActionReturnType, ExtPlatformInfo, ConsensusResults,
-  PollModalDefaults, ExtUser, AccountMap, ConsensusResultOption,
-} from '../../types';
 
 import {
-  ANIMATION_END_DELAY,
-  APP_VERSION,
-  RELEASE_DATETIME,
-  FAST_SMOOTH_MAX_DURATION,
-  SERVICE_NOTIFICATIONS_USER_ID,
-  SELECT_DELEGATE_STR,
-  RANK_POLL_STRS,
   ALLOWED_RANKS,
+  ANIMATION_END_DELAY,
   DEFAULT_PLATFORM,
+  FAST_SMOOTH_MAX_DURATION,
   FRACTAL_INFO_BY_PLATFORM,
+  RANK_POLL_STRS,
+  RELEASE_DATETIME,
+  SELECT_DELEGATE_STR,
+  SERVICE_NOTIFICATIONS_USER_ID,
 } from '../../../config';
-import type { Rank } from '../../../config';
-import { IS_TOUCH_ENV } from '../../../util/environment';
+import assert from '../../../util/assert';
+import { copyHtmlToClipboard } from '../../../util/clipboard';
+import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import { compact, findLast } from '../../../util/iteratees';
+import * as langProvider from '../../../util/langProvider';
+import parseMessageInput from '../../../util/parseMessageInput';
+import { getServerTime } from '../../../util/serverTime';
+import { IS_TOUCH_ENV } from '../../../util/windowEnvironment';
+import versionNotification from '../../../versionNotification.txt';
+import { getMessageSummaryText, getSenderTitle, isChatChannel } from '../../helpers';
+import { promptStrToPlatform } from '../../helpers/consensusMessages';
+import { renderMessageSummaryHtml } from '../../helpers/renderMessageSummaryHtml';
+import { addActionHandler, getGlobal, setGlobal } from '../../index';
 import {
+  addActiveMessageMediaDownload,
+  cancelMessageMediaDownload,
   enterMessageSelectMode,
-  toggleMessageSelection,
   exitMessageSelectMode,
-  replaceThreadParam,
   replaceTabThreadParam,
+  replaceThreadParam,
+  toggleMessageSelection,
   updateFocusDirection,
-  updateFocusedMessage, updateFocusedMessageReached,
+  updateFocusedMessage,
 } from '../../reducers';
+import { updateTabState } from '../../reducers/tabs';
 import {
-  selectCurrentChat,
-  selectViewportIds,
-  selectIsRightColumnShown,
-  selectCurrentMessageList,
-  selectChat,
-  selectThreadInfo,
-  selectChatMessages,
   selectAllowedMessageActions,
-  selectMessageIdsByGroupId,
+  selectChat,
+  selectChatMemberAccountMap,
+  selectChatMessages,
+  selectChatScheduledMessages,
+  selectCurrentChat,
+  selectCurrentMessageList,
   selectForwardedMessageIdsByGroupId,
+  selectIsRightColumnShown,
   selectIsViewportNewest,
+  selectLatestDelegatePoll,
+  selectLatestPrompt,
+  selectLatestRankingPoll,
+  selectMessageIdsByGroupId,
+  selectPinnedIds,
   selectReplyingToId,
   selectReplyStack,
+  selectRequestedChatTranslationLanguage,
+  selectRequestedMessageTranslationLanguage,
   selectSender,
-  selectChatScheduledMessages,
   selectTabState,
-  selectRequestedTranslationLanguage,
-  selectChatMemberAccountMap,
-  selectLatestDelegatePoll,
-  selectLatestRankingPoll,
-  selectLatestPrompt,
+  selectThreadInfo,
+  selectViewportIds,
   // selectLatestDelegatePoll,
   // selectChatRankingPolls,
   // selectLatestRankingPoll,
 } from '../../selectors';
-import { compact, findLast } from '../../../util/iteratees';
-import { getServerTime } from '../../../util/serverTime';
-
-import versionNotification from '../../../versionNotification.txt';
-import parseMessageInput from '../../../util/parseMessageInput';
-import { getMessageSummaryText, getSenderTitle } from '../../helpers';
-import * as langProvider from '../../../util/langProvider';
-import { copyHtmlToClipboard } from '../../../util/clipboard';
-import { renderMessageSummaryHtml } from '../../helpers/renderMessageSummaryHtml';
-import { updateTabState } from '../../reducers/tabs';
-import { getCurrentTabId } from '../../../util/establishMultitabRole';
-import { getIsMobile } from '../../../hooks/useAppLayout';
-import assert from '../../../util/assert';
-import { promptStrToPlatform } from '../../helpers/consensusMessages';
 import { loadRemainingMessages } from '../api/messages';
+
+import { getIsMobile } from '../../../hooks/useAppLayout';
 
 const FOCUS_DURATION = 1500;
 const FOCUS_NO_HIGHLIGHT_DURATION = FAST_SMOOTH_MAX_DURATION + ANIMATION_END_DELAY;
@@ -341,13 +344,22 @@ addActionHandler('focusLastMessage', (global, actions, payload): ActionReturnTyp
     return;
   }
 
-  const { chatId, threadId } = currentMessageList;
+  const { chatId, threadId, type } = currentMessageList;
 
   let lastMessageId: number | undefined;
   if (threadId === MAIN_THREAD_ID) {
-    const chat = selectChat(global, chatId);
+    if (type === 'pinned') {
+      const pinnedMessageIds = selectPinnedIds(global, chatId, MAIN_THREAD_ID);
+      if (!pinnedMessageIds?.length) {
+        return;
+      }
 
-    lastMessageId = chat?.lastMessage?.id;
+      lastMessageId = pinnedMessageIds[pinnedMessageIds.length - 1];
+    } else {
+      const chat = selectChat(global, chatId);
+
+      lastMessageId = chat?.lastMessage?.id;
+    }
   } else {
     const threadInfo = selectThreadInfo(global, chatId, threadId);
 
@@ -361,6 +373,7 @@ addActionHandler('focusLastMessage', (global, actions, payload): ActionReturnTyp
   actions.focusMessage({
     chatId,
     threadId,
+    messageListType: type,
     messageId: lastMessageId,
     noHighlight: true,
     noForumTopicPanel: true,
@@ -400,12 +413,6 @@ addActionHandler('focusNextReply', (global, actions, payload): ActionReturnType 
   return undefined;
 });
 
-addActionHandler('setReachedFocusedMessage', (global, actions, payload): ActionReturnType => {
-  const { hasReached = false, tabId = getCurrentTabId() } = payload;
-
-  return updateFocusedMessageReached(global, hasReached, tabId);
-});
-
 addActionHandler('focusMessage', (global, actions, payload): ActionReturnType => {
   const {
     chatId, threadId = MAIN_THREAD_ID, messageListType = 'thread', noHighlight, groupedId, groupedChatId,
@@ -435,12 +442,12 @@ addActionHandler('focusMessage', (global, actions, payload): ActionReturnType =>
   }
   blurTimeout = window.setTimeout(() => {
     global = getGlobal();
-    global = updateFocusedMessage(global, undefined, undefined, undefined, undefined, tabId);
+    global = updateFocusedMessage(global, undefined, undefined, undefined, undefined, undefined, tabId);
     global = updateFocusDirection(global, undefined, tabId);
     setGlobal(global);
   }, noHighlight ? FOCUS_NO_HIGHLIGHT_DURATION : FOCUS_DURATION);
 
-  global = updateFocusedMessage(global, chatId, messageId, noHighlight, isResizingContainer, tabId);
+  global = updateFocusedMessage(global, chatId, messageId, threadId, noHighlight, isResizingContainer, tabId);
   global = updateFocusDirection(global, undefined, tabId);
 
   if (replyMessageId) {
@@ -454,10 +461,11 @@ addActionHandler('focusMessage', (global, actions, payload): ActionReturnType =>
 
   const viewportIds = selectViewportIds(global, chatId, threadId, tabId);
   if (viewportIds && viewportIds.includes(messageId)) {
-    setGlobal(global);
+    setGlobal(global, { forceOnHeavyAnimation: true });
     actions.openChat({
       id: chatId,
       threadId,
+      type: messageListType,
       shouldReplaceHistory,
       noForumTopicPanel,
       tabId,
@@ -469,31 +477,31 @@ addActionHandler('focusMessage', (global, actions, payload): ActionReturnType =>
     global = replaceTabThreadParam(global, chatId, threadId, 'viewportIds', undefined, tabId);
   }
 
-  global = replaceTabThreadParam(global, chatId, threadId, 'outlyingIds', undefined, tabId);
-
   if (viewportIds && !shouldSwitchChat) {
     const direction = messageId > viewportIds[0] ? FocusDirection.Down : FocusDirection.Up;
     global = updateFocusDirection(global, direction, tabId);
   }
 
-  setGlobal(global);
+  setGlobal(global, { forceOnHeavyAnimation: true });
 
   actions.openChat({
     id: chatId,
     threadId,
+    type: messageListType,
     shouldReplaceHistory,
     noForumTopicPanel,
     tabId,
   });
   actions.loadViewportMessages({
     tabId,
+    shouldForceRender: true,
   });
   return undefined;
 });
 
 addActionHandler('openForwardMenu', (global, actions, payload): ActionReturnType => {
   const {
-    fromChatId, messageIds, groupedId, withMyScore, tabId = getCurrentTabId(),
+    fromChatId, messageIds, storyId, groupedId, withMyScore, tabId = getCurrentTabId(),
   } = payload;
   let groupedMessageIds;
   if (groupedId) {
@@ -503,6 +511,7 @@ addActionHandler('openForwardMenu', (global, actions, payload): ActionReturnType
     forwardMessages: {
       fromChatId,
       messageIds: groupedMessageIds || messageIds,
+      storyId,
       isModalShown: true,
       withMyScore,
     },
@@ -570,49 +579,23 @@ addActionHandler('openForwardMenuForSelectedMessages', (global, actions, payload
 addActionHandler('cancelMessageMediaDownload', (global, actions, payload): ActionReturnType => {
   const { message, tabId = getCurrentTabId() } = payload;
 
-  const tabState = selectTabState(global, tabId);
-  const byChatId = tabState.activeDownloads.byChatId[message.chatId];
-  if (!byChatId || !byChatId.length) return;
-
-  global = updateTabState(global, {
-    activeDownloads: {
-      byChatId: {
-        ...tabState.activeDownloads.byChatId,
-        [message.chatId]: byChatId.filter((id) => id !== message.id),
-      },
-    },
-  }, tabId);
-  setGlobal(global);
+  return cancelMessageMediaDownload(global, message, tabId);
 });
 
 addActionHandler('cancelMessagesMediaDownload', (global, actions, payload): ActionReturnType => {
   const { messages, tabId = getCurrentTabId() } = payload;
 
-  const byChatId = selectTabState(global, tabId).activeDownloads.byChatId;
-  const newByChatId: TabState['activeDownloads']['byChatId'] = {};
-  Object.keys(byChatId).forEach((chatId) => {
-    newByChatId[chatId] = byChatId[chatId].filter((id) => !messages.find((message) => message.id === id));
-  });
-  return updateTabState(global, {
-    activeDownloads: {
-      byChatId: newByChatId,
-    },
-  }, tabId);
+  for (const message of messages) {
+    global = cancelMessageMediaDownload(global, message, tabId);
+  }
+
+  return global;
 });
 
 addActionHandler('downloadMessageMedia', (global, actions, payload): ActionReturnType => {
   const { message, tabId = getCurrentTabId() } = payload;
 
-  const tabState = selectTabState(global, tabId);
-  global = updateTabState(global, {
-    activeDownloads: {
-      byChatId: {
-        ...tabState.activeDownloads.byChatId,
-        [message.chatId]: [...(tabState.activeDownloads.byChatId[message.chatId] || []), message.id],
-      },
-    },
-  }, tabId);
-  setGlobal(global);
+  return addActiveMessageMediaDownload(global, message, tabId);
 });
 
 addActionHandler('downloadSelectedMessages', (global, actions, payload): ActionReturnType => {
@@ -663,8 +646,8 @@ addActionHandler('toggleMessageSelection', (global, actions, payload): ActionRet
 
   setGlobal(global);
 
-  if (selectTabState(global, tabId).shouldShowContextMenuHint) {
-    actions.disableContextMenuHint({ tabId });
+  if (global.shouldShowContextMenuHint) {
+    actions.disableContextMenuHint();
     actions.showNotification({
       // eslint-disable-next-line max-len
       message: `To **edit** or **reply**, close this menu. Then ${IS_TOUCH_ENV ? 'long tap' : 'right click'} on a message.`,
@@ -673,16 +656,15 @@ addActionHandler('toggleMessageSelection', (global, actions, payload): ActionRet
   }
 });
 
-addActionHandler('disableContextMenuHint', (global, actions, payload): ActionReturnType => {
-  const { tabId = getCurrentTabId() } = payload || {};
-
-  if (!selectTabState(global, tabId).shouldShowContextMenuHint) {
+addActionHandler('disableContextMenuHint', (global): ActionReturnType => {
+  if (!global.shouldShowContextMenuHint) {
     return undefined;
   }
 
-  return updateTabState(global, {
+  return {
+    ...global,
     shouldShowContextMenuHint: false,
-  }, tabId);
+  };
 });
 
 addActionHandler('exitMessageSelectMode', (global, actions, payload): ActionReturnType => {
@@ -1236,26 +1218,28 @@ addActionHandler('closeSeenByModal', (global, actions, payload): ActionReturnTyp
   }, tabId);
 });
 
-addActionHandler('openMessageLanguageModal', (global, actions, payload): ActionReturnType => {
-  const { chatId, id, tabId = getCurrentTabId() } = payload;
+addActionHandler('openChatLanguageModal', (global, actions, payload): ActionReturnType => {
+  const { chatId, messageId, tabId = getCurrentTabId() } = payload;
 
-  const activeLanguage = selectRequestedTranslationLanguage(global, chatId, id, tabId);
+  const activeLanguage = messageId
+    ? selectRequestedMessageTranslationLanguage(global, chatId, messageId, tabId)
+    : selectRequestedChatTranslationLanguage(global, chatId, tabId);
 
   return updateTabState(global, {
-    messageLanguageModal: { chatId, messageId: id, activeLanguage },
+    chatLanguageModal: { chatId, messageId, activeLanguage },
   }, tabId);
 });
 
-addActionHandler('closeMessageLanguageModal', (global, actions, payload): ActionReturnType => {
+addActionHandler('closeChatLanguageModal', (global, actions, payload): ActionReturnType => {
   const { tabId = getCurrentTabId() } = payload || {};
 
   return updateTabState(global, {
-    messageLanguageModal: undefined,
+    chatLanguageModal: undefined,
   }, tabId);
 });
 
 addActionHandler('copySelectedMessages', (global, actions, payload): ActionReturnType => {
-  const { tabId = getCurrentTabId() } = payload;
+  const { tabId = getCurrentTabId() } = payload || {};
   const tabState = selectTabState(global, tabId);
   if (!tabState.selectedMessages) {
     return;
@@ -1279,31 +1263,32 @@ function copyTextForMessages(global: GlobalState, chatId: string, messageIds: nu
   const { type: messageListType, threadId } = selectCurrentMessageList(global) || {};
   const lang = langProvider.translate;
 
+  const chat = selectChat(global, chatId);
+
   const chatMessages = messageListType === 'scheduled'
     ? selectChatScheduledMessages(global, chatId)
     : selectChatMessages(global, chatId);
-  if (!chatMessages || !threadId) return;
+
+  if (!chat || !chatMessages || !threadId) return;
+
   const messages = messageIds
     .map((id) => chatMessages[id])
     .filter((message) => selectAllowedMessageActions(global, message, threadId).canCopy)
     .sort((message1, message2) => message1.id - message2.id);
 
-  const result = messages.reduce((acc, message) => {
-    const sender = selectSender(global, message);
+  const resultHtml: string[] = [];
+  const resultText: string[] = [];
 
-    acc.push(`> ${sender ? getSenderTitle(lang, sender) : ''}:`);
-    acc.push(`${renderMessageSummaryHtml(lang, message)}\n`);
+  messages.forEach((message) => {
+    const sender = isChatChannel(chat) ? chat : selectSender(global, message);
+    const senderTitle = `> ${sender ? getSenderTitle(lang, sender) : message.forwardInfo?.hiddenUserName || ''}:`;
 
-    return acc;
-  }, [] as string[]);
+    resultHtml.push(senderTitle);
+    resultHtml.push(`${renderMessageSummaryHtml(lang, message)}\n`);
 
-  const resultText = messages.reduce((acc, message) => {
-    const sender = selectSender(global, message);
-    acc.push(`> ${sender ? getSenderTitle(lang, sender) : ''}:`);
-    acc.push(`${getMessageSummaryText(lang, message, false, 0, undefined, true)}\n`);
+    resultText.push(senderTitle);
+    resultText.push(`${getMessageSummaryText(lang, message, false, 0, true)}\n`);
+  });
 
-    return acc;
-  }, [] as string[]);
-
-  copyHtmlToClipboard(result.join('\n'), resultText.join('\n'));
+  copyHtmlToClipboard(resultHtml.join('\n'), resultText.join('\n'));
 }

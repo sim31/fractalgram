@@ -1,9 +1,10 @@
 import type { FC } from '../../lib/teact/teact';
 import React, { useRef } from '../../lib/teact/teact';
 
-import useShowTransition from '../../hooks/useShowTransition';
-import usePrevious from '../../hooks/usePrevious';
 import buildClassName from '../../util/buildClassName';
+
+import usePrevious from '../../hooks/usePrevious';
+import useShowTransition from '../../hooks/useShowTransition';
 
 type OwnProps = {
   isOpen: boolean;
@@ -14,7 +15,9 @@ type OwnProps = {
   onClick?: (e: React.MouseEvent<HTMLElement, MouseEvent>) => void;
   noCloseTransition?: boolean;
   shouldAnimateFirstRender?: boolean;
+  style?: string;
   children: React.ReactNode;
+  ref?: React.LegacyRef<HTMLDivElement>;
 };
 
 const ShowTransition: FC<OwnProps> = ({
@@ -27,6 +30,8 @@ const ShowTransition: FC<OwnProps> = ({
   children,
   noCloseTransition,
   shouldAnimateFirstRender,
+  style,
+  ref,
 }) => {
   const prevIsOpen = usePrevious(isOpen);
   const prevChildren = usePrevious(children);
@@ -49,7 +54,13 @@ const ShowTransition: FC<OwnProps> = ({
 
   return (
     (shouldRender || isHidden) && (
-      <div id={id} className={buildClassName(className, transitionClassNames)} onClick={onClick}>
+      <div
+        id={id}
+        ref={ref}
+        className={buildClassName(className, transitionClassNames)}
+        onClick={onClick}
+        style={style}
+      >
         {isOpen ? children : fromChildrenRef.current!}
       </div>
     )

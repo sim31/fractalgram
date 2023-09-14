@@ -1,19 +1,30 @@
-import { addActionHandler, setGlobal } from '../../index';
-
 import type { ActionReturnType } from '../../types';
 import { PaymentStep } from '../../../types';
 
+import { addActionHandler, setGlobal } from '../../index';
 import {
-  addBlockedContact, removeBlockedContact, setConfirmPaymentUrl, setPaymentStep,
+  addBlockedUser,
+  addStoriesForUser,
+  removeBlockedUser,
+  removeUserStory,
+  setConfirmPaymentUrl,
+  setPaymentStep,
+  updateLastReadStoryForUser,
+  updateStealthMode,
+  updateUserStory,
+  updateUsersWithStories,
 } from '../../reducers';
+import { selectUserStories, selectUserStory } from '../../selectors';
 
 addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
   switch (update['@type']) {
     case 'updatePeerBlocked':
       if (update.isBlocked) {
-        return addBlockedContact(global, update.id);
+        return addBlockedUser(global, update.id);
+      } else if (update.isBlockedFromStories) {
+        return global; // Unsupported
       } else {
-        return removeBlockedContact(global, update.id);
+        return removeBlockedUser(global, update.id);
       }
 
     case 'updateResetContactList':
@@ -38,6 +49,10 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       actions.loadRecentStickers();
       break;
 
+    case 'updateRecentReactions':
+      actions.loadRecentReactions();
+      break;
+
     case 'updateRecentEmojiStatuses':
       actions.loadRecentEmojiStatuses();
       break;
@@ -54,9 +69,13 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       actions.loadStickerSets();
       break;
 
-    case 'updateStickerSetsOrder':
-      actions.reorderStickerSets({ order: update.order, isCustomEmoji: update.isCustomEmoji });
+    case 'updateStickerSetsOrder': {
+      // Filter out invalid set IDs, which may be sent by the server
+      const order = update.order.filter((setId) => Boolean(global.stickers.setsById[setId]));
+
+      actions.reorderStickerSets({ order, isCustomEmoji: update.isCustomEmoji });
       break;
+    }
 
     case 'updateSavedGifs':
       actions.loadSavedGifs();
@@ -91,6 +110,36 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
           actions.closeWebApp({ tabId: tabState.id });
         }
       });
+      break;
+
+    case 'updateStory':
+      global = addStoriesForUser(global, update.userId, { [update.story.id]: update.story });
+      global = updateUsersWithStories(global, { [update.userId]: selectUserStories(global, update.userId)! });
+      setGlobal(global);
+      break;
+
+    case 'deleteStory':
+      global = removeUserStory(global, update.userId, update.storyId);
+      setGlobal(global);
+      break;
+
+    case 'updateReadStories':
+      global = updateLastReadStoryForUser(global, update.userId, update.lastReadId);
+      setGlobal(global);
+      break;
+
+    case 'updateSentStoryReaction': {
+      const { userId, storyId, reaction } = update;
+      const story = selectUserStory(global, userId, storyId);
+      if (!story) return global;
+      global = updateUserStory(global, userId, storyId, { sentReaction: reaction });
+      setGlobal(global);
+      break;
+    }
+
+    case 'updateStealthMode':
+      global = updateStealthMode(global, update.stealthMode);
+      setGlobal(global);
       break;
   }
 

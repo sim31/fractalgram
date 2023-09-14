@@ -4,7 +4,6 @@ const { JSDOM } = require('jsdom');
 const { gitlogPromise } = require('gitlog');
 
 // CONSTANTS
-
 const AUTH_TOKEN = process.env.TELEGRAPH_TOKEN;
 const version = require('../package.json').version;
 
@@ -17,11 +16,11 @@ const gitOptions = {
 
 const pageTemplate = `
 <body>\
-    <aside><img src="https://webz.dev/icon-dev-512x512.png" /></aside>
+    <aside><img src="https://tga.dev/icon-dev-512x512.png" /></aside>
     <h3>Commits since ${version}</h3>\
     <p><i>This list is automatically updated when a new commit pushed to the beta repo</i></p>\
     <ul id="list"></ul>\
-    <aside><a href="https://t.me/webzchat">WebZ Discussion</a> <b>|</b> <a href="https://t.me/webzcommentsru">WebZ Обсуждение</a></aside>\
+    <aside><a href="https://t.me/webatalks">Web A Discussion</a> <b>|</b> <a href="https://t.me/webatalksru">Web A Обсуждение</a> <b>|</b> <a href="https://t.me/webatalksuk">Web A Обговорення</a></aside>\
     <aside><i>Last update: ${new Date().toLocaleDateString('en-CA')}</i></aside>\
 </body>
 `.trim();
@@ -41,9 +40,9 @@ updateChangelog();
 async function updateTelegraph(dom) {
   const api = new Telegraph();
   const content = domToNode(dom.window.document.body).children;
-  const result = await api.editPage(AUTH_TOKEN, 'WebZ-Beta-04-01', 'Telegram WebZ Beta Changelog', content, {
-    author_name: 'WebZ team',
-    author_url: 'https://t.me/webztalks',
+  const result = await api.editPage(AUTH_TOKEN, 'WebA-Beta-03-20', 'Telegram Web A Beta Changelog', content, {
+    author_name: 'Web A team',
+    author_url: 'https://t.me/webachannel',
   });
   // eslint-disable-next-line no-console
   console.log(result);

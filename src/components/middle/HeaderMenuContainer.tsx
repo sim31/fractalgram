@@ -1,50 +1,59 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useMemo, useState,
+  memo, useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type { ApiBotCommand, ApiChat } from '../../api/types';
 import type { IAnchorPosition } from '../../types';
+import type { IconName } from '../../types/icons';
 import { MAIN_THREAD_ID } from '../../api/types';
 
 import { REPLIES_USER_ID } from '../../config';
-import { disableScrolling, enableScrolling } from '../../util/scrollLock';
 import {
-  selectChat,
-  selectNotifySettings,
-  selectNotifyExceptions,
-  selectUser,
-  selectChatBot,
-  selectIsPremiumPurchaseBlocked,
-  selectCurrentMessageList, selectTabState,
-} from '../../global/selectors';
-import {
-  isUserId,
-  getCanDeleteChat,
-  selectIsChatMuted,
   getCanAddContact,
+  getCanDeleteChat,
+  getCanManageTopic,
+  getHasAdminRight,
   isChatChannel,
   isChatGroup,
-  getCanManageTopic,
+  isUserId,
   isUserRightBanned,
-  getHasAdminRight,
+  selectIsChatMuted,
 } from '../../global/helpers';
-import useShowTransition from '../../hooks/useShowTransition';
-import usePrevDuringAnimation from '../../hooks/usePrevDuringAnimation';
-import useLang from '../../hooks/useLang';
-import useAppLayout from '../../hooks/useAppLayout';
+import {
+  selectBot,
+  selectCanManage, selectCanTranslateChat,
+  selectChat,
+  selectChatFullInfo,
+  selectCurrentMessageList,
+  selectIsPremiumPurchaseBlocked,
+  selectIsRightColumnShown, selectNotifyExceptions,
+  selectNotifySettings,
+  selectTabState,
+  selectUser,
+  selectUserFullInfo,
+} from '../../global/selectors';
+import { disableScrolling, enableScrolling } from '../../util/scrollLock';
 
-import Portal from '../ui/Portal';
+import useAppLayout from '../../hooks/useAppLayout';
+import useFlag from '../../hooks/useFlag';
+import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
+import usePrevDuringAnimation from '../../hooks/usePrevDuringAnimation';
+import useShowTransition from '../../hooks/useShowTransition';
+
+import DeleteChatModal from '../common/DeleteChatModal';
+import ReportModal from '../common/ReportModal';
+import MuteChatModal from '../left/MuteChatModal.async';
 import Menu from '../ui/Menu';
 import MenuItem from '../ui/MenuItem';
 import MenuSeparator from '../ui/MenuSeparator';
-import DeleteChatModal from '../common/DeleteChatModal';
-import ReportModal from '../common/ReportModal';
+import Portal from '../ui/Portal';
 
 import './HeaderMenuContainer.scss';
 
-const BOT_BUTTONS: Record<string, { icon: string; label: string }> = {
+const BOT_BUTTONS: Record<string, { icon: IconName; label: string }> = {
   settings: {
     icon: 'bots',
     label: 'BotSettings',
@@ -78,6 +87,7 @@ export type OwnProps = {
   canEnterVoiceChat?: boolean;
   canCreateVoiceChat?: boolean;
   pendingJoinRequests?: number;
+  canTranslate?: boolean;
   onSubscribeChannel: () => void;
   onSearchClick: () => void;
   onAsMessagesClick: () => void;
@@ -101,6 +111,9 @@ type StateProps = {
   canEditTopic?: boolean;
   hasLinkedChat?: boolean;
   isChatInfoShown?: boolean;
+  isRightColumnShown?: boolean;
+  canManage?: boolean;
+  canTranslate?: boolean;
 };
 
 const CLOSE_MENU_ANIMATION_DURATION = 200;
@@ -138,6 +151,9 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
   canAddContact,
   canCreateTopic,
   canEditTopic,
+  canManage,
+  isRightColumnShown,
+  canTranslate,
   onJoinRequestsClick,
   onSubscribeChannel,
   onSearchClick,
@@ -161,12 +177,17 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
     openCreateTopicPanel,
     openEditTopicPanel,
     openChat,
+    toggleManagement,
+    togglePeerTranslations,
   } = getActions();
 
   const { isMobile } = useAppLayout();
   const [isMenuOpen, setIsMenuOpen] = useState(true);
+  const [shouldCloseFast, setShouldCloseFast] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [isMuteModalOpen, setIsMuteModalOpen] = useState(false);
+  const [shouldRenderMuteModal, markRenderMuteModal, unmarkRenderMuteModal] = useFlag();
   const { x, y } = anchor;
 
   useShowTransition(isOpen, onCloseAnimationEnd, undefined, false);
@@ -174,65 +195,85 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
     (!isChatInfoShown && isForum) ? true : undefined, CLOSE_MENU_ANIMATION_DURATION,
   );
 
-  const handleReport = useCallback(() => {
+  const handleReport = useLastCallback(() => {
     setIsMenuOpen(false);
     setIsReportModalOpen(true);
-  }, []);
+  });
 
-  const closeReportModal = useCallback(() => {
+  const closeReportModal = useLastCallback(() => {
     setIsReportModalOpen(false);
     onClose();
-  }, [onClose]);
+  });
 
-  const handleDelete = useCallback(() => {
+  const closeMuteModal = useLastCallback(() => {
+    setIsMuteModalOpen(false);
+    onClose();
+  });
+
+  const handleDelete = useLastCallback(() => {
     setIsMenuOpen(false);
     setIsDeleteModalOpen(true);
-  }, []);
+  });
 
-  const closeMenu = useCallback(() => {
+  const closeMenu = useLastCallback(() => {
     setIsMenuOpen(false);
     onClose();
-  }, [onClose]);
+  });
 
-  const handleViewGroupInfo = useCallback(() => {
+  const handleViewGroupInfo = useLastCallback(() => {
     openChatWithInfo({ id: chatId, threadId });
+    setShouldCloseFast(!isRightColumnShown);
     closeMenu();
-  }, [chatId, closeMenu, openChatWithInfo, threadId]);
+  });
 
-  const closeDeleteModal = useCallback(() => {
+  const closeDeleteModal = useLastCallback(() => {
     setIsDeleteModalOpen(false);
     onClose();
-  }, [onClose]);
+  });
 
-  const handleStartBot = useCallback(() => {
+  const handleStartBot = useLastCallback(() => {
     sendBotCommand({ command: '/start' });
-  }, [sendBotCommand]);
+  });
 
-  const handleRestartBot = useCallback(() => {
+  const handleRestartBot = useLastCallback(() => {
     restartBot({ chatId });
-  }, [chatId, restartBot]);
+  });
 
-  const handleToggleMuteClick = useCallback(() => {
-    updateChatMutedState({ chatId, isMuted: !isMuted });
+  const handleUnmuteClick = useLastCallback(() => {
+    updateChatMutedState({ chatId, isMuted: false });
     closeMenu();
-  }, [chatId, closeMenu, isMuted, updateChatMutedState]);
+  });
 
-  const handleCreateTopicClick = useCallback(() => {
+  const handleMuteClick = useLastCallback(() => {
+    markRenderMuteModal();
+    setIsMuteModalOpen(true);
+    setIsMenuOpen(false);
+  });
+
+  const handleCreateTopicClick = useLastCallback(() => {
     openCreateTopicPanel({ chatId });
+    setShouldCloseFast(!isRightColumnShown);
     closeMenu();
-  }, [openCreateTopicPanel, chatId, closeMenu]);
+  });
 
-  const handleEditTopicClick = useCallback(() => {
+  const handleEditClick = useLastCallback(() => {
+    toggleManagement({ force: true });
+    setShouldCloseFast(!isRightColumnShown);
+    closeMenu();
+  });
+
+  const handleEditTopicClick = useLastCallback(() => {
     openEditTopicPanel({ chatId, topicId: threadId });
+    setShouldCloseFast(!isRightColumnShown);
     closeMenu();
-  }, [openEditTopicPanel, chatId, threadId, closeMenu]);
+  });
 
-  const handleViewAsTopicsClick = useCallback(() => {
+  const handleViewAsTopicsClick = useLastCallback(() => {
     openChat({ id: undefined });
     closeMenu();
-  }, [closeMenu, openChat]);
+  });
 
-  const handleEnterVoiceChatClick = useCallback(() => {
+  const handleEnterVoiceChatClick = useLastCallback(() => {
     if (canCreateVoiceChat) {
       // TODO Show popup to schedule
       createGroupCall({
@@ -244,57 +285,63 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
       });
     }
     closeMenu();
-  }, [closeMenu, canCreateVoiceChat, chatId, requestMasterAndJoinGroupCall, createGroupCall]);
+  });
 
-  const handleLinkedChatClick = useCallback(() => {
+  const handleLinkedChatClick = useLastCallback(() => {
     openLinkedChat({ id: chatId });
     closeMenu();
-  }, [chatId, closeMenu, openLinkedChat]);
+  });
 
-  const handleGiftPremiumClick = useCallback(() => {
+  const handleGiftPremiumClick = useLastCallback(() => {
     openGiftPremiumModal({ forUserId: chatId });
     closeMenu();
-  }, [openGiftPremiumModal, chatId, closeMenu]);
+  });
 
-  const handleAddContactClick = useCallback(() => {
+  const handleAddContactClick = useLastCallback(() => {
     openAddContactDialog({ userId: chatId });
     closeMenu();
-  }, [openAddContactDialog, chatId, closeMenu]);
+  });
 
-  const handleSubscribe = useCallback(() => {
+  const handleSubscribe = useLastCallback(() => {
     onSubscribeChannel();
     closeMenu();
-  }, [closeMenu, onSubscribeChannel]);
+  });
 
-  const handleVideoCall = useCallback(() => {
+  const handleVideoCall = useLastCallback(() => {
     requestMasterAndRequestCall({ userId: chatId, isVideo: true });
     closeMenu();
-  }, [chatId, closeMenu, requestMasterAndRequestCall]);
+  });
 
-  const handleCall = useCallback(() => {
+  const handleCall = useLastCallback(() => {
     requestMasterAndRequestCall({ userId: chatId });
     closeMenu();
-  }, [chatId, closeMenu, requestMasterAndRequestCall]);
+  });
 
-  const handleSearch = useCallback(() => {
+  const handleSearch = useLastCallback(() => {
     onSearchClick();
     closeMenu();
-  }, [closeMenu, onSearchClick]);
+  });
 
-  const handleStatisticsClick = useCallback(() => {
+  const handleStatisticsClick = useLastCallback(() => {
     toggleStatistics();
+    setShouldCloseFast(!isRightColumnShown);
     closeMenu();
-  }, [closeMenu, toggleStatistics]);
+  });
 
-  const handleSelectMessages = useCallback(() => {
+  const handleEnableTranslations = useLastCallback(() => {
+    togglePeerTranslations({ chatId, isEnabled: true });
+    closeMenu();
+  });
+
+  const handleSelectMessages = useLastCallback(() => {
     enterMessageSelectMode();
     closeMenu();
-  }, [closeMenu, enterMessageSelectMode]);
+  });
 
-  const handleOpenAsMessages = useCallback(() => {
+  const handleOpenAsMessages = useLastCallback(() => {
     onAsMessagesClick();
     closeMenu();
-  }, [closeMenu, onAsMessagesClick]);
+  });
 
   useEffect(() => {
     disableScrolling();
@@ -334,6 +381,7 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
           positionX="right"
           style={`left: ${x}px;top: ${y}px;`}
           onClose={closeMenu}
+          shouldCloseFast={shouldCloseFast}
         >
           {isMobile && canSearch && (
             <MenuItem
@@ -360,6 +408,14 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
               onClick={handleViewGroupInfo}
             >
               {isTopic ? lang('lng_context_view_topic') : lang('lng_context_view_group')}
+            </MenuItem>
+          )}
+          {canManage && !canEditTopic && (
+            <MenuItem
+              icon="edit"
+              onClick={handleEditClick}
+            >
+              {lang('Edit')}
             </MenuItem>
           )}
           {canEditTopic && (
@@ -443,13 +499,22 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
               {lang('VideoCall')}
             </MenuItem>
           )}
-          {canMute && (
+          {canMute && (isMuted ? (
             <MenuItem
-              icon={isMuted ? 'unmute' : 'mute'}
-              onClick={handleToggleMuteClick}
+              icon="unmute"
+              onClick={handleUnmuteClick}
             >
-              {lang(isMuted ? 'ChatsUnmute' : 'ChatsMute')}
+              {lang('ChatsUnmute')}
             </MenuItem>
+          )
+            : (
+              <MenuItem
+                icon="mute"
+                onClick={handleMuteClick}
+              >
+                {lang('ChatsMute')}...
+              </MenuItem>
+            )
           )}
           {(canEnterVoiceChat || canCreateVoiceChat) && (
             <MenuItem
@@ -481,6 +546,14 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
               onClick={handleStatisticsClick}
             >
               {lang('Statistics')}
+            </MenuItem>
+          )}
+          {canTranslate && (
+            <MenuItem
+              icon="language"
+              onClick={handleEnableTranslations}
+            >
+              {lang('lng_context_translate')}
             </MenuItem>
           )}
           {canReportChat && (
@@ -522,6 +595,14 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
             chat={chat}
           />
         )}
+        {canMute && shouldRenderMuteModal && chat?.id && (
+          <MuteChatModal
+            isOpen={isMuteModalOpen}
+            onClose={closeMuteModal}
+            onCloseAnimationEnd={unmarkRenderMuteModal}
+            chatId={chat.id}
+          />
+        )}
         {canReportChat && chat?.id && (
           <ReportModal
             isOpen={isReportModalOpen}
@@ -548,10 +629,12 @@ export default memo(withGlobal<OwnProps>(
     const canReportChat = isMainThread && (isChatChannel(chat) || isChatGroup(chat) || (user && !user.isSelf));
     const { chatId: currentChatId, threadId: currentThreadId } = selectCurrentMessageList(global) || {};
 
-    const chatBot = chatId !== REPLIES_USER_ID ? selectChatBot(global, chatId) : undefined;
+    const chatBot = chatId !== REPLIES_USER_ID ? selectBot(global, chatId) : undefined;
+    const userFullInfo = isPrivate ? selectUserFullInfo(global, chatId) : undefined;
+    const chatFullInfo = !isPrivate ? selectChatFullInfo(global, chatId) : undefined;
+    const fullInfo = userFullInfo || chatFullInfo;
     const canGiftPremium = Boolean(
-      global.lastSyncTime
-      && user?.fullInfo?.premiumGifts?.length
+      userFullInfo?.premiumGifts?.length
       && !selectIsPremiumPurchaseBlocked(global),
     );
 
@@ -560,6 +643,9 @@ export default memo(withGlobal<OwnProps>(
       chat.isCreator || !isUserRightBanned(chat, 'manageTopics') || getHasAdminRight(chat, 'manageTopics')
     );
     const canEditTopic = topic && getCanManageTopic(chat, topic);
+    const canManage = selectCanManage(global, chatId);
+    // Context menu item should only be displayed if user hid translation panel
+    const canTranslate = selectCanTranslateChat(global, chatId) && fullInfo?.isTranslationDisabled;
 
     return {
       chat,
@@ -571,12 +657,15 @@ export default memo(withGlobal<OwnProps>(
       canReportChat,
       canDeleteChat: getCanDeleteChat(chat),
       canGiftPremium,
-      hasLinkedChat: Boolean(chat?.fullInfo?.linkedChatId),
-      botCommands: chatBot?.fullInfo?.botInfo?.commands,
+      hasLinkedChat: Boolean(chatFullInfo?.linkedChatId),
+      botCommands: chatBot ? userFullInfo?.botInfo?.commands : undefined,
       isChatInfoShown: selectTabState(global).isChatInfoShown
         && currentChatId === chatId && currentThreadId === threadId,
       canCreateTopic,
       canEditTopic,
+      canManage,
+      isRightColumnShown: selectIsRightColumnShown(global),
+      canTranslate,
     };
   },
 )(HeaderMenuContainer));

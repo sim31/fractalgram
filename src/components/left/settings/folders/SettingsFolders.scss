@@ -15,6 +15,7 @@
   .ChatInfo {
     display: flex;
     align-items: center;
+    width: 100%;
 
     .Avatar {
       margin-left: -0.25rem;
@@ -38,6 +39,10 @@
       }
     }
 
+    .info {
+      overflow: hidden;
+    }
+
     .status {
       display: none;
     }
@@ -50,7 +55,7 @@
   }
 
   .ListItem-button {
-    i {
+    .icon {
       opacity: 0.9;
     }
   }
@@ -58,7 +63,7 @@
   &.color-primary .ListItem-button {
     color: var(--color-primary);
 
-    i {
+    .icon {
       opacity: 1;
       color: inherit;
     }

@@ -1,6 +1,6 @@
 .Spoiler {
   &--concealed {
-    cursor: pointer;
+    cursor: var(--custom-cursor, pointer);
     background-image: url('../../../assets/spoiler-dots-black.png');
     background-size: auto min(100%, 1.125rem);
     border-radius: 0.5rem;
@@ -8,7 +8,8 @@
     html.theme-dark &,
     html.theme-light .ListItem.selected &,
     .ActionMessage &,
-    .MediaViewerFooter & {
+    .MediaViewerFooter &,
+    #StoryViewer & {
       background-image: url('../../../assets/spoiler-dots-white.png');
     }
 

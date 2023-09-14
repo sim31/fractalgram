@@ -1,8 +1,10 @@
 import { inflate } from 'pako/dist/pako_inflate';
-import { createWorkerInterface } from '../../util/createPostMessageInterface';
+
 import type { CancellableCallback } from '../../util/PostMessageConnector';
 
-import 'script-loader!./rlottie-wasm';
+import { createWorkerInterface } from '../../util/createPostMessageInterface';
+
+importScripts(new URL('./rlottie-wasm.js', import.meta.url));
 
 declare const Module: any;
 
@@ -165,10 +167,10 @@ function destroy(key: string, isRepeated = false) {
 }
 
 const api = {
-  init,
-  changeData,
-  renderFrames,
-  destroy,
+  'rlottie:init': init,
+  'rlottie:changeData': changeData,
+  'rlottie:renderFrames': renderFrames,
+  'rlottie:destroy': destroy,
 };
 
 createWorkerInterface(api);

@@ -1,10 +1,10 @@
 import {
-  sessions, Api as GramJs, connection,
+  Api as GramJs,
+  sessions,
 } from '../../../lib/gramjs';
-import TelegramClient from '../../../lib/gramjs/client/TelegramClient';
-
-import { Logger as GramJsLogger } from '../../../lib/gramjs/extensions/index';
 import type { TwoFaParams } from '../../../lib/gramjs/client/2fa';
+import TelegramClient from '../../../lib/gramjs/client/TelegramClient';
+import { Logger as GramJsLogger } from '../../../lib/gramjs/extensions/index';
 
 import type {
   ApiInitialArgs,
@@ -15,31 +15,46 @@ import type {
 } from '../../types';
 
 import {
-  DEBUG, DEBUG_GRAMJS, UPLOAD_WORKERS, IS_TEST, APP_VERSION, SUPPORTED_VIDEO_CONTENT_TYPES, VIDEO_MOV_TYPE,
+  APP_CODE_NAME,
+  DEBUG, DEBUG_GRAMJS, IS_TEST, UPLOAD_WORKERS,
 } from '../../../config';
-import {
-  onRequestPhoneNumber, onRequestCode, onRequestPassword, onRequestRegistration,
-  onAuthError, onAuthReady, onCurrentUserUpdate, onRequestQrCode, onWebAuthTokenFailed,
-} from './auth';
-import { updater } from '../updater';
+import { pause } from '../../../util/schedulers';
 import { setMessageBuilderCurrentUserId } from '../apiBuilders/messages';
-import downloadMediaWithClient, { parseMediaUrl } from './media';
-import { buildApiUserFromFull } from '../apiBuilders/users';
-import localDb, { clearLocalDb } from '../localDb';
 import { buildApiPeerId } from '../apiBuilders/peers';
-import { addMessageToLocalDb, log } from '../helpers';
+import { buildApiUser, buildApiUserFullInfo } from '../apiBuilders/users';
+import {
+  addEntitiesToLocalDb,
+  addMessageToLocalDb, addStoryToLocalDb, addUserToLocalDb, isResponseUpdate, log,
+} from '../helpers';
+import localDb, { clearLocalDb } from '../localDb';
+import {
+  getDifference,
+  init as initUpdatesManager,
+  processUpdate,
+  reset as resetUpdatesManager,
+  scheduleGetChannelDifference,
+  updateChannelState,
+} from '../updateManager';
+import {
+  onAuthError, onAuthReady, onCurrentUserUpdate, onRequestCode, onRequestPassword, onRequestPhoneNumber,
+  onRequestQrCode, onRequestRegistration, onWebAuthTokenFailed,
+} from './auth';
+import downloadMediaWithClient, { parseMediaUrl } from './media';
+
+import { ChatAbortController } from '../ChatAbortController';
 
 const DEFAULT_USER_AGENT = 'Unknown UserAgent';
 const DEFAULT_PLATFORM = 'Unknown platform';
-const APP_CODE_NAME = 'Z';
 
 GramJsLogger.setLevel(DEBUG_GRAMJS ? 'debug' : 'warn');
 
 const gramJsUpdateEventBuilder = { build: (update: object) => update };
 
+const CHAT_ABORT_CONTROLLERS = new Map<string, ChatAbortController>();
+const ABORT_CONTROLLERS = new Map<string, AbortController>();
+
 let onUpdate: OnApiUpdate;
 let client: TelegramClient;
-let isConnected = false;
 let currentUserId: string | undefined;
 
 export async function init(_onUpdate: OnApiUpdate, initialArgs: ApiInitialArgs) {
@@ -51,15 +66,12 @@ export async function init(_onUpdate: OnApiUpdate, initialArgs: ApiInitialArgs) 
   onUpdate = _onUpdate;
 
   const {
-    userAgent, platform, sessionData, isTest, isMovSupported, isWebmSupported, maxBufferSize, webAuthToken, dcId,
-    mockScenario,
+    userAgent, platform, sessionData, isTest, isWebmSupported, maxBufferSize, webAuthToken, dcId,
+    mockScenario, shouldForceHttpTransport, shouldAllowHttpTransport,
+    shouldDebugExportedSenders,
   } = initialArgs;
   const session = new sessions.CallbackSession(sessionData, onSessionUpdate);
 
-  // eslint-disable-next-line no-restricted-globals
-  (self as any).isMovSupported = isMovSupported;
-  // Hacky way to update this set inside GramJS worker
-  if (isMovSupported) SUPPORTED_VIDEO_CONTENT_TYPES.add(VIDEO_MOV_TYPE);
   // eslint-disable-next-line no-restricted-globals
   (self as any).isWebmSupported = isWebmSupported;
   // eslint-disable-next-line no-restricted-globals
@@ -67,21 +79,23 @@ export async function init(_onUpdate: OnApiUpdate, initialArgs: ApiInitialArgs) 
 
   client = new TelegramClient(
     session,
-    process.env.TELEGRAM_T_API_ID,
-    process.env.TELEGRAM_T_API_HASH,
+    process.env.TELEGRAM_API_ID,
+    process.env.TELEGRAM_API_HASH,
     {
       deviceModel: navigator.userAgent || userAgent || DEFAULT_USER_AGENT,
       systemVersion: platform || DEFAULT_PLATFORM,
       appVersion: `${APP_VERSION} ${APP_CODE_NAME}`,
       useWSS: true,
       additionalDcsDisabled: IS_TEST,
+      shouldDebugExportedSenders,
+      shouldForceHttpTransport,
+      shouldAllowHttpTransport,
       testServers: isTest,
       dcId,
     } as any,
   );
 
   client.addEventHandler(handleGramJsUpdate, gramJsUpdateEventBuilder);
-  client.addEventHandler(updater, gramJsUpdateEventBuilder);
 
   try {
     if (DEBUG) {
@@ -94,6 +108,7 @@ export async function init(_onUpdate: OnApiUpdate, initialArgs: ApiInitialArgs) 
     }
 
     try {
+      client.setPingCallback(getDifference);
       await client.start({
         phoneNumber: onRequestPhoneNumber,
         phoneCode: onRequestCode,
@@ -131,6 +146,8 @@ export async function init(_onUpdate: OnApiUpdate, initialArgs: ApiInitialArgs) 
     onSessionUpdate(session.getSessionData());
     onUpdate({ '@type': 'updateApiReady' });
 
+    initUpdatesManager(invokeRequest);
+
     void fetchCurrentUser();
   } catch (err) {
     if (DEBUG) {
@@ -145,12 +162,19 @@ export function setIsPremium({ isPremium }: { isPremium: boolean }) {
   client.setIsPremium(isPremium);
 }
 
+const LOG_OUT_TIMEOUT = 2500;
 export async function destroy(noLogOut = false, noClearLocalDb = false) {
-  if (!noLogOut) {
-    await invokeRequest(new GramJs.auth.LogOut());
+  if (!noLogOut && client.isConnected()) {
+    await Promise.race([
+      invokeRequest(new GramJs.auth.LogOut()),
+      pause(LOG_OUT_TIMEOUT),
+    ]);
   }
 
-  if (!noClearLocalDb) clearLocalDb();
+  if (!noClearLocalDb) {
+    clearLocalDb();
+    resetUpdatesManager();
+  }
 
   await client.destroy();
 }
@@ -170,54 +194,76 @@ function onSessionUpdate(sessionData: ApiSessionData) {
   });
 }
 
-function handleGramJsUpdate(update: any) {
-  if (update instanceof connection.UpdateConnectionState) {
-    isConnected = update.state === connection.UpdateConnectionState.connected;
-  } else if (update instanceof GramJs.UpdatesTooLong) {
-    void handleTerminatedSession();
-  } else if (update instanceof GramJs.UpdateConfig) {
-    // eslint-disable-next-line no-underscore-dangle
-    const currentUser = (update as GramJs.UpdateConfig & { _entities?: (GramJs.TypeUser | GramJs.TypeChat)[] })
-      ._entities
-      ?.find((entity) => entity instanceof GramJs.User && buildApiPeerId(entity.id, 'user') === currentUserId);
-    if (!(currentUser instanceof GramJs.User)) return;
+type UpdateConfig = GramJs.UpdateConfig & { _entities?: (GramJs.TypeUser | GramJs.TypeChat)[] };
 
-    setIsPremium({ isPremium: Boolean(currentUser.premium) });
+export function handleGramJsUpdate(update: any) {
+  processUpdate(update);
+
+  if (update instanceof GramJs.UpdatesTooLong) {
+    void handleTerminatedSession();
+  } else {
+    const updates = 'updates' in update ? update.updates : [update];
+    updates.forEach((nestedUpdate: any) => {
+      if (!(nestedUpdate instanceof GramJs.UpdateConfig)) return;
+      // eslint-disable-next-line no-underscore-dangle
+      const currentUser = (nestedUpdate as UpdateConfig)._entities
+        ?.find((entity) => entity instanceof GramJs.User && buildApiPeerId(entity.id, 'user') === currentUserId);
+      if (!(currentUser instanceof GramJs.User)) return;
+
+      setIsPremium({ isPremium: Boolean(currentUser.premium) });
+    });
   }
 }
 
-export async function invokeRequest<T extends GramJs.AnyRequest>(
-  request: T,
-  shouldReturnTrue: true,
-  shouldThrow?: boolean,
-  shouldIgnoreUpdates?: undefined,
-  dcId?: number,
-  shouldIgnoreErrors?: boolean,
-): Promise<true | undefined>;
+type InvokeRequestParams = {
+  shouldThrow?: boolean;
+  shouldIgnoreUpdates?: boolean;
+  dcId?: number;
+  shouldIgnoreErrors?: boolean;
+  abortControllerChatId?: string;
+  abortControllerThreadId?: number;
+  abortControllerGroup?: 'call';
+  shouldRetryOnTimeout?: boolean;
+};
 
 export async function invokeRequest<T extends GramJs.AnyRequest>(
   request: T,
-  shouldReturnTrue?: boolean,
-  shouldThrow?: boolean,
-  shouldIgnoreUpdates?: boolean,
-  dcId?: number,
-  shouldIgnoreErrors?: boolean,
+  params?: InvokeRequestParams & { shouldReturnTrue?: false },
 ): Promise<T['__response'] | undefined>;
 
 export async function invokeRequest<T extends GramJs.AnyRequest>(
   request: T,
-  shouldReturnTrue = false,
-  shouldThrow = false,
-  shouldIgnoreUpdates = false,
-  dcId?: number,
-  shouldIgnoreErrors = false,
+  params?: InvokeRequestParams & { shouldReturnTrue: true },
+): Promise<true | undefined>;
+
+export async function invokeRequest<T extends GramJs.AnyRequest>(
+  request: T,
+  params: InvokeRequestParams & { shouldReturnTrue?: boolean } = {},
 ) {
-  if (!isConnected) {
-    if (DEBUG) {
-      log('INVOKE ERROR', request.className, 'Client is not connected');
+  const {
+    shouldThrow, shouldIgnoreUpdates, dcId, shouldIgnoreErrors, abortControllerChatId, abortControllerThreadId,
+    shouldRetryOnTimeout, abortControllerGroup,
+  } = params;
+  const shouldReturnTrue = Boolean(params.shouldReturnTrue);
+
+  let abortSignal: AbortSignal | undefined;
+  if (abortControllerChatId) {
+    let controller = CHAT_ABORT_CONTROLLERS.get(abortControllerChatId);
+    if (!controller) {
+      controller = new ChatAbortController();
+      CHAT_ABORT_CONTROLLERS.set(abortControllerChatId, controller);
     }
 
-    return undefined;
+    abortSignal = abortControllerThreadId ? controller.getThreadSignal(abortControllerThreadId) : controller.signal;
+  }
+
+  if (abortControllerGroup) {
+    let controller = ABORT_CONTROLLERS.get(abortControllerGroup);
+    if (!controller) {
+      controller = new AbortController();
+      ABORT_CONTROLLERS.set(abortControllerGroup, controller);
+    }
+    abortSignal = controller.signal;
   }
 
   try {
@@ -225,14 +271,14 @@ export async function invokeRequest<T extends GramJs.AnyRequest>(
       log('INVOKE', request.className);
     }
 
-    const result = await client.invoke(request, dcId);
+    const result = await client.invoke(request, dcId, abortSignal, shouldRetryOnTimeout);
 
     if (DEBUG) {
       log('RESPONSE', request.className, result);
     }
 
-    if (!shouldIgnoreUpdates) {
-      handleUpdatesFromRequest(request, result);
+    if (!shouldIgnoreUpdates && isResponseUpdate(result)) {
+      processUpdate(result);
     }
 
     return shouldReturnTrue ? result && true : result;
@@ -256,47 +302,30 @@ export async function invokeRequest<T extends GramJs.AnyRequest>(
   }
 }
 
-function handleUpdatesFromRequest<T extends GramJs.AnyRequest>(request: T, result: T['__response']) {
-  let manyUpdates;
-  let singleUpdate;
-
-  if (result instanceof GramJs.UpdatesCombined || result instanceof GramJs.Updates) {
-    manyUpdates = result;
-  } else if (typeof result === 'object' && 'updates' in result && (
-    result.updates instanceof GramJs.Updates || result.updates instanceof GramJs.UpdatesCombined
-  )) {
-    manyUpdates = result.updates;
-  } else if (
-    result instanceof GramJs.UpdateShortMessage
-    || result instanceof GramJs.UpdateShortChatMessage
-    || result instanceof GramJs.UpdateShort
-    || result instanceof GramJs.UpdateShortSentMessage
-  ) {
-    singleUpdate = result;
+export function invokeRequestBeacon<T extends GramJs.AnyRequest>(
+  request: T,
+  dcId?: number,
+) {
+  if (DEBUG) {
+    log('BEACON', request.className);
   }
 
-  if (manyUpdates) {
-    injectUpdateEntities(manyUpdates);
-
-    manyUpdates.updates.forEach((update) => {
-      updater(update, request);
-    });
-  } else if (singleUpdate) {
-    updater(singleUpdate, request);
-  }
+  client.invokeBeacon(request, dcId);
 }
 
 export async function downloadMedia(
-  args: { url: string; mediaFormat: ApiMediaFormat; start?: number; end?: number; isHtmlAllowed?: boolean },
+  args: {
+    url: string; mediaFormat: ApiMediaFormat; start?: number; end?: number; isHtmlAllowed?: boolean;
+  },
   onProgress?: ApiOnProgress,
 ) {
   try {
-    return (await downloadMediaWithClient(args, client, isConnected, onProgress));
+    return (await downloadMediaWithClient(args, client, onProgress));
   } catch (err: any) {
     if (err.message.startsWith('FILE_REFERENCE')) {
       const isFileReferenceRepaired = await repairFileReference({ url: args.url });
       if (isFileReferenceRepaired) {
-        return downloadMediaWithClient(args, client, isConnected, onProgress);
+        return downloadMediaWithClient(args, client, onProgress);
       }
 
       if (DEBUG) {
@@ -321,6 +350,23 @@ export function getTmpPassword(currentPassword: string, ttl?: number) {
   return client.getTmpPassword(currentPassword, ttl);
 }
 
+export function abortChatRequests(params: { chatId: string; threadId?: number }) {
+  const { chatId, threadId } = params;
+  const controller = CHAT_ABORT_CONTROLLERS.get(chatId);
+  if (!threadId) {
+    controller?.abort('Chat change');
+    CHAT_ABORT_CONTROLLERS.delete(chatId);
+    return;
+  }
+
+  controller?.abortThread(threadId, 'Thread change');
+}
+
+export function abortRequestGroup(group: string) {
+  ABORT_CONTROLLERS.get(group)?.abort();
+  ABORT_CONTROLLERS.delete(group);
+}
+
 export async function fetchCurrentUser() {
   const userFull = await invokeRequest(new GramJs.users.GetFullUser({
     id: new GramJs.InputUserSelf(),
@@ -335,11 +381,12 @@ export async function fetchCurrentUser() {
   if (user.photo instanceof GramJs.Photo) {
     localDb.photos[user.photo.id.toString()] = user.photo;
   }
-  localDb.users[buildApiPeerId(user.id, 'user')] = user;
-  const currentUser = buildApiUserFromFull(userFull);
+  addUserToLocalDb(user);
+  const currentUserFullInfo = buildApiUserFullInfo(userFull);
+  const currentUser = buildApiUser(user)!;
 
   setMessageBuilderCurrentUserId(currentUser.id);
-  onCurrentUserUpdate(currentUser);
+  onCurrentUserUpdate(currentUser, currentUserFullInfo);
 
   currentUserId = currentUser.id;
   setIsPremium({ isPremium: Boolean(currentUser.isPremium) });
@@ -364,24 +411,15 @@ export function dispatchErrorUpdate<T extends GramJs.AnyRequest>(err: Error, req
   });
 }
 
-function injectUpdateEntities(result: GramJs.Updates | GramJs.UpdatesCombined) {
-  const entities = [...result.users, ...result.chats];
-
-  result.updates.forEach((update) => {
-    if (entities) {
-      // eslint-disable-next-line no-underscore-dangle
-      (update as any)._entities = entities;
-    }
-  });
-}
-
 async function handleTerminatedSession() {
   try {
     await invokeRequest(new GramJs.users.GetFullUser({
       id: new GramJs.InputUserSelf(),
-    }), undefined, true);
+    }), {
+      shouldThrow: true,
+    });
   } catch (err: any) {
-    if (err.message === 'AUTH_KEY_UNREGISTERED') {
+    if (err.message === 'AUTH_KEY_UNREGISTERED' || err.message === 'SESSION_REVOKED') {
       onUpdate({
         '@type': 'updateConnectionState',
         connectionState: 'connectionStateBroken',
@@ -403,8 +441,21 @@ export async function repairFileReference({
     entityType, entityId, mediaMatchType,
   } = parsed;
 
-  if (mediaMatchType === 'file') {
-    return false;
+  if (mediaMatchType === 'document' || mediaMatchType === 'photo') {
+    const entity = mediaMatchType === 'document' ? localDb.documents[entityId] : localDb.photos[entityId];
+    if (!entity.storyData) return false;
+    const user = localDb.users[entity.storyData.userId];
+    if (!user?.accessHash) return false;
+
+    const result = await invokeRequest(new GramJs.stories.GetStoriesByID({
+      userId: new GramJs.InputUser({ userId: user.id, accessHash: user.accessHash }),
+      id: [entity.storyData.id],
+    }));
+    if (!result) return false;
+
+    addEntitiesToLocalDb(result.users);
+    result.stories.forEach((story) => addStoryToLocalDb(story, entity.storyData!.userId));
+    return true;
   }
 
   if (entityType === 'msg') {
@@ -428,11 +479,33 @@ export async function repairFileReference({
 
     if (!result || result instanceof GramJs.messages.MessagesNotModified) return false;
 
+    if (peer && 'pts' in result) {
+      updateChannelState(peer.channelId.toString(), result.pts);
+    }
+
     const message = result.messages[0];
     if (message instanceof GramJs.MessageEmpty) return false;
+    addEntitiesToLocalDb(result.users);
+    addEntitiesToLocalDb(result.chats);
     addMessageToLocalDb(message);
     return true;
   }
 
   return false;
+}
+
+export function setForceHttpTransport(forceHttpTransport: boolean) {
+  client.setForceHttpTransport(forceHttpTransport);
+}
+
+export function setAllowHttpTransport(allowHttpTransport: boolean) {
+  client.setAllowHttpTransport(allowHttpTransport);
+}
+
+export function setShouldDebugExportedSenders(value: boolean) {
+  client.setShouldDebugExportedSenders(value);
+}
+
+export function requestChannelDifference(channelId: string) {
+  scheduleGetChannelDifference(channelId);
 }

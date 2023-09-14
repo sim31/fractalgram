@@ -5,26 +5,48 @@
 
   .modal-content {
     overflow: hidden;
+    height: min(92vh, 32rem);
+    display: flex;
+    flex-direction: column;
+    padding: 0.5rem 0 !important;
+  }
+
+  .reactor-list-wrapper {
+    flex-grow: 1;
+    min-height: 0;
+  }
+
+  .confirm-dialog-button {
+    align-self: flex-end;
+    margin: 0 0.5rem;
   }
 
   .Reactions {
     margin-bottom: 0.5rem;
+    padding: 0 1rem;
+    justify-content: space-between;
+
+    &::after {
+      content: '';
+      flex-grow: 1;
+    }
   }
 
   .icon-heart {
     width: 1.125rem;
     height: 1.125rem;
-    margin-right: 0.25rem;
+    margin-inline-end: 0.25rem;
   }
 
   .reaction-filter-emoji {
-    margin-right: 0.25rem;
+    margin-inline-end: 0.25rem;
   }
 
   .reactor-list {
-    max-height: 400px;
+    max-height: 100%;
     overflow: auto;
     overflow-x: hidden;
+    padding: 0 0.5rem;
   }
 
   .reactors-list-item {
@@ -40,5 +62,13 @@
     width: 1.5rem;
     height: 1.5rem;
     margin-inline-start: auto;
+  }
+
+  .status {
+    color: var(--color-text-secondary);
+    display: flex;
+    align-items: center;
+    font-size: 0.875rem !important;
+    line-height: 1.25rem;
   }
 }

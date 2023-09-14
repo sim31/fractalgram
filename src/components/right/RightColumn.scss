@@ -17,8 +17,9 @@
     padding-right: 0;
   }
 
-  body.animation-level-0 & {
-    transition: none;
+  body.no-page-transitions &,
+  body.no-right-column-animations & {
+    transition: none !important;
   }
 
   @media (max-width: 1275px) {
@@ -45,7 +46,7 @@
       margin: 0 auto 0.5rem;
 
       &.no-photo {
-        cursor: default !important;
+        cursor: var(--custom-cursor, default) !important;
       }
     }
 
@@ -108,7 +109,8 @@
     @media (max-width: 600px) {
       transition: opacity var(--layer-transition);
 
-      body.animation-level-0 & {
+      body.no-page-transitions &,
+      body.no-right-column-animations & {
         transition: none;
       }
     }

@@ -1,26 +1,28 @@
 import type { FC } from '../../../lib/teact/teact';
 import React, {
-  useCallback, memo,
+  memo,
+  useCallback,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { AnimationLevel, ISettings, TimeFormat } from '../../../types';
+import type { ISettings, TimeFormat } from '../../../types';
+import type { IRadioOption } from '../../ui/RadioGroup';
 import { SettingsScreens } from '../../../types';
 
-import {
-  getSystemTheme, IS_IOS, IS_MAC_OS, IS_TOUCH_ENV,
-} from '../../../util/environment';
 import { pick } from '../../../util/iteratees';
 import { setTimeFormat } from '../../../util/langProvider';
-import useLang from '../../../hooks/useLang';
+import { getSystemTheme } from '../../../util/systemTheme';
+import {
+  IS_ANDROID, IS_IOS, IS_MAC_OS,
+} from '../../../util/windowEnvironment';
+
+import useAppLayout from '../../../hooks/useAppLayout';
 import useHistoryBack from '../../../hooks/useHistoryBack';
+import useLang from '../../../hooks/useLang';
 
 import ListItem from '../../ui/ListItem';
-import RangeSlider from '../../ui/RangeSlider';
-import type { IRadioOption } from '../../ui/RadioGroup';
 import RadioGroup from '../../ui/RadioGroup';
-import switchTheme from '../../../util/switchTheme';
-import { ANIMATION_LEVEL_MAX } from '../../../config';
+import RangeSlider from '../../ui/RangeSlider';
 
 type OwnProps = {
   isActive?: boolean;
@@ -39,12 +41,6 @@ type StateProps =
     shouldUseSystemTheme: boolean;
   };
 
-const ANIMATION_LEVEL_OPTIONS = [
-  'Solid and Steady',
-  'Nice and Fast',
-  'Lots of Stuff',
-];
-
 const TIME_FORMAT_OPTIONS: IRadioOption[] = [{
   label: '12-hour',
   value: '12h',
@@ -58,7 +54,6 @@ const SettingsGeneral: FC<OwnProps & StateProps> = ({
   onScreenSelect,
   onReset,
   messageTextSize,
-  animationLevel,
   messageSendKeyCombo,
   timeFormat,
   theme,
@@ -70,7 +65,10 @@ const SettingsGeneral: FC<OwnProps & StateProps> = ({
 
   const lang = useLang();
 
-  const APPEARANCE_THEME_OPTIONS: IRadioOption[] = [{
+  const { isMobile } = useAppLayout();
+  const isMobileDevice = isMobile && (IS_IOS || IS_ANDROID);
+
+  const appearanceThemeOptions: IRadioOption[] = [{
     label: lang('EmptyChat.Appearance.Light'),
     value: 'light',
   }, {
@@ -81,22 +79,14 @@ const SettingsGeneral: FC<OwnProps & StateProps> = ({
     value: 'auto',
   }];
 
-  const KEYBOARD_SEND_OPTIONS = !IS_TOUCH_ENV ? [
+  const keyboardSendOptions = !isMobileDevice ? [
     { value: 'enter', label: lang('lng_settings_send_enter'), subLabel: 'New line by Shift + Enter' },
     {
       value: 'ctrl-enter',
-      label: lang(IS_MAC_OS ? 'lng_settings_send_cmdenter' : 'lng_settings_send_ctrlenter'),
+      label: lang(IS_MAC_OS || IS_IOS ? 'lng_settings_send_cmdenter' : 'lng_settings_send_ctrlenter'),
       subLabel: 'New line by Enter',
     },
   ] : undefined;
-
-  const handleAnimationLevelChange = useCallback((newLevel: number) => {
-    ANIMATION_LEVEL_OPTIONS.forEach((_, i) => {
-      document.body.classList.toggle(`animation-level-${i}`, newLevel === i);
-    });
-
-    setSettingOption({ animationLevel: newLevel as AnimationLevel });
-  }, [setSettingOption]);
 
   const handleMessageTextSizeChange = useCallback((newSize: number) => {
     document.documentElement.style.setProperty(
@@ -114,10 +104,7 @@ const SettingsGeneral: FC<OwnProps & StateProps> = ({
 
     setSettingOption({ theme: newTheme });
     setSettingOption({ shouldUseSystemTheme: value === 'auto' });
-    if (newTheme !== theme) {
-      switchTheme(newTheme, animationLevel === ANIMATION_LEVEL_MAX);
-    }
-  }, [animationLevel, setSettingOption, theme]);
+  }, [setSettingOption]);
 
   const handleTimeFormatChange = useCallback((newTimeFormat: string) => {
     setSettingOption({ timeFormat: newTimeFormat as TimeFormat });
@@ -163,7 +150,7 @@ const SettingsGeneral: FC<OwnProps & StateProps> = ({
         </h4>
         <RadioGroup
           name="theme"
-          options={APPEARANCE_THEME_OPTIONS}
+          options={appearanceThemeOptions}
           selected={shouldUseSystemTheme ? 'auto' : theme}
           onChange={handleAppearanceThemeChange}
         />
@@ -181,28 +168,13 @@ const SettingsGeneral: FC<OwnProps & StateProps> = ({
         />
       </div>
 
-      <div className="settings-item">
-        <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>
-          Animation Level
-        </h4>
-        <p className="settings-item-description" dir={lang.isRtl ? 'rtl' : undefined}>
-          Choose the desired animations amount.
-        </p>
-
-        <RangeSlider
-          options={ANIMATION_LEVEL_OPTIONS}
-          value={animationLevel}
-          onChange={handleAnimationLevelChange}
-        />
-      </div>
-
-      {KEYBOARD_SEND_OPTIONS && (
+      {keyboardSendOptions && (
         <div className="settings-item">
           <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>{lang('VoiceOver.Keyboard')}</h4>
 
           <RadioGroup
             name="keyboard-send-settings"
-            options={KEYBOARD_SEND_OPTIONS}
+            options={keyboardSendOptions}
             onChange={handleMessageSendComboChange}
             selected={messageSendKeyCombo}
           />

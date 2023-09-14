@@ -1,21 +1,24 @@
 import type { ChangeEvent } from 'react';
 import type { FC } from '../../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useState, useMemo,
+  memo, useCallback, useEffect, useMemo,
+  useState,
 } from '../../../lib/teact/teact';
 
+import type { AccountPromptDefaults, AccountPromptInfo } from '../../../global/types';
+
+import { composePrompt } from '../../../global/helpers/consensusMessages';
 import captureEscKeyListener from '../../../util/captureEscKeyListener';
+
 import useLang from '../../../hooks/useLang';
 
 import Button from '../../ui/Button';
-import Modal from '../../ui/Modal';
 import InputText from '../../ui/InputText';
+import Modal from '../../ui/Modal';
+import RadioGroup, { type IRadioOption } from '../../ui/RadioGroup';
+import TextArea from '../../ui/TextArea';
 
 import './PollModal.scss';
-import type { AccountPromptInfo, AccountPromptDefaults } from '../../../global/types';
-import TextArea from '../../ui/TextArea';
-import { composePrompt } from '../../../global/helpers/consensusMessages';
-import RadioGroup, { type IRadioOption } from '../../ui/RadioGroup';
 
 export type OwnProps = {
   isOpen: boolean;

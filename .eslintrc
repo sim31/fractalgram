@@ -10,6 +10,7 @@
     "no-async-without-await",
     "teactn",
     "no-null",
+    "simple-import-sort",
     "react-hooks-static-deps",
     "eslint-multitab-tt"
   ],
@@ -30,7 +31,8 @@
       "error",
       {
         "code": 120,
-        "ignoreComments": true
+        "ignoreComments": true,
+        "ignorePattern": "\\sd=\".+\"" // Ignore lines with "d" attribute
       }
     ],
     "array-bracket-newline": [
@@ -50,7 +52,8 @@
           "getActions": true,
           "useFlag": [false, true, true],
           "useForceUpdate": true,
-          "useReducer": [false, true]
+          "useReducer": [false, true],
+          "useLastCallback": true
         }
       }
     ],
@@ -90,6 +93,12 @@
     "import/prefer-default-export": "off",
     "import/named": "off",
     "import/no-webpack-loader-syntax": "off",
+    "import/no-cycle": [
+      "error",
+      {
+        "allowUnsafeDynamicCyclicDependency": true // TODO: Fix this
+      }
+    ],
     "react/prop-types": "off",
     "react/jsx-one-expression-per-line": "off",
     "react/button-has-type": "off",
@@ -141,7 +150,58 @@
         "disallowTypeAnnotations": false
       }
     ],
-    "teactn/prefer-separate-component-file": "off"
+    "teactn/prefer-separate-component-file": "off",
+    "simple-import-sort/imports": [
+      "error",
+      {
+        "groups": [
+          // Side effect imports
+          ["^\\u0000"],
+          // Lib and global imports
+          [
+            "^react",
+            "^@?\\w",
+            "dist(/.*|$)",
+            "^(\\.+/)+(lib/(teact|gramjs))(/.*|$)",
+            "^(\\.+/)+global$"
+          ],
+          // Type imports
+          [
+            "^(\\.+/)+.+\\u0000$",
+            "^(\\.+/|\\w+/)+(types)(/.*|$)",
+            "^(\\.+/|\\w+/)+(types)\\u0000"
+          ],
+          // Config, utils, helpers
+          [
+            "^(\\.+/)+config",
+            "^(\\.+/)+(lib)(?!/(gramjs|teact))(/.*|$)",
+            "^(\\.+/)+global/.+",
+            "^(\\.+/)+(util)(/.*|$)",
+            "^\\.\\.(?!/?$)",
+            "^\\.\\./?$",
+            "^\\./(?=.*/)(?!/?$)",
+            "^\\.(?!/?$)",
+            "^\\./?$"
+          ],
+          // Hooks
+          [
+            ".+(/hooks/)(.*|$)"
+          ],
+          // Components
+          [
+            "\/[A-Z](([a-z]+[A-Z]?)*)"
+          ],
+          // Styles and CSS modules
+          [
+            "^.+\\.s?css$"
+          ],
+          // Assets: images, stickers, etc
+          [
+            "^(\\.+/)+(assets)(/.*|$)"
+          ]
+        ]
+      }
+    ]
   },
   "settings": {
     "import/resolver": "webpack",

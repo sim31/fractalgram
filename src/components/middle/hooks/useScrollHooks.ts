@@ -1,31 +1,37 @@
 import type { RefObject } from 'react';
+import { useEffect, useMemo, useRef } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
-import { useMemo, useRef } from '../../../lib/teact/teact';
 
-import { LoadMoreDirection } from '../../../types';
 import type { MessageListType } from '../../../global/types';
+import type { Signal } from '../../../util/signals';
+import { LoadMoreDirection } from '../../../types';
 
-import { LOCAL_MESSAGE_MIN_ID, MESSAGE_LIST_SLICE } from '../../../config';
-import { IS_SCROLL_PATCH_NEEDED, MESSAGE_LIST_SENSITIVE_AREA } from '../../../util/environment';
+import { requestMeasure } from '../../../lib/fasterdom/fasterdom';
+import { isLocalMessageId } from '../../../global/helpers';
 import { debounce } from '../../../util/schedulers';
+import { MESSAGE_LIST_SENSITIVE_AREA } from '../../../util/windowEnvironment';
+
+import { useDebouncedSignal } from '../../../hooks/useAsyncResolvers';
 import { useIntersectionObserver, useOnIntersect } from '../../../hooks/useIntersectionObserver';
+import useLastCallback from '../../../hooks/useLastCallback';
+import { useSignalEffect } from '../../../hooks/useSignalEffect';
 import useSyncEffect from '../../../hooks/useSyncEffect';
 
 const FAB_THRESHOLD = 50;
 const NOTCH_THRESHOLD = 1; // Notch has zero height so we at least need a 1px margin to intersect
-const TOOLS_FREEZE_TIMEOUT = 250; // Approximate message sending animation duration
+const CONTAINER_HEIGHT_DEBOUNCE = 200;
+const TOOLS_FREEZE_TIMEOUT = 350; // Approximate message sending animation duration
 
 export default function useScrollHooks(
   type: MessageListType,
   containerRef: RefObject<HTMLDivElement>,
   messageIds: number[],
+  getContainerHeight: Signal<number | undefined>,
   isViewportNewest: boolean,
   isUnread: boolean,
   onFabToggle: AnyToVoidFunction,
   onNotchToggle: AnyToVoidFunction,
   isReady: boolean,
-  isScrollingRef: { current: boolean | undefined },
-  isScrollPatchNeededRef: { current: boolean | undefined },
 ) {
   const { loadViewportMessages } = getActions();
 
@@ -45,10 +51,10 @@ export default function useScrollHooks(
   // eslint-disable-next-line no-null/no-null
   const fabTriggerRef = useRef<HTMLDivElement>(null);
 
-  function toggleScrollTools() {
+  const toggleScrollTools = useLastCallback(() => {
     if (!isReady) return;
 
-    if (!messageIds || !messageIds.length) {
+    if (!messageIds?.length) {
       onFabToggle(false);
       onNotchToggle(false);
       return;
@@ -60,11 +66,12 @@ export default function useScrollHooks(
       return;
     }
 
-    if (!containerRef.current) {
+    const container = containerRef.current;
+    if (!container) {
       return;
     }
 
-    const { offsetHeight, scrollHeight, scrollTop } = containerRef.current;
+    const { offsetHeight, scrollHeight, scrollTop } = container;
     const scrollBottom = Math.round(scrollHeight - scrollTop - offsetHeight);
     const isNearBottom = scrollBottom <= FAB_THRESHOLD;
     const isAtBottom = scrollBottom <= NOTCH_THRESHOLD;
@@ -73,10 +80,10 @@ export default function useScrollHooks(
 
     onFabToggle(isUnread ? !isAtBottom : !isNearBottom);
     onNotchToggle(!isAtBottom);
-  }
+  });
 
   const {
-    observe: observeIntersection,
+    observe: observeIntersectionForHistory,
   } = useIntersectionObserver({
     rootRef: containerRef,
     margin: MESSAGE_LIST_SENSITIVE_AREA,
@@ -86,33 +93,28 @@ export default function useScrollHooks(
     }
 
     // Loading history while sending a message can return the same message and cause ambiguity
-    const isFirstMessageLocal = messageIds[0] > LOCAL_MESSAGE_MIN_ID;
+    const isFirstMessageLocal = isLocalMessageId(messageIds[0]);
     if (isFirstMessageLocal) {
       return;
     }
 
-    const triggerEntry = entries.find(({ isIntersecting }) => isIntersecting);
-    if (!triggerEntry) {
-      return;
-    }
+    entries.forEach(({ isIntersecting, target }) => {
+      if (!isIntersecting) return;
 
-    const { target } = triggerEntry;
-
-    if (target.className === 'backwards-trigger') {
-      if (
-        IS_SCROLL_PATCH_NEEDED && isScrollingRef.current && messageIds.length <= MESSAGE_LIST_SLICE
-      ) {
-        isScrollPatchNeededRef.current = true;
+      if (target.className === 'backwards-trigger') {
+        loadMoreBackwards();
       }
 
-      loadMoreBackwards();
-    } else if (target.className === 'forwards-trigger') {
-      loadMoreForwards();
-    }
+      if (target.className === 'forwards-trigger') {
+        loadMoreForwards();
+      }
+    });
   });
 
-  useOnIntersect(backwardsTriggerRef, observeIntersection);
-  useOnIntersect(forwardsTriggerRef, observeIntersection);
+  const withHistoryTriggers = messageIds && messageIds.length > 1;
+
+  useOnIntersect(backwardsTriggerRef, withHistoryTriggers ? observeIntersectionForHistory : undefined);
+  useOnIntersect(forwardsTriggerRef, withHistoryTriggers ? observeIntersectionForHistory : undefined);
 
   const {
     observe: observeIntersectionForFab,
@@ -121,6 +123,7 @@ export default function useScrollHooks(
   } = useIntersectionObserver({
     rootRef: containerRef,
     margin: FAB_THRESHOLD * 2,
+    throttleScheduler: requestMeasure,
   }, toggleScrollTools);
 
   useOnIntersect(fabTriggerRef, observeIntersectionForFab);
@@ -132,20 +135,18 @@ export default function useScrollHooks(
   } = useIntersectionObserver({
     rootRef: containerRef,
     margin: NOTCH_THRESHOLD,
+    throttleScheduler: requestMeasure,
   }, toggleScrollTools);
 
   useOnIntersect(fabTriggerRef, observeIntersectionForNotch);
 
-  const toggleScrollToolsRef = useRef<typeof toggleScrollTools>();
-  toggleScrollToolsRef.current = toggleScrollTools;
-  useSyncEffect(() => {
+  useEffect(() => {
     if (isReady) {
-      toggleScrollToolsRef.current!();
+      toggleScrollTools();
     }
-  }, [isReady]);
+  }, [isReady, toggleScrollTools]);
 
-  // Workaround for FAB and notch flickering with tall incoming message
-  useSyncEffect(() => {
+  const freezeShortly = useLastCallback(() => {
     freezeForFab();
     freezeForNotch();
 
@@ -153,7 +154,19 @@ export default function useScrollHooks(
       unfreezeForNotch();
       unfreezeForFab();
     }, TOOLS_FREEZE_TIMEOUT);
-  }, [freezeForFab, freezeForNotch, messageIds, unfreezeForFab, unfreezeForNotch]);
+  });
 
-  return { backwardsTriggerRef, forwardsTriggerRef, fabTriggerRef };
+  // Workaround for FAB and notch flickering with tall incoming message
+  useSyncEffect(freezeShortly, [freezeShortly, messageIds]);
+
+  // Workaround for notch flickering when opening Composer Embedded Message
+  const getContainerHeightDebounced = useDebouncedSignal(getContainerHeight, CONTAINER_HEIGHT_DEBOUNCE);
+  useSignalEffect(freezeShortly, [freezeShortly, getContainerHeightDebounced]);
+
+  return {
+    withHistoryTriggers,
+    backwardsTriggerRef,
+    forwardsTriggerRef,
+    fabTriggerRef,
+  };
 }

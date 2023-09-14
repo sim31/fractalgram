@@ -1,19 +1,19 @@
 import type { ApiDimensions, ApiMessage } from '../../../api/types';
-
 import { MediaViewerOrigin } from '../../../types';
 
 import { ANIMATION_END_DELAY, MESSAGE_CONTENT_SELECTOR } from '../../../config';
+import { requestMutation } from '../../../lib/fasterdom/fasterdom';
+import { getMessageHtmlId } from '../../../global/helpers';
+import { isElementInViewport } from '../../../util/isElementInViewport';
+import stopEvent from '../../../util/stopEvent';
+import { IS_TOUCH_ENV } from '../../../util/windowEnvironment';
+import windowSize from '../../../util/windowSize';
 import {
   calculateDimensions,
   getMediaViewerAvailableDimensions,
   MEDIA_VIEWER_MEDIA_QUERY,
   REM,
 } from '../../common/helpers/mediaDimensions';
-import windowSize from '../../../util/windowSize';
-import stopEvent from '../../../util/stopEvent';
-import { IS_TOUCH_ENV } from '../../../util/environment';
-import { getMessageHtmlId } from '../../../global/helpers';
-import { isElementInViewport } from '../../../util/isElementInViewport';
 
 const ANIMATION_DURATION = 200;
 
@@ -62,27 +62,26 @@ export function animateOpening(
   const fromScaleX = fromWidth / toWidth;
   const fromScaleY = fromHeight / toHeight;
 
-  const ghost = createGhost(bestImageData || fromImage);
-  applyStyles(ghost, {
-    top: `${toTop}px`,
-    left: `${toLeft}px`,
-    width: `${toWidth}px`,
-    height: `${toHeight}px`,
-    transform: `translate3d(${fromTranslateX}px, ${fromTranslateY}px, 0) scale(${fromScaleX}, ${fromScaleY})`,
-  });
-  applyShape(ghost, origin);
+  requestMutation(() => {
+    const ghost = createGhost(bestImageData || fromImage);
+    applyStyles(ghost, {
+      top: `${toTop}px`,
+      left: `${toLeft}px`,
+      width: `${toWidth}px`,
+      height: `${toHeight}px`,
+      transform: `translate3d(${fromTranslateX}px, ${fromTranslateY}px, 0) scale(${fromScaleX}, ${fromScaleY})`,
+    });
+    applyShape(ghost, origin);
 
-  document.body.classList.add('ghost-animating');
-
-  requestAnimationFrame(() => {
     document.body.appendChild(ghost);
+    document.body.classList.add('ghost-animating');
 
-    requestAnimationFrame(() => {
+    requestMutation(() => {
       ghost.style.transform = '';
       clearShape(ghost);
 
       setTimeout(() => {
-        requestAnimationFrame(() => {
+        requestMutation(() => {
           if (document.body.contains(ghost)) {
             document.body.removeChild(ghost);
           }
@@ -146,43 +145,41 @@ export function animateClosing(origin: MediaViewerOrigin, bestImageData: string,
   }
 
   const existingGhost = document.getElementsByClassName('ghost')[0] as HTMLDivElement;
-
   const ghost = existingGhost || createGhost(bestImageData || toImage, origin);
-  if (!existingGhost) {
-    applyStyles(ghost, {
+
+  let styles: Record<string, string>;
+  if (existingGhost) {
+    const {
+      top, left, width, height,
+    } = existingGhost.getBoundingClientRect();
+    const scaleX = width / toWidth;
+    const scaleY = height / toHeight;
+
+    styles = {
+      transition: 'none',
+      top: `${toTop}px`,
+      left: `${toLeft}px`,
+      transformOrigin: 'top left',
+      transform: `translate3d(${left - toLeft}px, ${top - toTop}px, 0) scale(${scaleX}, ${scaleY})`,
+      width: `${toWidth}px`,
+      height: `${toHeight}px`,
+    };
+  } else {
+    styles = {
       top: `${toTop}px`,
       left: `${toLeft}px`,
       width: `${toWidth}px`,
       height: `${toHeight}px`,
       transform: `translate3d(${fromTranslateX}px, ${fromTranslateY}px, 0) scale(${fromScaleX}, ${fromScaleY})`,
-    });
+    };
   }
 
-  requestAnimationFrame(() => {
-    if (existingGhost) {
-      const {
-        top,
-        left,
-        width,
-        height,
-      } = existingGhost.getBoundingClientRect();
-      const scaleX = width / toWidth;
-      const scaleY = height / toHeight;
-
-      applyStyles(ghost, {
-        transition: 'none',
-        top: `${toTop}px`,
-        left: `${toLeft}px`,
-        transformOrigin: 'top left',
-        transform: `translate3d(${left - toLeft}px, ${top - toTop}px, 0) scale(${scaleX}, ${scaleY})`,
-        width: `${toWidth}px`,
-        height: `${toHeight}px`,
-      });
-    }
-    document.body.classList.add('ghost-animating');
+  requestMutation(() => {
+    applyStyles(ghost, styles);
     if (!existingGhost) document.body.appendChild(ghost);
+    document.body.classList.add('ghost-animating');
 
-    requestAnimationFrame(() => {
+    requestMutation(() => {
       if (existingGhost) {
         existingGhost.style.transition = '';
       }
@@ -196,7 +193,7 @@ export function animateClosing(origin: MediaViewerOrigin, bestImageData: string,
       applyShape(ghost, origin);
 
       setTimeout(() => {
-        requestAnimationFrame(() => {
+        requestMutation(() => {
           if (document.body.contains(ghost)) {
             document.body.removeChild(ghost);
           }
@@ -266,7 +263,7 @@ function uncover(realWidth: number, realHeight: number, top: number, left: numbe
 }
 
 function isMessageImageFullyVisible(container: HTMLElement, imageEl: HTMLElement) {
-  const messageListElement = document.querySelector<HTMLDivElement>('.Transition__slide--active > .MessageList')!;
+  const messageListElement = document.querySelector<HTMLDivElement>('.Transition_slide-active > .MessageList')!;
   let imgOffsetTop = container.offsetTop + imageEl.closest<HTMLDivElement>('.content-inner, .WebPage')!.offsetTop;
   if (container.id.includes('album-media-')) {
     imgOffsetTop += container.parentElement!.offsetTop + container.closest<HTMLDivElement>('.Message')!.offsetTop;
@@ -297,7 +294,7 @@ function getNodes(origin: MediaViewerOrigin, message?: ApiMessage) {
   switch (origin) {
     case MediaViewerOrigin.Album:
     case MediaViewerOrigin.ScheduledAlbum:
-      containerSelector = `.Transition__slide--active > .MessageList #album-media-${getMessageHtmlId(message!.id)}`;
+      containerSelector = `.Transition_slide-active > .MessageList #album-media-${getMessageHtmlId(message!.id)}`;
       mediaSelector = '.full-media';
       break;
 
@@ -312,30 +309,30 @@ function getNodes(origin: MediaViewerOrigin, message?: ApiMessage) {
       break;
 
     case MediaViewerOrigin.MiddleHeaderAvatar:
-      containerSelector = '.MiddleHeader .Transition__slide--active .ChatInfo .Avatar';
+      containerSelector = '.MiddleHeader .Transition_slide-active .ChatInfo .Avatar';
       mediaSelector = '.avatar-media';
       break;
 
     case MediaViewerOrigin.SettingsAvatar:
-      containerSelector = '#Settings .ProfileInfo .Transition__slide--active .ProfilePhoto';
+      containerSelector = '#Settings .ProfileInfo .Transition_slide-active .ProfilePhoto';
       mediaSelector = '.avatar-media';
       break;
 
     case MediaViewerOrigin.ProfileAvatar:
-      containerSelector = '#RightColumn .ProfileInfo .Transition__slide--active .ProfilePhoto';
+      containerSelector = '#RightColumn .ProfileInfo .Transition_slide-active .ProfilePhoto';
       mediaSelector = '.avatar-media';
       break;
 
     case MediaViewerOrigin.SuggestedAvatar:
-      containerSelector = `.Transition__slide--active > .MessageList #${getMessageHtmlId(message!.id)}`;
+      containerSelector = `.Transition_slide-active > .MessageList #${getMessageHtmlId(message!.id)}`;
       mediaSelector = '.Avatar img';
       break;
 
     case MediaViewerOrigin.ScheduledInline:
     case MediaViewerOrigin.Inline:
     default:
-      containerSelector = `.Transition__slide--active > .MessageList #${getMessageHtmlId(message!.id)}`;
-      mediaSelector = `${MESSAGE_CONTENT_SELECTOR} .full-media, ${MESSAGE_CONTENT_SELECTOR} .thumbnail`;
+      containerSelector = `.Transition_slide-active > .MessageList #${getMessageHtmlId(message!.id)}`;
+      mediaSelector = `${MESSAGE_CONTENT_SELECTOR} .full-media,${MESSAGE_CONTENT_SELECTOR} .thumbnail:not(.blurred-bg)`;
   }
 
   const container = document.querySelector<HTMLElement>(containerSelector)!;

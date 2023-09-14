@@ -1,61 +1,69 @@
-import React, { memo, useCallback, useEffect } from '../../../lib/teact/teact';
+import type { FC } from '../../../lib/teact/teact';
+import React, { memo, useEffect } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
-import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
 import type {
   ApiChat,
-  ApiUser,
+  ApiFormattedText,
   ApiMessage,
   ApiMessageOutgoingStatus,
-  ApiFormattedText,
-  ApiUserStatus,
   ApiTopic,
   ApiTypingStatus,
+  ApiUser,
+  ApiUserStatus,
 } from '../../../api/types';
-import type { AnimationLevel } from '../../../types';
+import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
 import type { ChatAnimationTypes } from './hooks';
-
 import { MAIN_THREAD_ID } from '../../../api/types';
-import { IS_MULTITAB_SUPPORTED } from '../../../util/environment';
+import { StoryViewerOrigin } from '../../../types';
+
 import {
-  isUserId,
-  getPrivateChatUserId,
   getMessageAction,
+  getPrivateChatUserId,
+  isUserId,
+  isUserOnline,
   selectIsChatMuted,
 } from '../../../global/helpers';
 import {
+  selectCanAnimateInterface,
   selectChat,
-  selectUser,
   selectChatMessage,
-  selectOutgoingStatus,
-  selectDraft,
   selectCurrentMessageList,
-  selectNotifySettings,
+  selectDraft,
+  selectIsForumPanelClosed,
+  selectIsForumPanelOpen,
   selectNotifyExceptions,
-  selectUserStatus,
+  selectNotifySettings,
+  selectOutgoingStatus,
+  selectTabState,
+  selectThreadParam,
   selectTopicFromMessage,
-  selectThreadParam, selectTabState,
+  selectUser,
+  selectUserStatus,
 } from '../../../global/selectors';
 import buildClassName from '../../../util/buildClassName';
 import { createLocationHash } from '../../../util/routing';
+import { IS_OPEN_IN_NEW_TAB_SUPPORTED } from '../../../util/windowEnvironment';
 
+import useAppLayout from '../../../hooks/useAppLayout';
 import useChatContextActions from '../../../hooks/useChatContextActions';
 import useFlag from '../../../hooks/useFlag';
-import useChatListEntry from './hooks/useChatListEntry';
 import { useIsIntersecting } from '../../../hooks/useIntersectionObserver';
-import useAppLayout from '../../../hooks/useAppLayout';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useSelectorSignal from '../../../hooks/useSelectorSignal';
+import useShowTransition from '../../../hooks/useShowTransition';
+import useChatListEntry from './hooks/useChatListEntry';
 
-import ListItem from '../../ui/ListItem';
 import Avatar from '../../common/Avatar';
-import LastMessageMeta from '../../common/LastMessageMeta';
 import DeleteChatModal from '../../common/DeleteChatModal';
-import ReportModal from '../../common/ReportModal';
 import FullNameTitle from '../../common/FullNameTitle';
+import LastMessageMeta from '../../common/LastMessageMeta';
+import ReportModal from '../../common/ReportModal';
+import ListItem from '../../ui/ListItem';
 import ChatFolderModal from '../ChatFolderModal.async';
+import MuteChatModal from '../MuteChatModal.async';
+import ChatBadge from './ChatBadge';
 import ChatCallStatus from './ChatCallStatus';
-import Badge from './Badge';
-import AvatarBadge from './AvatarBadge';
 
 import './Chat.scss';
 
@@ -81,14 +89,14 @@ type StateProps = {
   lastMessageSender?: ApiUser | ApiChat;
   lastMessageOutgoingStatus?: ApiMessageOutgoingStatus;
   draft?: ApiFormattedText;
-  animationLevel?: AnimationLevel;
   isSelected?: boolean;
   isSelectedForum?: boolean;
+  isForumPanelOpen?: boolean;
   canScrollDown?: boolean;
   canChangeFolder?: boolean;
-  lastSyncTime?: number;
   lastMessageTopic?: ApiTopic;
   typingStatus?: ApiTypingStatus;
+  withInterfaceAnimations?: boolean;
 };
 
 const Chat: FC<OwnProps & StateProps> = ({
@@ -109,12 +117,12 @@ const Chat: FC<OwnProps & StateProps> = ({
   actionTargetChatId,
   offsetTop,
   draft,
-  animationLevel,
+  withInterfaceAnimations,
   isSelected,
   isSelectedForum,
+  isForumPanelOpen,
   canScrollDown,
   canChangeFolder,
-  lastSyncTime,
   lastMessageTopic,
   typingStatus,
   onDragEnter,
@@ -124,13 +132,16 @@ const Chat: FC<OwnProps & StateProps> = ({
     focusLastMessage,
     loadTopics,
     openForumPanel,
+    closeForumPanel,
   } = getActions();
 
   const { isMobile } = useAppLayout();
   const [isDeleteModalOpen, openDeleteModal, closeDeleteModal] = useFlag();
+  const [isMuteModalOpen, openMuteModal, closeMuteModal] = useFlag();
   const [isChatFolderModalOpen, openChatFolderModal, closeChatFolderModal] = useFlag();
   const [isReportModalOpen, openReportModal, closeReportModal] = useFlag();
   const [shouldRenderDeleteModal, markRenderDeleteModal, unmarkRenderDeleteModal] = useFlag();
+  const [shouldRenderMuteModal, markRenderMuteModal, unmarkRenderMuteModal] = useFlag();
   const [shouldRenderChatFolderModal, markRenderChatFolderModal, unmarkRenderChatFolderModal] = useFlag();
   const [shouldRenderReportModal, markRenderReportModal, unmarkRenderReportModal] = useFlag();
 
@@ -149,13 +160,20 @@ const Chat: FC<OwnProps & StateProps> = ({
     lastMessageSender,
     observeIntersection,
     animationType,
-    animationLevel,
+    withInterfaceAnimations,
     orderDiff,
   });
 
-  const handleClick = useCallback(() => {
+  const getIsForumPanelClosed = useSelectorSignal(selectIsForumPanelClosed);
+
+  const handleClick = useLastCallback(() => {
     if (isForum) {
-      openForumPanel({ chatId }, { forceOnHeavyAnimation: true });
+      if (isForumPanelOpen) {
+        closeForumPanel(undefined, { forceOnHeavyAnimation: true });
+      } else {
+        openForumPanel({ chatId }, { forceOnHeavyAnimation: true });
+      }
+
       return;
     }
 
@@ -164,32 +182,38 @@ const Chat: FC<OwnProps & StateProps> = ({
     if (isSelected && canScrollDown) {
       focusLastMessage();
     }
-  }, [isForum, openChat, chatId, isSelected, canScrollDown, openForumPanel, focusLastMessage]);
+  });
 
-  const handleDragEnter = useCallback((e) => {
+  const handleDragEnter = useLastCallback((e) => {
     e.preventDefault();
     onDragEnter?.(chatId);
-  }, [chatId, onDragEnter]);
+  });
 
-  const handleDelete = useCallback(() => {
+  const handleDelete = useLastCallback(() => {
     markRenderDeleteModal();
     openDeleteModal();
-  }, [markRenderDeleteModal, openDeleteModal]);
+  });
 
-  const handleChatFolderChange = useCallback(() => {
+  const handleMute = useLastCallback(() => {
+    markRenderMuteModal();
+    openMuteModal();
+  });
+
+  const handleChatFolderChange = useLastCallback(() => {
     markRenderChatFolderModal();
     openChatFolderModal();
-  }, [markRenderChatFolderModal, openChatFolderModal]);
+  });
 
-  const handleReport = useCallback(() => {
+  const handleReport = useLastCallback(() => {
     markRenderReportModal();
     openReportModal();
-  }, [markRenderReportModal, openReportModal]);
+  });
 
   const contextActions = useChatContextActions({
     chat,
     user,
     handleDelete,
+    handleMute,
     handleChatFolderChange,
     handleReport,
     folderId,
@@ -198,18 +222,23 @@ const Chat: FC<OwnProps & StateProps> = ({
     canChangeFolder,
   });
 
-  const isIntersecting = useIsIntersecting(ref, observeIntersection);
+  const isIntersecting = useIsIntersecting(ref, chat ? observeIntersection : undefined);
 
   // Load the forum topics to display unread count badge
   useEffect(() => {
-    if (isIntersecting && lastSyncTime && isForum && chat && chat.listedTopicIds === undefined) {
+    if (isIntersecting && isForum && chat && chat.listedTopicIds === undefined) {
       loadTopics({ chatId });
     }
-  }, [chat, chatId, isForum, isIntersecting, lastSyncTime, loadTopics]);
+  }, [chat, chatId, isForum, isIntersecting]);
+
+  const isOnline = user && userStatus && isUserOnline(user, userStatus);
+  const { hasShownClass: isAvatarOnlineShown } = useShowTransition(isOnline);
 
   if (!chat) {
     return undefined;
   }
+
+  const peer = user || chat;
 
   const className = buildClassName(
     'Chat chat-item-clickable',
@@ -223,7 +252,7 @@ const Chat: FC<OwnProps & StateProps> = ({
     <ListItem
       ref={ref}
       className={className}
-      href={IS_MULTITAB_SUPPORTED ? `#${createLocationHash(chatId, 'thread', MAIN_THREAD_ID)}` : undefined}
+      href={IS_OPEN_IN_NEW_TAB_SUPPORTED ? `#${createLocationHash(chatId, 'thread', MAIN_THREAD_ID)}` : undefined}
       style={`top: ${offsetTop}px`}
       ripple={!isForum && !isMobile}
       contextActions={contextActions}
@@ -231,31 +260,32 @@ const Chat: FC<OwnProps & StateProps> = ({
       onDragEnter={handleDragEnter}
       withPortalForMenu
     >
-      <div className="status">
+      <div className={buildClassName('status', 'status-clickable')}>
         <Avatar
-          chat={chat}
-          user={user}
-          userStatus={userStatus}
+          peer={peer}
           isSavedMessages={user?.isSelf}
-          lastSyncTime={lastSyncTime}
-          animationLevel={animationLevel}
-          withVideo
-          observeIntersection={observeIntersection}
+          withStory={user && !user?.isSelf}
+          withStoryGap={isAvatarOnlineShown}
+          storyViewerOrigin={StoryViewerOrigin.ChatList}
+          storyViewerMode="single-user"
         />
-        <AvatarBadge chatId={chatId} />
+        <div className="avatar-badge-wrapper">
+          <div className={buildClassName('avatar-online', isAvatarOnlineShown && 'avatar-online-shown')} />
+          <ChatBadge chat={chat} isMuted={isMuted} shouldShowOnlyMostImportant forceHidden={getIsForumPanelClosed} />
+        </div>
         {chat.isCallActive && chat.isCallNotEmpty && (
-          <ChatCallStatus isMobile={isMobile} isSelected={isSelected} isActive={animationLevel !== 0} />
+          <ChatCallStatus isMobile={isMobile} isSelected={isSelected} isActive={withInterfaceAnimations} />
         )}
       </div>
       <div className="info">
         <div className="info-row">
           <FullNameTitle
-            peer={user || chat}
+            peer={peer}
             withEmojiStatus
             isSavedMessages={chatId === user?.id && user?.isSelf}
             observeIntersection={observeIntersection}
           />
-          {isMuted && <i className="icon-muted" />}
+          {isMuted && <i className="icon icon-muted" />}
           <div className="separator" />
           {chat.lastMessage && (
             <LastMessageMeta
@@ -266,7 +296,7 @@ const Chat: FC<OwnProps & StateProps> = ({
         </div>
         <div className="subtitle">
           {renderSubtitle()}
-          <Badge chat={chat} isPinned={isPinned} isMuted={isMuted} />
+          <ChatBadge chat={chat} isPinned={isPinned} isMuted={isMuted} />
         </div>
       </div>
       {shouldRenderDeleteModal && (
@@ -275,6 +305,14 @@ const Chat: FC<OwnProps & StateProps> = ({
           onClose={closeDeleteModal}
           onCloseAnimationEnd={unmarkRenderDeleteModal}
           chat={chat}
+        />
+      )}
+      {shouldRenderMuteModal && (
+        <MuteChatModal
+          isOpen={isMuteModalOpen}
+          onClose={closeMuteModal}
+          onCloseAnimationEnd={unmarkRenderMuteModal}
+          chatId={chatId}
         />
       )}
       {shouldRenderChatFolderModal && (
@@ -320,7 +358,8 @@ export default memo(withGlobal<OwnProps>(
       type: messageListType,
     } = selectCurrentMessageList(global) || {};
     const isSelected = chatId === currentChatId && currentThreadId === MAIN_THREAD_ID;
-    const isSelectedForum = chatId === selectTabState(global).forumPanelChatId;
+    const isSelectedForum = (chat.isForum && chatId === currentChatId)
+      || chatId === selectTabState(global).forumPanelChatId;
 
     const user = privateChatUserId ? selectUser(global, privateChatUserId) : undefined;
     const userStatus = privateChatUserId ? selectUserStatus(global, privateChatUserId) : undefined;
@@ -336,12 +375,11 @@ export default memo(withGlobal<OwnProps>(
       actionTargetChatId,
       actionTargetMessage,
       draft: selectDraft(global, chatId, MAIN_THREAD_ID),
-      animationLevel: global.settings.byKey.animationLevel,
       isSelected,
       isSelectedForum,
+      isForumPanelOpen: selectIsForumPanelOpen(global),
       canScrollDown: isSelected && messageListType === 'thread',
       canChangeFolder: (global.chatFolders.orderedIds?.length || 0) > 1,
-      lastSyncTime: global.lastSyncTime,
       ...(isOutgoing && chat.lastMessage && {
         lastMessageOutgoingStatus: selectOutgoingStatus(global, chat.lastMessage),
       }),
@@ -349,6 +387,7 @@ export default memo(withGlobal<OwnProps>(
       userStatus,
       lastMessageTopic,
       typingStatus,
+      withInterfaceAnimations: selectCanAnimateInterface(global),
     };
   },
 )(Chat));

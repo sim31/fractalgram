@@ -1,24 +1,23 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, {
   memo, useCallback, useEffect, useState,
 } from '../../../lib/teact/teact';
 import { getActions, getGlobal, withGlobal } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
 import type { ApiWebSession } from '../../../api/types';
-import type { AnimationLevel } from '../../../types';
 
-import { formatPastTimeShort } from '../../../util/dateFormat';
 import buildClassName from '../../../util/buildClassName';
+import { formatPastTimeShort } from '../../../util/dateFormat';
 
 import useFlag from '../../../hooks/useFlag';
-import useLang from '../../../hooks/useLang';
 import useHistoryBack from '../../../hooks/useHistoryBack';
+import useLang from '../../../hooks/useLang';
 
-import ListItem from '../../ui/ListItem';
-import ConfirmDialog from '../../ui/ConfirmDialog';
-import SettingsActiveWebsite from './SettingsActiveWebsite';
 import Avatar from '../../common/Avatar';
 import FullNameTitle from '../../common/FullNameTitle';
+import ConfirmDialog from '../../ui/ConfirmDialog';
+import ListItem from '../../ui/ListItem';
+import SettingsActiveWebsite from './SettingsActiveWebsite';
 
 import styles from './SettingsActiveWebsites.module.scss';
 
@@ -30,14 +29,12 @@ type OwnProps = {
 type StateProps = {
   byHash: Record<string, ApiWebSession>;
   orderedHashes: string[];
-  animationLevel: AnimationLevel;
 };
 
 const SettingsActiveWebsites: FC<OwnProps & StateProps> = ({
   isActive,
   byHash,
   orderedHashes,
-  animationLevel,
   onReset,
 }) => {
   const {
@@ -113,14 +110,14 @@ const SettingsActiveWebsites: FC<OwnProps & StateProps> = ({
         // eslint-disable-next-line react/jsx-no-bind
         onClick={() => handleOpenSessionModal(session.hash)}
       >
-        <Avatar className={styles.avatar} user={bot} size="tiny" animationLevel={animationLevel} withVideo />
+        <Avatar className={styles.avatar} peer={bot} size="tiny" />
         <div className="multiline-menu-item full-size" dir="auto">
           <span className="date">{formatPastTimeShort(lang, session.dateActive * 1000)}</span>
           {bot && <FullNameTitle className={styles.title} peer={bot} />}
           <span className={buildClassName('subtitle', 'black', 'tight', styles.platform)}>
             {session.domain}, {session.browser}, {session.platform}
           </span>
-          <span className="subtitle">{session.ip} {session.region}</span>
+          <span className={buildClassName('subtitle', styles.subtitle)}>{session.ip} {session.region}</span>
         </div>
       </ListItem>
     );
@@ -164,7 +161,6 @@ export default memo(withGlobal<OwnProps>(
     return {
       byHash,
       orderedHashes,
-      animationLevel: global.settings.byKey.animationLevel,
     };
   },
 )(SettingsActiveWebsites));

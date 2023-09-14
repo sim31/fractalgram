@@ -1,18 +1,24 @@
+import { getGlobal } from '../../../../global';
+
 import type { ApiMessageEntityCustomEmoji, ApiSticker } from '../../../../api/types';
 import { ApiMessageEntityTypes } from '../../../../api/types';
 
-import { getGlobal } from '../../../../global';
 import { EMOJI_SIZES } from '../../../../config';
-import { REM } from '../../../common/helpers/mediaDimensions';
+import buildClassName from '../../../../util/buildClassName';
 import { getInputCustomEmojiParams } from '../../../../util/customEmojiManager';
+import { REM } from '../../../common/helpers/mediaDimensions';
 
 export const INPUT_CUSTOM_EMOJI_SELECTOR = 'img[data-document-id]';
 
 export function buildCustomEmojiHtml(emoji: ApiSticker) {
   const [isPlaceholder, src, uniqueId] = getInputCustomEmojiParams(emoji);
 
+  const className = buildClassName(
+    'custom-emoji', 'emoji', 'emoji-small', isPlaceholder && 'placeholder', emoji.shouldUseTextColor && 'colorable',
+  );
+
   return `<img
-    class="custom-emoji emoji emoji-small ${isPlaceholder ? 'placeholder' : ''}"
+    class="${className}"
     draggable="false"
     alt="${emoji.emoji}"
     data-document-id="${emoji.id}"
@@ -25,8 +31,17 @@ export function buildCustomEmojiHtml(emoji: ApiSticker) {
 export function buildCustomEmojiHtmlFromEntity(rawText: string, entity: ApiMessageEntityCustomEmoji) {
   const customEmoji = getGlobal().customEmojis.byId[entity.documentId];
   const [isPlaceholder, src, uniqueId] = getInputCustomEmojiParams(customEmoji);
+
+  const className = buildClassName(
+    'custom-emoji',
+    'emoji',
+    'emoji-small',
+    isPlaceholder && 'placeholder',
+    customEmoji?.shouldUseTextColor && 'colorable',
+  );
+
   return `<img
-    class="custom-emoji emoji emoji-small ${isPlaceholder ? 'placeholder' : ''}"
+    class="${className}"
     draggable="false"
     alt="${rawText}"
     data-document-id="${entity.documentId}"

@@ -31,6 +31,12 @@
       height: 10rem;
       margin-bottom: 2.5rem;
     }
+
+    body.is-electron & {
+      width: 6rem;
+      height: 6rem;
+      margin-bottom: 1.75rem;
+    }
   }
 
   #logo {
@@ -59,6 +65,14 @@
       margin-bottom: 3rem;
     }
   }
+
+  body.is-electron #auth-phone-number-form & {
+    padding-top: 3rem;
+
+    .form {
+      min-height: 0;
+    }
+  }
 }
 
 #auth-registration-form,
@@ -68,10 +82,18 @@
 #auth-qr-form {
   height: 100%;
   overflow-y: auto;
+
+  body.is-electron.is-macos & {
+    -webkit-app-region: drag;
+
+    .input-group {
+      -webkit-app-region: no-drag;
+    }
+  }
 }
 
 #auth-phone-number-form {
-  form {
+  .form {
     min-height: 26.25rem;
   }
 
@@ -103,7 +125,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
+  cursor: var(--custom-cursor, pointer);
 
   &:hover,
   &:focus {
@@ -129,13 +151,9 @@
   }
 
   .qr-inner {
-    opacity: 1;
-    transform: scale(1);
-    transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 300ms;
-
-    &:not(.open) {
-      opacity: 0.5;
-      transform: scale(0.5);
+    transition: none !important;
+    &.open {
+      animation: qr-show 400ms ease-in-out forwards;
     }
 
     &:not(.shown) {
@@ -159,7 +177,7 @@
 
   .qr-container {
     background-color: white;
-    border-radius: var(--border-radius-default);
+    border-radius: 1.5rem;
     overflow: hidden;
   }
 
@@ -199,4 +217,18 @@
 
 #sign-in-password {
   word-break: normal !important;
+}
+
+@keyframes qr-show {
+  0% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
 }

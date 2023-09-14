@@ -1,9 +1,11 @@
 import { errors } from '../../../lib/gramjs';
+
 import type {
   ApiUpdateAuthorizationState,
   ApiUpdateAuthorizationStateType,
-  OnApiUpdate,
   ApiUser,
+  ApiUserFullInfo,
+  OnApiUpdate,
 } from '../../types';
 
 import { DEBUG } from '../../../config';
@@ -117,10 +119,11 @@ export function onAuthReady() {
   onUpdate(buildAuthStateUpdate('authorizationStateReady'));
 }
 
-export function onCurrentUserUpdate(currentUser: ApiUser) {
+export function onCurrentUserUpdate(currentUser: ApiUser, currentUserFullInfo: ApiUserFullInfo) {
   onUpdate({
     '@type': 'updateCurrentUser',
     currentUser,
+    currentUserFullInfo,
   });
 }
 

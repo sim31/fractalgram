@@ -1,18 +1,16 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
+  memo, useEffect, useLayoutEffect, useMemo, useRef, useState,
 } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
 import type { ApiAudio, ApiMessage, ApiVoice } from '../../api/types';
-import { ApiMediaFormat } from '../../api/types';
-import type { ISettings } from '../../types';
-import { AudioOrigin } from '../../types';
+import type { BufferedRange } from '../../hooks/useBuffering';
 import type { LangFn } from '../../hooks/useLang';
+import type { ISettings } from '../../types';
+import { ApiMediaFormat } from '../../api/types';
+import { AudioOrigin } from '../../types';
 
-import { MAX_EMPTY_WAVEFORM_POINTS, renderWaveform } from './helpers/waveform';
-import renderText from './helpers/renderText';
-import { getFileSizeString } from './helpers/documentInfo';
 import {
   getMediaDuration,
   getMediaTransferState,
@@ -21,23 +19,27 @@ import {
   isMessageLocal,
   isOwnMessage,
 } from '../../global/helpers';
+import { makeTrackId } from '../../util/audioPlayer';
 import buildClassName from '../../util/buildClassName';
+import { captureEvents } from '../../util/captureEvents';
 import { formatMediaDateTime, formatMediaDuration, formatPastTimeShort } from '../../util/dateFormat';
 import { decodeWaveform, interpolateArray } from '../../util/waveform';
-import { makeTrackId } from '../../util/audioPlayer';
+import { getFileSizeString } from './helpers/documentInfo';
+import renderText from './helpers/renderText';
+import { MAX_EMPTY_WAVEFORM_POINTS, renderWaveform } from './helpers/waveform';
+
+import useAppLayout from '../../hooks/useAppLayout';
+import useAudioPlayer from '../../hooks/useAudioPlayer';
+import useBuffering from '../../hooks/useBuffering';
+import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
+import useMedia from '../../hooks/useMedia';
 import useMediaWithLoadProgress from '../../hooks/useMediaWithLoadProgress';
 import useShowTransition from '../../hooks/useShowTransition';
-import type { BufferedRange } from '../../hooks/useBuffering';
-import useBuffering from '../../hooks/useBuffering';
-import useAudioPlayer from '../../hooks/useAudioPlayer';
-import useLang from '../../hooks/useLang';
-import { captureEvents } from '../../util/captureEvents';
-import useMedia from '../../hooks/useMedia';
-import useAppLayout from '../../hooks/useAppLayout';
 
 import Button from '../ui/Button';
-import ProgressSpinner from '../ui/ProgressSpinner';
 import Link from '../ui/Link';
+import ProgressSpinner from '../ui/ProgressSpinner';
 
 import './Audio.scss';
 
@@ -48,12 +50,11 @@ type OwnProps = {
   uploadProgress?: number;
   origin: AudioOrigin;
   date?: number;
-  lastSyncTime?: number;
   noAvatars?: boolean;
   className?: string;
   isSelectable?: boolean;
   isSelected?: boolean;
-  isDownloading: boolean;
+  isDownloading?: boolean;
   isTranscribing?: boolean;
   isTranscribed?: boolean;
   canDownload?: boolean;
@@ -72,8 +73,6 @@ export const WITH_AVATAR_TINY_SCREEN_WIDTH_MQL = window.matchMedia('(max-width: 
 const AVG_VOICE_DURATION = 10;
 // This is needed for browsers requiring user interaction before playing.
 const PRELOAD = true;
-// eslint-disable-next-line max-len
-const TRANSCRIBE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 24" class="loading-svg"><rect class="loading-rect" fill="transparent" width="32" height="24" stroke-width="3" stroke-linejoin="round" rx="6" ry="6" stroke="var(--accent-color)" stroke-dashoffset="1" stroke-dasharray="32,68"></rect></svg>';
 
 const Audio: FC<OwnProps> = ({
   theme,
@@ -82,7 +81,6 @@ const Audio: FC<OwnProps> = ({
   uploadProgress,
   origin,
   date,
-  lastSyncTime,
   noAvatars,
   className,
   isSelectable,
@@ -112,7 +110,7 @@ const Audio: FC<OwnProps> = ({
 
   const { isMobile } = useAppLayout();
   const [isActivated, setIsActivated] = useState(false);
-  const shouldLoad = (isActivated || PRELOAD) && lastSyncTime;
+  const shouldLoad = isActivated || PRELOAD;
   const coverHash = getMessageMediaHash(message, 'pictogram');
   const coverBlobUrl = useMedia(coverHash, false, ApiMediaFormat.BlobUrl);
 
@@ -128,14 +126,14 @@ const Audio: FC<OwnProps> = ({
     getMessageMediaFormat(message, 'download'),
   );
 
-  const handleForcePlay = useCallback(() => {
+  const handleForcePlay = useLastCallback(() => {
     setIsActivated(true);
     onPlay(message.id, message.chatId);
-  }, [message, onPlay]);
+  });
 
-  const handleTrackChange = useCallback(() => {
+  const handleTrackChange = useLastCallback(() => {
     setIsActivated(false);
-  }, []);
+  });
 
   const {
     isBuffered, bufferedRanges, bufferingHandlers, checkBuffering,
@@ -185,7 +183,7 @@ const Audio: FC<OwnProps> = ({
 
   const shouldRenderCross = shouldRenderSpinner && (isLoadingForPlaying || isUploading);
 
-  const handleButtonClick = useCallback(() => {
+  const handleButtonClick = useLastCallback(() => {
     if (isUploading) {
       onCancelUpload?.();
       return;
@@ -198,7 +196,7 @@ const Audio: FC<OwnProps> = ({
     getActions().setAudioPlayerOrigin({ origin });
     setIsActivated(!isActivated);
     playPause();
-  }, [isUploading, isPlaying, isActivated, playPause, onCancelUpload, onPlay, message.id, message.chatId, origin]);
+  });
 
   useEffect(() => {
     if (onReadMedia && isMediaUnread && (isPlaying || isDownloading)) {
@@ -206,15 +204,15 @@ const Audio: FC<OwnProps> = ({
     }
   }, [isPlaying, isMediaUnread, onReadMedia, isDownloading]);
 
-  const handleDownloadClick = useCallback(() => {
+  const handleDownloadClick = useLastCallback(() => {
     if (isDownloading) {
       cancelMessageMediaDownload({ message });
     } else {
       downloadMessageMedia({ message });
     }
-  }, [cancelMessageMediaDownload, downloadMessageMedia, isDownloading, message]);
+  });
 
-  const handleSeek = useCallback((e: MouseEvent | TouchEvent) => {
+  const handleSeek = useLastCallback((e: MouseEvent | TouchEvent) => {
     if (isSeeking.current && seekerRef.current) {
       const { width, left } = seekerRef.current.getBoundingClientRect();
       const clientX = e instanceof MouseEvent ? e.clientX : e.targetTouches[0].clientX;
@@ -222,25 +220,25 @@ const Audio: FC<OwnProps> = ({
       // Prevent track skipping while seeking near end
       setCurrentTime(Math.max(Math.min(duration * ((clientX - left) / width), duration - 0.1), 0.001));
     }
-  }, [duration, setCurrentTime]);
+  });
 
-  const handleStartSeek = useCallback((e: MouseEvent | TouchEvent) => {
+  const handleStartSeek = useLastCallback((e: MouseEvent | TouchEvent) => {
     if (e instanceof MouseEvent && e.button === 2) return;
     isSeeking.current = true;
     handleSeek(e);
-  }, [handleSeek]);
+  });
 
-  const handleStopSeek = useCallback(() => {
+  const handleStopSeek = useLastCallback(() => {
     isSeeking.current = false;
-  }, []);
+  });
 
-  const handleDateClick = useCallback(() => {
+  const handleDateClick = useLastCallback(() => {
     onDateClick!(message.id, message.chatId);
-  }, [onDateClick, message.id, message.chatId]);
+  });
 
-  const handleTranscribe = useCallback(() => {
+  const handleTranscribe = useLastCallback(() => {
     transcribeAudio({ chatId: message.chatId, messageId: message.id });
-  }, [message.chatId, message.id, transcribeAudio]);
+  });
 
   useEffect(() => {
     if (!seekerRef.current || !withSeekline) return undefined;
@@ -251,10 +249,6 @@ const Audio: FC<OwnProps> = ({
       onDrag: handleSeek,
     });
   }, [withSeekline, handleStartSeek, handleSeek, handleStopSeek]);
-
-  const transcribeSvgMemo = useMemo(() => (
-    <div dangerouslySetInnerHTML={{ __html: TRANSCRIBE_SVG }} />
-  ), []);
 
   function renderFirstLine() {
     if (isVoice) {
@@ -291,6 +285,7 @@ const Audio: FC<OwnProps> = ({
   const fullClassName = buildClassName(
     'Audio',
     className,
+    origin === AudioOrigin.Inline && 'inline',
     isOwn && origin === AudioOrigin.Inline && 'own',
     (origin === AudioOrigin.Search || origin === AudioOrigin.SharedMedia) && 'bigger',
     isSelected && 'audio-is-selected',
@@ -340,7 +335,7 @@ const Audio: FC<OwnProps> = ({
     <div className={fullClassName} dir={lang.isRtl ? 'rtl' : 'ltr'}>
       {isSelectable && (
         <div className="message-select-control">
-          {isSelected && <i className="icon-select" />}
+          {isSelected && <i className="icon icon-select" />}
         </div>
       )}
       <Button
@@ -354,8 +349,8 @@ const Audio: FC<OwnProps> = ({
         isRtl={lang.isRtl}
         backgroundImage={coverBlobUrl}
       >
-        <i className="icon-play" />
-        <i className="icon-pause" />
+        <i className="icon icon-play" />
+        <i className="icon icon-pause" />
       </Button>
       {shouldRenderSpinner && (
         <div className={buildClassName('media-loading', spinnerClassNames, shouldRenderCross && 'interactive')}>
@@ -376,7 +371,7 @@ const Audio: FC<OwnProps> = ({
           ariaLabel={isDownloading ? 'Cancel download' : 'Download'}
           onClick={handleDownloadClick}
         >
-          <i className={isDownloading ? 'icon-close' : 'icon-arrow-down'} />
+          <i className={buildClassName('icon', isDownloading ? 'icon-close' : 'icon-arrow-down')} />
         </Button>
       )}
       {origin === AudioOrigin.Search && renderWithTitle()}
@@ -405,7 +400,6 @@ const Audio: FC<OwnProps> = ({
           isTranscriptionHidden,
           isTranscribed,
           isTranscriptionError,
-          transcribeSvgMemo,
           canTranscribe ? handleTranscribe : undefined,
           onHideTranscription,
         )
@@ -493,7 +487,6 @@ function renderVoice(
   isTranscriptionHidden?: boolean,
   isTranscribed?: boolean,
   isTranscriptionError?: boolean,
-  svgMemo?: React.ReactNode,
   onClickTranscribe?: VoidFunction,
   onHideTranscription?: (isHidden: boolean) => void,
 ) {
@@ -519,11 +512,28 @@ function renderVoice(
           >
             <i className={buildClassName(
               'transcribe-icon',
+              'icon',
               (isTranscribed || isTranscriptionError) ? 'icon-down' : 'icon-transcribe',
               (isTranscribed || isTranscriptionError) && !isTranscriptionHidden && 'transcribe-shown',
             )}
             />
-            {isTranscribing && svgMemo}
+            {isTranscribing && (
+              <svg viewBox="0 0 32 24" className="loading-svg">
+                <rect
+                  className="loading-rect"
+                  fill="transparent"
+                  width="32"
+                  height="24"
+                  stroke-width="3"
+                  stroke-linejoin="round"
+                  rx="6"
+                  ry="6"
+                  stroke="var(--accent-color)"
+                  stroke-dashoffset="1"
+                  stroke-dasharray="32,68"
+                />
+              </svg>
+            )}
           </Button>
         )}
       </div>
@@ -595,7 +605,7 @@ function renderSeekline(
 ) {
   return (
     <div
-      className="seekline no-selection"
+      className="seekline"
       ref={seekerRef as React.Ref<HTMLDivElement>}
     >
       {bufferedRanges.map(({ start, end }) => (
@@ -606,11 +616,13 @@ function renderSeekline(
       ))}
       <span className="seekline-play-progress">
         <i
+          className="seekline-play-progress-inner"
           style={`transform: translateX(${playProgress * 100}%)`}
         />
       </span>
       <span className="seekline-thumb">
         <i
+          className="seekline-thumb-inner"
           style={`transform: translateX(${playProgress * 100}%)`}
         />
       </span>

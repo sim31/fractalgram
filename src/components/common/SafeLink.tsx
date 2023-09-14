@@ -1,15 +1,17 @@
-import React, { memo, useCallback } from '../../lib/teact/teact';
-import { getActions } from '../../global';
-import convertPunycode from '../../lib/punycode';
-
 import type { FC } from '../../lib/teact/teact';
+import React, { memo } from '../../lib/teact/teact';
+import { getActions } from '../../global';
+
 import { ApiMessageEntityTypes } from '../../api/types';
 
 import {
   DEBUG,
 } from '../../config';
+import convertPunycode from '../../lib/punycode';
 import buildClassName from '../../util/buildClassName';
 import { ensureProtocol } from '../../util/ensureProtocol';
+
+import useLastCallback from '../../hooks/useLastCallback';
 
 type OwnProps = {
   url?: string;
@@ -31,14 +33,14 @@ const SafeLink: FC<OwnProps> = ({
   const content = children || text;
   const isSafe = url === text;
 
-  const handleClick = useCallback((e: React.MouseEvent<HTMLAnchorElement, MouseEvent>) => {
+  const handleClick = useLastCallback((e: React.MouseEvent<HTMLAnchorElement, MouseEvent>) => {
     if (!url) return true;
 
     e.preventDefault();
     openUrl({ url, shouldSkipModal: isSafe });
 
     return false;
-  }, [isSafe, openUrl, url]);
+  });
 
   if (!url) {
     return undefined;

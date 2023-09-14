@@ -1,20 +1,19 @@
-import { addActionHandler, getGlobal, setGlobal } from '../../index';
-
-import { ManagementProgress } from '../../../types';
 import type { ActionReturnType } from '../../types';
+import { ManagementProgress } from '../../../types';
 
+import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import { buildCollectionByKey } from '../../../util/iteratees';
+import * as langProvider from '../../../util/langProvider';
 import { callApi } from '../../../api/gramjs';
+import { getUserFirstOrLastName } from '../../helpers';
+import { addActionHandler, getGlobal, setGlobal } from '../../index';
 import {
-  addUsers, updateChat, updateManagement, updateManagementProgress,
+  addUsers, updateChat, updateChatFullInfo, updateManagement, updateManagementProgress,
 } from '../../reducers';
 import {
   selectChat, selectCurrentMessageList, selectTabState, selectUser,
 } from '../../selectors';
 import { ensureIsSuperGroup } from './chats';
-import { getUserFirstOrLastName } from '../../helpers';
-import { buildCollectionByKey } from '../../../util/iteratees';
-import { getCurrentTabId } from '../../../util/establishMultitabRole';
-import * as langProvider from '../../../util/langProvider';
 
 addActionHandler('checkPublicLink', async (global, actions, payload): Promise<void> => {
   const { username, tabId = getCurrentTabId() } = payload;
@@ -53,7 +52,7 @@ addActionHandler('checkPublicLink', async (global, actions, payload): Promise<vo
 });
 
 addActionHandler('updatePublicLink', async (global, actions, payload): Promise<void> => {
-  const { username, tabId = getCurrentTabId() } = payload;
+  const { username, shouldDisableUsernames, tabId = getCurrentTabId() } = payload;
 
   const { chatId } = selectCurrentMessageList(global, tabId) || {};
   if (!chatId) {
@@ -69,10 +68,13 @@ addActionHandler('updatePublicLink', async (global, actions, payload): Promise<v
   setGlobal(global);
 
   const result = await callApi('setChatUsername', { chat, username });
+  if (shouldDisableUsernames) {
+    await callApi('deactivateAllUsernames', { chat });
+  }
 
   global = getGlobal();
   global = updateManagementProgress(global, result ? ManagementProgress.Complete : ManagementProgress.Error, tabId);
-  global = updateManagement(global, chatId, {
+  global = updateManagement(global, chat.id, {
     isUsernameAvailable: undefined,
     checkedUsername: undefined,
     error: undefined,
@@ -392,13 +394,10 @@ addActionHandler('hideAllChatJoinRequests', async (global, actions, payload): Pr
   const targetChat = selectChat(global, chatId);
   if (!targetChat) return;
 
-  global = updateChat(global, chatId, {
-    joinRequests: [],
-    fullInfo: {
-      ...targetChat.fullInfo,
-      recentRequesterIds: [],
-      requestsPending: 0,
-    },
+  global = updateChat(global, chatId, { joinRequests: [] });
+  global = updateChatFullInfo(global, chatId, {
+    recentRequesterIds: [],
+    requestsPending: 0,
   });
   setGlobal(global);
 });
@@ -468,4 +467,10 @@ addActionHandler('uploadContactProfilePhoto', async (global, actions, payload): 
       tabId,
     });
   }
+});
+
+addActionHandler('resetManagementError', (global, actions, payload): ActionReturnType => {
+  const { chatId, tabId = getCurrentTabId() } = payload || {};
+
+  return updateManagement(global, chatId, { error: undefined }, tabId);
 });

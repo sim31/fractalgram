@@ -1,52 +1,63 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, {
-  useState, useEffect, memo, useRef, useMemo, useCallback,
+  memo, useEffect, useMemo,
+  useRef,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { ApiStickerSet, ApiSticker, ApiChat } from '../../../api/types';
-import type { StickerSetOrRecent } from '../../../types';
-import type { FC } from '../../../lib/teact/teact';
+import type { ApiChat, ApiSticker, ApiStickerSet } from '../../../api/types';
+import type { StickerSetOrReactionsSetOrRecent } from '../../../types';
 
 import {
   CHAT_STICKER_SET_ID,
   FAVORITE_SYMBOL_SET_ID,
   PREMIUM_STICKER_SET_ID,
   RECENT_SYMBOL_SET_ID,
-  SLIDE_TRANSITION_DURATION, STICKER_PICKER_MAX_SHARED_COVERS,
+  SLIDE_TRANSITION_DURATION,
+  STICKER_PICKER_MAX_SHARED_COVERS,
   STICKER_SIZE_PICKER_HEADER,
 } from '../../../config';
-import { IS_TOUCH_ENV } from '../../../util/environment';
-import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
-import fastSmoothScroll from '../../../util/fastSmoothScroll';
+import { isUserId } from '../../../global/helpers';
+import {
+  selectChat, selectChatFullInfo, selectIsChatWithSelf, selectIsCurrentUserPremium, selectShouldLoopStickers,
+} from '../../../global/selectors';
+import animateHorizontalScroll from '../../../util/animateHorizontalScroll';
 import buildClassName from '../../../util/buildClassName';
-import fastSmoothScrollHorizontal from '../../../util/fastSmoothScrollHorizontal';
 import { pickTruthy, uniqueByField } from '../../../util/iteratees';
-import { selectChat, selectIsChatWithSelf, selectIsCurrentUserPremium } from '../../../global/selectors';
+import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
+import { IS_TOUCH_ENV } from '../../../util/windowEnvironment';
+import { REM } from '../../common/helpers/mediaDimensions';
 
-import useAsyncRendering from '../../right/hooks/useAsyncRendering';
-import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
 import useHorizontalScroll from '../../../hooks/useHorizontalScroll';
 import useLang from '../../../hooks/useLang';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useScrolledState from '../../../hooks/useScrolledState';
 import useSendMessageAction from '../../../hooks/useSendMessageAction';
+import { useStickerPickerObservers } from '../../common/hooks/useStickerPickerObservers';
+import useAsyncRendering from '../../right/hooks/useAsyncRendering';
 
 import Avatar from '../../common/Avatar';
-import Loading from '../../ui/Loading';
-import Button from '../../ui/Button';
-import StickerButton from '../../common/StickerButton';
-import StickerSet from './StickerSet';
-import StickerSetCover from './StickerSetCover';
 import PremiumIcon from '../../common/PremiumIcon';
+import StickerButton from '../../common/StickerButton';
+import StickerSet from '../../common/StickerSet';
+import Button from '../../ui/Button';
+import Loading from '../../ui/Loading';
+import StickerSetCover from './StickerSetCover';
 
-import './StickerPicker.scss';
+import styles from './StickerPicker.module.scss';
 
 type OwnProps = {
   chatId: string;
   threadId?: number;
   className: string;
+  isHidden?: boolean;
+  isTranslucent?: boolean;
   loadAndPlay: boolean;
   canSendStickers?: boolean;
+  noContextMenus?: boolean;
+  idPrefix: string;
   onStickerSelect: (
-    sticker: ApiSticker, isSilent?: boolean, shouldSchedule?: boolean, shouldUpdateStickerSetsOrder?: boolean,
+    sticker: ApiSticker, isSilent?: boolean, shouldSchedule?: boolean, canUpdateStickerSetsOrder?: boolean,
   ) => void;
 };
 
@@ -56,22 +67,21 @@ type StateProps = {
   favoriteStickers: ApiSticker[];
   premiumStickers: ApiSticker[];
   stickerSetsById: Record<string, ApiStickerSet>;
+  chatStickerSetId?: string;
   addedSetIds?: string[];
   canAnimate?: boolean;
   isSavedMessages?: boolean;
   isCurrentUserPremium?: boolean;
 };
 
-const SMOOTH_SCROLL_DISTANCE = 500;
-const HEADER_BUTTON_WIDTH = 52; // px (including margin)
-const STICKER_INTERSECTION_THROTTLE = 200;
-
-const stickerSetIntersections: boolean[] = [];
+const HEADER_BUTTON_WIDTH = 2.5 * REM; // px (including margin)
 
 const StickerPicker: FC<OwnProps & StateProps> = ({
   chat,
   threadId,
   className,
+  isHidden,
+  isTranslucent,
   loadAndPlay,
   canSendStickers,
   recentStickers,
@@ -79,9 +89,12 @@ const StickerPicker: FC<OwnProps & StateProps> = ({
   premiumStickers,
   addedSetIds,
   stickerSetsById,
+  chatStickerSetId,
   canAnimate,
   isSavedMessages,
   isCurrentUserPremium,
+  noContextMenus,
+  idPrefix,
   onStickerSelect,
 }) => {
   const {
@@ -99,35 +112,22 @@ const StickerPicker: FC<OwnProps & StateProps> = ({
   // eslint-disable-next-line no-null/no-null
   const sharedCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  const [activeSetIndex, setActiveSetIndex] = useState<number>(0);
+  const {
+    handleScroll: handleContentScroll,
+    isAtBeginning: shouldHideTopBorder,
+  } = useScrolledState();
 
   const sendMessageAction = useSendMessageAction(chat!.id, threadId);
 
-  const { observe: observeIntersection } = useIntersectionObserver({
-    rootRef: containerRef,
-    throttleMs: STICKER_INTERSECTION_THROTTLE,
-  }, (entries) => {
-    entries.forEach((entry) => {
-      const { id } = entry.target as HTMLDivElement;
-      if (!id || !id.startsWith('sticker-set-')) {
-        return;
-      }
-
-      const index = Number(id.replace('sticker-set-', ''));
-      stickerSetIntersections[index] = entry.isIntersecting;
-    });
-
-    const intersectingWithIndexes = stickerSetIntersections
-      .map((isIntersecting, index) => ({ index, isIntersecting }))
-      .filter(({ isIntersecting }) => isIntersecting);
-
-    if (!intersectingWithIndexes.length) {
-      return;
-    }
-
-    setActiveSetIndex(intersectingWithIndexes[Math.floor(intersectingWithIndexes.length / 2)].index);
-  });
-  const { observe: observeIntersectionForCovers } = useIntersectionObserver({ rootRef: headerRef });
+  const prefix = `${idPrefix}-sticker-set`;
+  const {
+    activeSetIndex,
+    observeIntersectionForSet,
+    observeIntersectionForPlayingItems,
+    observeIntersectionForShowingItems,
+    observeIntersectionForCovers,
+    selectStickerSet,
+  } = useStickerPickerObservers(containerRef, headerRef, prefix, isHidden);
 
   const lang = useLang();
 
@@ -181,8 +181,8 @@ const StickerPicker: FC<OwnProps & StateProps> = ({
       }
     }
 
-    if (chat?.fullInfo?.stickerSet) {
-      const fullSet = stickerSetsById[chat.fullInfo.stickerSet.id];
+    if (chatStickerSetId) {
+      const fullSet = stickerSetsById[chatStickerSetId];
       if (fullSet) {
         defaultSets.push({
           id: CHAT_STICKER_SET_ID,
@@ -199,7 +199,8 @@ const StickerPicker: FC<OwnProps & StateProps> = ({
       ...existingAddedSetIds,
     ];
   }, [
-    addedSetIds, stickerSetsById, favoriteStickers, recentStickers, isCurrentUserPremium, chat, lang, premiumStickers,
+    addedSetIds, stickerSetsById, favoriteStickers, recentStickers, isCurrentUserPremium, chatStickerSetId, lang,
+    premiumStickers,
   ]);
 
   const noPopulatedSets = useMemo(() => (
@@ -217,7 +218,7 @@ const StickerPicker: FC<OwnProps & StateProps> = ({
   const canRenderContents = useAsyncRendering([], SLIDE_TRANSITION_DURATION);
   const shouldRenderContents = areAddedLoaded && canRenderContents && !noPopulatedSets && canSendStickers;
 
-  useHorizontalScroll(headerRef, !shouldRenderContents);
+  useHorizontalScroll(headerRef, !shouldRenderContents || !headerRef.current);
 
   // Scroll container and header when active set changes
   useEffect(() => {
@@ -232,44 +233,34 @@ const StickerPicker: FC<OwnProps & StateProps> = ({
 
     const newLeft = activeSetIndex * HEADER_BUTTON_WIDTH - (header.offsetWidth / 2 - HEADER_BUTTON_WIDTH / 2);
 
-    fastSmoothScrollHorizontal(header, newLeft);
+    animateHorizontalScroll(header, newLeft);
   }, [areAddedLoaded, activeSetIndex]);
 
-  const selectStickerSet = useCallback((index: number) => {
-    setActiveSetIndex(index);
-    const stickerSetEl = document.getElementById(`sticker-set-${index}`)!;
-    fastSmoothScroll(containerRef.current!, stickerSetEl, 'start', undefined, SMOOTH_SCROLL_DISTANCE);
-  }, []);
-
-  const handleStickerSelect = useCallback((sticker: ApiSticker, isSilent?: boolean, shouldSchedule?: boolean) => {
+  const handleStickerSelect = useLastCallback((sticker: ApiSticker, isSilent?: boolean, shouldSchedule?: boolean) => {
     onStickerSelect(sticker, isSilent, shouldSchedule, true);
     addRecentSticker({ sticker });
-  }, [addRecentSticker, onStickerSelect]);
+  });
 
-  const handleStickerUnfave = useCallback((sticker: ApiSticker) => {
+  const handleStickerUnfave = useLastCallback((sticker: ApiSticker) => {
     unfaveSticker({ sticker });
-  }, [unfaveSticker]);
+  });
 
-  const handleStickerFave = useCallback((sticker: ApiSticker) => {
+  const handleStickerFave = useLastCallback((sticker: ApiSticker) => {
     faveSticker({ sticker });
-  }, [faveSticker]);
+  });
 
-  const handleMouseMove = useCallback(() => {
+  const handleMouseMove = useLastCallback(() => {
     if (!canSendStickers) return;
     sendMessageAction({ type: 'chooseSticker' });
-  }, [canSendStickers, sendMessageAction]);
+  });
 
-  const handleRemoveRecentSticker = useCallback((sticker: ApiSticker) => {
+  const handleRemoveRecentSticker = useLastCallback((sticker: ApiSticker) => {
     removeRecentSticker({ sticker });
-  }, [removeRecentSticker]);
+  });
 
-  function renderCover(stickerSet: StickerSetOrRecent, index: number) {
+  function renderCover(stickerSet: StickerSetOrReactionsSetOrRecent, index: number) {
     const firstSticker = stickerSet.stickers?.[0];
-    const buttonClassName = buildClassName(
-      'symbol-set-button sticker-set-button',
-      index === activeSetIndex && 'activated',
-    );
-
+    const buttonClassName = buildClassName(styles.stickerCover, index === activeSetIndex && styles.activated);
     const withSharedCanvas = index < STICKER_PICKER_MAX_SHARED_COVERS;
 
     if (stickerSet.id === RECENT_SYMBOL_SET_ID
@@ -293,17 +284,18 @@ const StickerPicker: FC<OwnProps & StateProps> = ({
           {stickerSet.id === PREMIUM_STICKER_SET_ID ? (
             <PremiumIcon withGradient big />
           ) : stickerSet.id === RECENT_SYMBOL_SET_ID ? (
-            <i className="icon-recent" />
+            <i className="icon icon-recent" />
           ) : stickerSet.id === FAVORITE_SYMBOL_SET_ID ? (
-            <i className="icon-favorite" />
+            <i className="icon icon-favorite" />
           ) : stickerSet.id === CHAT_STICKER_SET_ID ? (
-            <Avatar chat={chat} size="small" />
+            <Avatar peer={chat} size="small" />
           ) : (
             <StickerSetCover
               stickerSet={stickerSet as ApiStickerSet}
-              noAnimate={!canAnimate || !loadAndPlay}
+              noPlay={!canAnimate || !loadAndPlay}
               observeIntersection={observeIntersectionForCovers}
               sharedCanvasRef={withSharedCanvas ? sharedCanvasRef : undefined}
+              forcePlayback
             />
           )}
         </Button>
@@ -316,27 +308,29 @@ const StickerPicker: FC<OwnProps & StateProps> = ({
           size={STICKER_SIZE_PICKER_HEADER}
           title={stickerSet.title}
           className={buttonClassName}
-          noAnimate={!canAnimate || !loadAndPlay}
+          noPlay={!canAnimate || !loadAndPlay}
           observeIntersection={observeIntersectionForCovers}
           noContextMenu
           isCurrentUserPremium
           sharedCanvasRef={withSharedCanvas ? sharedCanvasRef : undefined}
+          withTranslucentThumb={isTranslucent}
           onClick={selectStickerSet}
           clickArg={index}
+          forcePlayback
         />
       );
     }
   }
 
-  const fullClassName = buildClassName('StickerPicker', className);
+  const fullClassName = buildClassName(styles.root, className);
 
   if (!shouldRenderContents) {
     return (
       <div className={fullClassName}>
         {!canSendStickers ? (
-          <div className="picker-disabled">{lang('ErrorSendRestrictedStickersAll')}</div>
+          <div className={styles.pickerDisabled}>{lang('ErrorSendRestrictedStickersAll')}</div>
         ) : noPopulatedSets ? (
-          <div className="picker-disabled">{lang('NoStickers')}</div>
+          <div className={styles.pickerDisabled}>{lang('NoStickers')}</div>
         ) : (
           <Loading />
         )}
@@ -344,12 +338,15 @@ const StickerPicker: FC<OwnProps & StateProps> = ({
     );
   }
 
+  const headerClassName = buildClassName(
+    styles.header,
+    'no-scrollbar',
+    !shouldHideTopBorder && styles.headerWithBorder,
+  );
+
   return (
     <div className={fullClassName}>
-      <div
-        ref={headerRef}
-        className="StickerPicker-header no-selection no-scrollbar"
-      >
+      <div ref={headerRef} className={headerClassName}>
         <div className="shared-canvas-container">
           <canvas ref={sharedCanvasRef} className="shared-canvas" />
           {allSets.map(renderCover)}
@@ -358,23 +355,30 @@ const StickerPicker: FC<OwnProps & StateProps> = ({
       <div
         ref={containerRef}
         onMouseMove={handleMouseMove}
-        className={buildClassName('StickerPicker-main no-selection', IS_TOUCH_ENV ? 'no-scrollbar' : 'custom-scroll')}
+        onScroll={handleContentScroll}
+        className={buildClassName(styles.main, IS_TOUCH_ENV ? 'no-scrollbar' : 'custom-scroll')}
       >
         {allSets.map((stickerSet, i) => (
           <StickerSet
             key={stickerSet.id}
             stickerSet={stickerSet}
             loadAndPlay={Boolean(canAnimate && loadAndPlay)}
+            noContextMenus={noContextMenus}
             index={i}
-            observeIntersection={observeIntersection}
-            shouldRender={activeSetIndex >= i - 1 && activeSetIndex <= i + 1}
+            idPrefix={prefix}
+            observeIntersection={observeIntersectionForSet}
+            observeIntersectionForPlayingItems={observeIntersectionForPlayingItems}
+            observeIntersectionForShowingItems={observeIntersectionForShowingItems}
+            isNearActive={activeSetIndex >= i - 1 && activeSetIndex <= i + 1}
             favoriteStickers={favoriteStickers}
             isSavedMessages={isSavedMessages}
             isCurrentUserPremium={isCurrentUserPremium}
+            isTranslucent={isTranslucent}
             onStickerSelect={handleStickerSelect}
             onStickerUnfave={handleStickerUnfave}
             onStickerFave={handleStickerFave}
             onStickerRemoveRecent={handleRemoveRecentSticker}
+            forcePlayback
           />
         ))}
       </div>
@@ -394,6 +398,7 @@ export default memo(withGlobal<OwnProps>(
 
     const isSavedMessages = selectIsChatWithSelf(global, chatId);
     const chat = selectChat(global, chatId);
+    const chatStickerSetId = !isUserId(chatId) ? selectChatFullInfo(global, chatId)?.stickerSet?.id : undefined;
 
     return {
       chat,
@@ -402,9 +407,10 @@ export default memo(withGlobal<OwnProps>(
       premiumStickers: premiumSet.stickers,
       stickerSetsById: setsById,
       addedSetIds: added.setIds,
-      canAnimate: global.settings.byKey.shouldLoopStickers,
+      canAnimate: selectShouldLoopStickers(global),
       isSavedMessages,
       isCurrentUserPremium: selectIsCurrentUserPremium(global),
+      chatStickerSetId,
     };
   },
 )(StickerPicker));

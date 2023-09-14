@@ -1,42 +1,42 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
+  memo, useEffect, useLayoutEffect, useMemo, useRef, useState,
 } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
 import type { ApiChat, ApiMessage, ApiUser } from '../../../api/types';
 import type { ISettings } from '../../../types';
 
-import { CUSTOM_APPENDIX_ATTRIBUTE, MESSAGE_CONTENT_SELECTOR } from '../../../config';
+import { requestMutation } from '../../../lib/fasterdom/fasterdom';
 import {
-  getMessageLocation,
   buildStaticMapHash,
+  getMessageLocation,
   isGeoLiveExpired,
-  isOwnMessage,
-  isUserId,
 } from '../../../global/helpers';
-import getCustomAppendixBg from './helpers/getCustomAppendixBg';
+import buildClassName from '../../../util/buildClassName';
 import { formatCountdownShort, formatLastUpdated } from '../../../util/dateFormat';
 import {
-  getMetersPerPixel, getVenueColor, getVenueIconUrl, prepareMapUrl,
+  getMetersPerPixel, getVenueColor, getVenueIconUrl,
 } from '../../../util/map';
 import { getServerTime } from '../../../util/serverTime';
 
-import useMedia from '../../../hooks/useMedia';
-import useLang from '../../../hooks/useLang';
 import useForceUpdate from '../../../hooks/useForceUpdate';
-import useTimeout from '../../../hooks/useTimeout';
-import buildClassName from '../../../util/buildClassName';
-import usePrevious from '../../../hooks/usePrevious';
 import useInterval from '../../../hooks/useInterval';
-import useLayoutEffectWithPrevDeps from '../../../hooks/useLayoutEffectWithPrevDeps';
+import useLang from '../../../hooks/useLang';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useMedia from '../../../hooks/useMedia';
+import usePrevious from '../../../hooks/usePrevious';
+import useTimeout from '../../../hooks/useTimeout';
 
 import Avatar from '../../common/Avatar';
-import Skeleton from '../../ui/Skeleton';
+import Skeleton from '../../ui/placeholder/Skeleton';
 
-import mapPin from '../../../assets/map-pin.svg';
 import './Location.scss';
 
+import mapPin from '../../../assets/map-pin.svg';
+
+const TIMER_RADIUS = 12;
+const TIMER_CIRCUMFERENCE = TIMER_RADIUS * 2 * Math.PI;
 const MOVE_THRESHOLD = 0.0001; // ~11m
 const DEFAULT_MAP_CONFIG = {
   width: 400,
@@ -45,13 +45,9 @@ const DEFAULT_MAP_CONFIG = {
   scale: 2,
 };
 
-// eslint-disable-next-line max-len
-const SVG_PIN = { __html: '<svg version="1.1" class="round-pin" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 64 64" style="enable-background:new 0 0 64 64;" xml:space="preserve"><g><circle cx="32" cy="32" r="24.5"/><path d="M32,8c13.23,0,24,10.77,24,24S45.23,56,32,56S8,45.23,8,32S18.77,8,32,8 M32,7C18.19,7,7,18.19,7,32s11.19,25,25,25 s25-11.19,25-25S45.81,7,32,7L32,7z"/></g><g><polygon points="29.38,57.67 27.4,56.08 30.42,54.42 32,51.54 33.58,54.42 36.6,56.08 34.69,57.61 32,60.73"/><path d="M32,52.58l1.07,1.95l0.14,0.26l0.26,0.14l2.24,1.22l-1.33,1.06l-0.07,0.06l-0.06,0.07L32,59.96l-2.24-2.61l-0.06-0.07 l-0.07-0.06l-1.33-1.06l2.24-1.22l0.26-0.14l0.14-0.26L32,52.58 M32,50.5l-1.94,3.56L26.5,56l2.5,2l3,3.5l3-3.5l2.5-2l-3.56-1.94 L32,50.5L32,50.5z"/></g></svg>' };
-
 type OwnProps = {
   message: ApiMessage;
   peer?: ApiUser | ApiChat;
-  lastSyncTime?: number;
   isInSelectMode?: boolean;
   isSelected?: boolean;
   theme: ISettings['theme'];
@@ -60,12 +56,8 @@ type OwnProps = {
 const Location: FC<OwnProps> = ({
   message,
   peer,
-  lastSyncTime,
-  isInSelectMode,
-  isSelected,
-  theme,
 }) => {
-  const { openUrl } = getActions();
+  const { openMapModal } = getActions();
   // eslint-disable-next-line no-null/no-null
   const ref = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line no-null/no-null
@@ -77,7 +69,7 @@ const Location: FC<OwnProps> = ({
   const { type, geo } = location;
 
   const serverTime = getServerTime();
-  const isExpired = isGeoLiveExpired(message, serverTime);
+  const isExpired = isGeoLiveExpired(message);
   const secondsBeforeEnd = (type === 'geoLive' && !isExpired) ? message.date + location.period - serverTime
     : undefined;
 
@@ -88,16 +80,10 @@ const Location: FC<OwnProps> = ({
     width, height, zoom, scale,
   } = DEFAULT_MAP_CONFIG;
 
-  const mediaHash = Boolean(lastSyncTime) && buildStaticMapHash(point, width, height, zoom, scale);
+  const mediaHash = buildStaticMapHash(point, width, height, zoom, scale);
   const mediaBlobUrl = useMedia(mediaHash);
-  const prevMediaBlobUrl = usePrevious(mediaBlobUrl);
+  const prevMediaBlobUrl = usePrevious(mediaBlobUrl, true);
   const mapBlobUrl = mediaBlobUrl || prevMediaBlobUrl;
-
-  const isPeerUser = peer && isUserId(peer.id);
-  const avatarUser = (peer && isPeerUser) ? peer as ApiUser : undefined;
-  const avatarChat = (peer && !isPeerUser) ? peer as ApiChat : undefined;
-
-  const isOwn = isOwnMessage(message);
 
   const accuracyRadiusPx = useMemo(() => {
     if (type !== 'geoLive' || !point.accuracyRadius) {
@@ -109,59 +95,26 @@ const Location: FC<OwnProps> = ({
   }, [type, point, zoom]);
 
   const handleClick = () => {
-    const url = prepareMapUrl(point.lat, point.long, zoom);
-    openUrl({ url });
+    openMapModal({ geoPoint: point, zoom });
   };
 
-  const updateCountdown = useCallback((countdownEl: HTMLDivElement) => {
+  const updateCountdown = useLastCallback((countdownEl: HTMLDivElement) => {
     if (type !== 'geoLive') return;
-    const radius = 12;
-    const circumference = radius * 2 * Math.PI;
-    const svgEl = countdownEl.lastElementChild;
-    const timerEl = countdownEl.firstElementChild as SVGElement;
+    const svgEl = countdownEl.lastElementChild!;
+    const timerEl = countdownEl.firstElementChild!;
 
     const timeLeft = message.date + location.period - getServerTime();
-    const strokeDashOffset = (1 - timeLeft / location.period) * circumference;
+    const strokeDashOffset = (1 - timeLeft / location.period) * TIMER_CIRCUMFERENCE;
     const text = formatCountdownShort(lang, timeLeft * 1000);
-
-    if (!svgEl || !timerEl) {
-      countdownEl.innerHTML = `
-        <span class="geo-countdown-text">${text}</span>
-        <svg width="32px" height="32px">
-          <circle cx="16" cy="16" r="${radius}" class="geo-countdown-progress" transform="rotate(-90, 16, 16)"
-            stroke-dasharray="${circumference} ${circumference}"
-            stroke-dashoffset="-${strokeDashOffset}"
-          />
-        </svg>`;
-    } else {
-      timerEl.textContent = text;
-      svgEl.firstElementChild!.setAttribute('stroke-dashoffset', `-${strokeDashOffset}`);
-    }
-  }, [type, message.date, location, lang]);
+    timerEl.textContent = text;
+    svgEl.firstElementChild!.setAttribute('stroke-dashoffset', `-${strokeDashOffset}`);
+  });
 
   useLayoutEffect(() => {
     if (countdownRef.current) {
       updateCountdown(countdownRef.current);
     }
   }, [updateCountdown]);
-
-  useLayoutEffectWithPrevDeps(([prevShouldRenderText]) => {
-    if (shouldRenderText) {
-      if (!prevShouldRenderText) {
-        ref.current!.closest<HTMLDivElement>(MESSAGE_CONTENT_SELECTOR)!.removeAttribute(CUSTOM_APPENDIX_ATTRIBUTE);
-      }
-      return;
-    }
-
-    if (mapBlobUrl) {
-      const contentEl = ref.current!.closest<HTMLDivElement>(MESSAGE_CONTENT_SELECTOR)!;
-      getCustomAppendixBg(mapBlobUrl, isOwn, isInSelectMode, isSelected, theme).then((appendixBg) => {
-        contentEl.style.setProperty('--appendix-bg', appendixBg);
-        contentEl.classList.add('has-appendix-thumb');
-        contentEl.setAttribute(CUSTOM_APPENDIX_ATTRIBUTE, '');
-      });
-    }
-  }, [shouldRenderText, isOwn, isInSelectMode, isSelected, theme, mapBlobUrl]);
 
   useEffect(() => {
     // Prevent map refetching for slight location changes
@@ -182,11 +135,12 @@ const Location: FC<OwnProps> = ({
   }, !isExpired ? (secondsBeforeEnd || 0) * 1000 : undefined);
 
   useInterval(() => {
-    const countdownEl = countdownRef.current;
-
-    if (countdownEl) {
-      updateCountdown(countdownEl);
-    }
+    requestMutation(() => {
+      const countdownEl = countdownRef.current;
+      if (countdownEl) {
+        updateCountdown(countdownEl);
+      }
+    });
   }, secondsBeforeEnd ? 1000 : undefined);
 
   function renderInfo() {
@@ -210,7 +164,22 @@ const Location: FC<OwnProps> = ({
           <div className="location-info-subtitle">
             {formatLastUpdated(lang, serverTime, message.editDate)}
           </div>
-          {!isExpired && <div className="geo-countdown" ref={countdownRef} />}
+          {!isExpired && (
+            <div className="geo-countdown" ref={countdownRef}>
+              <span className="geo-countdown-text" />
+              <svg width="32px" height="32px">
+                <circle
+                  cx="16"
+                  cy="16"
+                  r={TIMER_RADIUS}
+                  className="geo-countdown-progress"
+                  transform="rotate(-90, 16, 16)"
+                  stroke-dasharray={TIMER_CIRCUMFERENCE}
+                  stroke-dashoffset="0"
+                />
+              </svg>
+            </div>
+          )}
         </div>
       );
     }
@@ -224,6 +193,7 @@ const Location: FC<OwnProps> = ({
         className="full-media map"
         src={mapBlobUrl}
         alt="Location on a map"
+        draggable={false}
         style={`width: ${DEFAULT_MAP_CONFIG.width}px; height: ${DEFAULT_MAP_CONFIG.height}px;`}
       />
     );
@@ -237,8 +207,9 @@ const Location: FC<OwnProps> = ({
     );
     if (type === 'geoLive') {
       return (
-        <div className={pinClassName} dangerouslySetInnerHTML={SVG_PIN}>
-          <Avatar chat={avatarChat} user={avatarUser} className="location-avatar" />
+        <div className={pinClassName}>
+          <PinSvg />
+          <Avatar peer={peer} className="location-avatar" />
           {location.heading !== undefined && (
             <div className="direction" style={`--direction: ${location.heading}deg`} />
           )}
@@ -249,15 +220,18 @@ const Location: FC<OwnProps> = ({
     if (type === 'venue') {
       const color = getVenueColor(location.venueType);
       const iconSrc = getVenueIconUrl(location.venueType);
-      return (
-        <div className={pinClassName} dangerouslySetInnerHTML={SVG_PIN} style={`--pin-color: ${color}`}>
-          <img src={iconSrc} className="venue-icon" alt="" />
-        </div>
-      );
+      if (iconSrc) {
+        return (
+          <div className={pinClassName} style={`--pin-color: ${color}`}>
+            <PinSvg />
+            <img src={iconSrc} draggable={false} className="venue-icon" alt="" />
+          </div>
+        );
+      }
     }
 
     return (
-      <img className={pinClassName} src={mapPin} alt="" />
+      <img className={pinClassName} draggable={false} src={mapPin} alt="" />
     );
   }
 
@@ -291,5 +265,16 @@ const Location: FC<OwnProps> = ({
     </div>
   );
 };
+
+function PinSvg() {
+  return (
+    <svg className="round-pin" style="enable-background:new 0 0 64 64" viewBox="0 0 64 64">
+      <circle cx="32" cy="32" r="24.5" />
+      <path d="M32 8c13.23 0 24 10.77 24 24S45.23 56 32 56 8 45.23 8 32 18.77 8 32 8m0-1C18.19 7 7 18.19 7 32s11.19 25 25 25 25-11.19 25-25S45.81 7 32 7z" />
+      <path d="m29.38 57.67-1.98-1.59 3.02-1.66L32 51.54l1.58 2.88 3.02 1.66-1.91 1.53L32 60.73z" />
+      <path d="m32 52.58 1.07 1.95.14.26.26.14 2.24 1.22-1.33 1.06-.07.06-.06.07L32 59.96l-2.24-2.61-.06-.07-.07-.06-1.33-1.06 2.24-1.22.26-.14.14-.26L32 52.58m0-2.08-1.94 3.56L26.5 56l2.5 2 3 3.5 3-3.5 2.5-2-3.56-1.94L32 50.5z" />
+    </svg>
+  );
+}
 
 export default memo(Location);

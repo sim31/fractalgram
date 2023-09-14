@@ -1,20 +1,27 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useRef, useState,
+  memo, useEffect, useRef, useState,
 } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
 import type { ApiDimensions } from '../../api/types';
 
-import { IS_IOS, IS_TOUCH_ENV, IS_YA_BROWSER } from '../../util/environment';
+import { clamp } from '../../util/math';
 import safePlay from '../../util/safePlay';
 import stopEvent from '../../util/stopEvent';
+import { IS_IOS, IS_TOUCH_ENV, IS_YA_BROWSER } from '../../util/windowEnvironment';
+
+import useUnsupportedMedia from '../../hooks/media/useUnsupportedMedia';
+import useAppLayout from '../../hooks/useAppLayout';
 import useBuffering from '../../hooks/useBuffering';
+import useCurrentTimeSignal from '../../hooks/useCurrentTimeSignal';
 import useFullscreen from '../../hooks/useFullscreen';
+import useLastCallback from '../../hooks/useLastCallback';
 import usePictureInPicture from '../../hooks/usePictureInPicture';
 import useShowTransition from '../../hooks/useShowTransition';
 import useVideoCleanup from '../../hooks/useVideoCleanup';
-import useAppLayout from '../../hooks/useAppLayout';
+import useControlsSignal from './hooks/useControlsSignal';
+import useVideoWaitingSignal from './hooks/useVideoWaitingSignal';
 
 import Button from '../ui/Button';
 import ProgressSpinner from '../ui/ProgressSpinner';
@@ -29,6 +36,7 @@ type OwnProps = {
   posterSize?: ApiDimensions;
   loadProgress?: number;
   fileSize: number;
+  isPreviewDisabled?: boolean;
   isMediaViewerOpen?: boolean;
   noPlay?: boolean;
   volume: number;
@@ -36,15 +44,15 @@ type OwnProps = {
   isHidden?: boolean;
   playbackRate: number;
   isProtected?: boolean;
-  areControlsVisible: boolean;
   shouldCloseOnClick?: boolean;
-  toggleControls: (isVisible: boolean) => void;
+  isForceMobileVersion?: boolean;
   onClose: (e: React.MouseEvent<HTMLElement, MouseEvent>) => void;
   isClickDisabled?: boolean;
 };
 
-const MOBILE_VERSION_CONTROL_WIDTH = 400;
 const MAX_LOOP_DURATION = 30; // Seconds
+const MIN_READY_STATE = 4;
+const REWIND_STEP = 5; // Seconds
 
 const VideoPlayer: FC<OwnProps> = ({
   url,
@@ -59,11 +67,11 @@ const VideoPlayer: FC<OwnProps> = ({
   isMuted,
   playbackRate,
   onClose,
-  toggleControls,
-  areControlsVisible,
+  isForceMobileVersion,
   shouldCloseOnClick,
   isProtected,
   isClickDisabled,
+  isPreviewDisabled,
 }) => {
   const {
     setMediaViewerVolume,
@@ -74,20 +82,21 @@ const VideoPlayer: FC<OwnProps> = ({
   // eslint-disable-next-line no-null/no-null
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(!IS_TOUCH_ENV || !IS_IOS);
-  const [currentTime, setCurrentTime] = useState(0);
   const [isFullscreen, setFullscreen, exitFullscreen] = useFullscreen(videoRef, setIsPlaying);
   const { isMobile } = useAppLayout();
+  const duration = videoRef.current?.duration || 0;
+  const isLooped = isGif || duration <= MAX_LOOP_DURATION;
 
-  const handleEnterFullscreen = useCallback(() => {
+  const handleEnterFullscreen = useLastCallback(() => {
     // Yandex browser doesn't support PIP when video is hidden
     if (IS_YA_BROWSER) return;
     setMediaViewerHidden({ isHidden: true });
-  }, [setMediaViewerHidden]);
+  });
 
-  const handleLeaveFullscreen = useCallback(() => {
+  const handleLeaveFullscreen = useLastCallback(() => {
     if (IS_YA_BROWSER) return;
     setMediaViewerHidden({ isHidden: false });
-  }, [setMediaViewerHidden]);
+  });
 
   const [
     isPictureInPictureSupported,
@@ -95,32 +104,40 @@ const VideoPlayer: FC<OwnProps> = ({
     isInPictureInPicture,
   ] = usePictureInPicture(videoRef, handleEnterFullscreen, handleLeaveFullscreen);
 
-  const handleVideoMove = useCallback(() => {
-    toggleControls(true);
-  }, [toggleControls]);
+  const [, toggleControls, lockControls] = useControlsSignal();
 
-  const handleVideoLeave = useCallback((e) => {
+  const handleVideoMove = useLastCallback(() => {
+    toggleControls(true);
+  });
+
+  const handleVideoLeave = useLastCallback((e) => {
     const bounds = videoRef.current?.getBoundingClientRect();
     if (!bounds) return;
     if (e.clientX < bounds.left || e.clientX > bounds.right || e.clientY < bounds.top || e.clientY > bounds.bottom) {
       toggleControls(false);
     }
-  }, [toggleControls]);
+  });
 
   const {
-    isBuffered, bufferedRanges, bufferingHandlers, bufferedProgress,
+    isReady, isBuffered, bufferedRanges, bufferingHandlers, bufferedProgress,
   } = useBuffering();
+  const isUnsupported = useUnsupportedMedia(videoRef, undefined, !url);
+
   const {
     shouldRender: shouldRenderSpinner,
     transitionClassNames: spinnerClassNames,
-  } = useShowTransition(!isBuffered, undefined, undefined, 'slow');
+  } = useShowTransition(!isBuffered && !isUnsupported, undefined, undefined, 'slow');
   const {
     shouldRender: shouldRenderPlayButton,
     transitionClassNames: playButtonClassNames,
-  } = useShowTransition(IS_IOS && !isPlaying && !shouldRenderSpinner, undefined, undefined, 'slow');
+  } = useShowTransition(IS_IOS && !isPlaying && !shouldRenderSpinner && !isUnsupported, undefined, undefined, 'slow');
 
   useEffect(() => {
-    if (noPlay || !isMediaViewerOpen) {
+    lockControls(shouldRenderSpinner);
+  }, [lockControls, shouldRenderSpinner]);
+
+  useEffect(() => {
+    if (noPlay || !isMediaViewerOpen || isUnsupported) {
       videoRef.current!.pause();
     } else if (url && !IS_TOUCH_ENV) {
       // Chrome does not automatically start playing when `url` becomes available (even with `autoPlay`),
@@ -128,16 +145,7 @@ const VideoPlayer: FC<OwnProps> = ({
       // so we need to use `autoPlay` instead to allow pre-buffering.
       safePlay(videoRef.current!);
     }
-  }, [noPlay, isMediaViewerOpen, url, setMediaViewerMuted]);
-
-  useEffect(() => {
-    if (videoRef.current!.currentTime === videoRef.current!.duration) {
-      setCurrentTime(0);
-      setIsPlaying(false);
-    } else {
-      setCurrentTime(videoRef.current!.currentTime);
-    }
-  }, [currentTime]);
+  }, [noPlay, isMediaViewerOpen, url, setMediaViewerMuted, isUnsupported]);
 
   useEffect(() => {
     videoRef.current!.volume = volume;
@@ -147,7 +155,7 @@ const VideoPlayer: FC<OwnProps> = ({
     videoRef.current!.playbackRate = playbackRate;
   }, [playbackRate]);
 
-  const togglePlayState = useCallback((e: React.MouseEvent<HTMLElement, MouseEvent> | KeyboardEvent) => {
+  const togglePlayState = useLastCallback((e: React.MouseEvent<HTMLElement, MouseEvent> | KeyboardEvent) => {
     e.stopPropagation();
     if (isPlaying) {
       videoRef.current!.pause();
@@ -156,83 +164,116 @@ const VideoPlayer: FC<OwnProps> = ({
       safePlay(videoRef.current!);
       setIsPlaying(true);
     }
-  }, [isPlaying]);
+  });
 
-  const handleClick = useCallback((e: React.MouseEvent<HTMLVideoElement, MouseEvent>) => {
+  const handleClick = useLastCallback((e: React.MouseEvent<HTMLVideoElement, MouseEvent>) => {
     if (isClickDisabled) {
       return;
     }
-
     if (shouldCloseOnClick) {
       onClose(e);
     } else {
       togglePlayState(e);
     }
-  }, [onClose, shouldCloseOnClick, togglePlayState, isClickDisabled]);
+  });
 
   useVideoCleanup(videoRef, []);
+  const [, setCurrentTime] = useCurrentTimeSignal();
+  const [, setIsVideoWaiting] = useVideoWaitingSignal();
 
-  const handleTimeUpdate = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
-    setCurrentTime(e.currentTarget.currentTime);
-  }, []);
+  const handleTimeUpdate = useLastCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = e.currentTarget;
+    if (video.readyState >= MIN_READY_STATE) {
+      setIsVideoWaiting(false);
+      setCurrentTime(video.currentTime);
+    }
+    if (!isLooped && video.currentTime === video.duration) {
+      setCurrentTime(0);
+      setIsPlaying(false);
+    }
+  });
 
-  const handleEnded = useCallback(() => {
+  const handleEnded = useLastCallback(() => {
+    if (isLooped) return;
     setCurrentTime(0);
     setIsPlaying(false);
     toggleControls(true);
-  }, [toggleControls]);
+  });
 
-  const handleFullscreenChange = useCallback(() => {
+  const handleFullscreenChange = useLastCallback(() => {
     if (isFullscreen && exitFullscreen) {
       exitFullscreen();
     } else if (!isFullscreen && setFullscreen) {
       setFullscreen();
     }
-  }, [exitFullscreen, isFullscreen, setFullscreen]);
+  });
 
-  const handleSeek = useCallback((position: number) => {
+  const handleSeek = useLastCallback((position: number) => {
     videoRef.current!.currentTime = position;
-  }, []);
+  });
 
-  const handleVolumeChange = useCallback((newVolume: number) => {
+  const handleVolumeChange = useLastCallback((newVolume: number) => {
     setMediaViewerVolume({ volume: newVolume / 100 });
-  }, [setMediaViewerVolume]);
+  });
 
-  const handleVolumeMuted = useCallback(() => {
+  const handleVolumeMuted = useLastCallback(() => {
     // Browser requires explicit user interaction to keep video playing after unmuting
     videoRef.current!.muted = !videoRef.current!.muted;
     setMediaViewerMuted({ isMuted: !isMuted });
-  }, [isMuted, setMediaViewerMuted]);
+  });
 
-  const handlePlaybackRateChange = useCallback((newPlaybackRate: number) => {
+  const handlePlaybackRateChange = useLastCallback((newPlaybackRate: number) => {
     setMediaViewerPlaybackRate({ playbackRate: newPlaybackRate });
-  }, [setMediaViewerPlaybackRate]);
+  });
 
   useEffect(() => {
     if (!isMediaViewerOpen) return undefined;
-    const togglePayingStateBySpace = (e: KeyboardEvent) => {
-      if ((e.key === 'Enter' || e.key === ' ') && !isInPictureInPicture) {
-        e.preventDefault();
-        togglePlayState(e);
+    const rewind = (dir: number) => {
+      if (!isFullscreen) return;
+      const video = videoRef.current!;
+      const newTime = clamp(video.currentTime + dir * REWIND_STEP, 0, video.duration);
+      if (Number.isFinite(newTime)) {
+        video.currentTime = newTime;
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (isInPictureInPicture) return;
+      switch (e.key) {
+        case ' ':
+        case 'Enter':
+          e.preventDefault();
+          togglePlayState(e);
+          break;
+        case 'Left': // IE/Edge specific value
+        case 'ArrowLeft':
+          e.preventDefault();
+          rewind(-1);
+          break;
+        case 'Right': // IE/Edge specific value
+        case 'ArrowRight':
+          e.preventDefault();
+          rewind(1);
+          break;
       }
     };
 
-    document.addEventListener('keydown', togglePayingStateBySpace, false);
+    document.addEventListener('keydown', handleKeyDown, false);
 
     return () => {
-      document.removeEventListener('keydown', togglePayingStateBySpace, false);
+      document.removeEventListener('keydown', handleKeyDown, false);
     };
-  }, [togglePlayState, isMediaViewerOpen, isInPictureInPicture]);
+  }, [togglePlayState, isMediaViewerOpen, isFullscreen, isInPictureInPicture]);
 
   const wrapperStyle = posterSize && `width: ${posterSize.width}px; height: ${posterSize.height}px`;
   const videoStyle = `background-image: url(${posterData})`;
-  const duration = videoRef.current?.duration || 0;
+  const shouldToggleControls = !IS_TOUCH_ENV && !isForceMobileVersion;
 
   return (
+    // eslint-disable-next-line jsx-a11y/mouse-events-have-key-events
     <div
       className="VideoPlayer"
-      onMouseMove={!IS_TOUCH_ENV ? handleVideoMove : undefined}
-      onMouseOut={!IS_TOUCH_ENV ? handleVideoLeave : undefined}
+      onMouseMove={shouldToggleControls ? handleVideoMove : undefined}
+      onMouseOut={shouldToggleControls ? handleVideoLeave : undefined}
     >
       <div
         style={wrapperStyle}
@@ -251,11 +292,12 @@ const VideoPlayer: FC<OwnProps> = ({
           autoPlay={IS_TOUCH_ENV}
           controlsList="nodownload"
           playsInline
-          loop={isGif || duration <= MAX_LOOP_DURATION}
+          loop={isLooped}
           // This is to force autoplaying on mobiles
           muted={isGif || isMuted}
           id="media-viewer-video"
           style={videoStyle}
+          onWaiting={() => setIsVideoWaiting(true)}
           onPlay={() => setIsPlaying(true)}
           onEnded={handleEnded}
           onClick={!isMobile && !isFullscreen ? handleClick : undefined}
@@ -267,13 +309,12 @@ const VideoPlayer: FC<OwnProps> = ({
             bufferingHandlers.onPause(e);
           }}
           onTimeUpdate={handleTimeUpdate}
-        >
-          {url && <source src={url} />}
-        </video>
+          src={url}
+        />
       </div>
       {shouldRenderPlayButton && (
         <Button round className={`play-button ${playButtonClassNames}`} onClick={togglePlayState}>
-          <i className="icon-play" />
+          <i className="icon icon-play" />
         </Button>
       )}
       {shouldRenderSpinner && (
@@ -287,21 +328,22 @@ const VideoPlayer: FC<OwnProps> = ({
           />
         </div>
       )}
-      {!isGif && !shouldRenderSpinner && (
+      {!isGif && !isUnsupported && (
         <VideoPlayerControls
+          url={url}
           isPlaying={isPlaying}
           bufferedRanges={bufferedRanges}
           bufferedProgress={bufferedProgress}
           isBuffered={isBuffered}
-          currentTime={currentTime}
           isFullscreenSupported={Boolean(setFullscreen)}
           isPictureInPictureSupported={isPictureInPictureSupported}
           isFullscreen={isFullscreen}
+          isPreviewDisabled={isPreviewDisabled}
           fileSize={fileSize}
           duration={duration}
-          isVisible={areControlsVisible}
-          setVisibility={toggleControls}
-          isForceMobileVersion={posterSize && posterSize.width < MOBILE_VERSION_CONTROL_WIDTH}
+          isReady={isReady}
+          posterSize={posterSize}
+          isForceMobileVersion={isForceMobileVersion}
           onSeek={handleSeek}
           onChangeFullscreen={handleFullscreenChange}
           onPictureInPictureChange={enterPictureInPicture}

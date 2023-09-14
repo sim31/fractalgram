@@ -4,17 +4,18 @@ import { getActions, withGlobal } from '../../../global';
 
 import type { ApiChatInviteImporter, ApiExportedInvite, ApiUser } from '../../../api/types';
 
-import useHistoryBack from '../../../hooks/useHistoryBack';
-import useLang from '../../../hooks/useLang';
-import { copyTextToClipboard } from '../../../util/clipboard';
-import { getServerTime } from '../../../util/serverTime';
-import { formatFullDate, formatMediaDateTime, formatTime } from '../../../util/dateFormat';
 import { isChatChannel } from '../../../global/helpers';
 import { selectChat, selectTabState } from '../../../global/selectors';
+import { copyTextToClipboard } from '../../../util/clipboard';
+import { formatFullDate, formatMediaDateTime, formatTime } from '../../../util/dateFormat';
+import { getServerTime } from '../../../util/serverTime';
+
+import useHistoryBack from '../../../hooks/useHistoryBack';
+import useLang from '../../../hooks/useLang';
 
 import PrivateChatInfo from '../../common/PrivateChatInfo';
-import ListItem from '../../ui/ListItem';
 import Button from '../../ui/Button';
+import ListItem from '../../ui/ListItem';
 import Spinner from '../../ui/Spinner';
 
 type OwnProps = {
@@ -30,6 +31,8 @@ type StateProps = {
   admin?: ApiUser;
   isChannel?: boolean;
 };
+
+const BULLET = '\u2022';
 
 const ManageInviteInfo: FC<OwnProps & StateProps> = ({
   chatId,
@@ -83,19 +86,23 @@ const ManageInviteInfo: FC<OwnProps & StateProps> = ({
           {!importers.length && (
             usageLimit ? lang('PeopleCanJoinViaLinkCount', usageLimit - usage) : lang('NoOneJoinedYet')
           )}
-          {importers.map((importer) => (
-            <ListItem
-              className="chat-item-clickable scroll-item small-icon"
-              // eslint-disable-next-line react/jsx-no-bind
-              onClick={() => openChat({ id: importer.userId })}
-            >
-              <PrivateChatInfo
-                userId={importer.userId}
-                status={formatMediaDateTime(lang, importer.date * 1000, true)}
-                forceShowSelf
-              />
-            </ListItem>
-          ))}
+          {importers.map((importer) => {
+            const joinTime = formatMediaDateTime(lang, importer.date * 1000, true);
+            const status = importer.isFromChatList ? `${joinTime} ${BULLET} ${lang('JoinedViaFolder')}` : joinTime;
+            return (
+              <ListItem
+                className="chat-item-clickable scroll-item small-icon"
+                // eslint-disable-next-line react/jsx-no-bind
+                onClick={() => openChat({ id: importer.userId })}
+              >
+                <PrivateChatInfo
+                  userId={importer.userId}
+                  status={status}
+                  forceShowSelf
+                />
+              </ListItem>
+            );
+          })}
         </p>
       </div>
     );

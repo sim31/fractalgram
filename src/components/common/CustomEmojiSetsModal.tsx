@@ -1,14 +1,16 @@
+import type { FC } from '../../lib/teact/teact';
 import React, {
   memo, useCallback, useRef,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { FC } from '../../lib/teact/teact';
 import type { ApiSticker, ApiStickerSet } from '../../api/types';
 
+import { selectCanPlayAnimatedEmojis } from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
 
 import { useIntersectionObserver } from '../../hooks/useIntersectionObserver';
+import useLang from '../../hooks/useLang';
 import usePrevious from '../../hooks/usePrevious';
 
 import Modal from '../ui/Modal';
@@ -23,17 +25,22 @@ export type OwnProps = {
 
 type StateProps = {
   customEmojiSets?: ApiStickerSet[];
+  canPlayAnimatedEmojis?: boolean;
 };
 
 const CustomEmojiSetsModal: FC<OwnProps & StateProps> = ({
   customEmojiSets,
+  canPlayAnimatedEmojis,
   onClose,
 }) => {
   const { openStickerSet } = getActions();
+  const lang = useLang();
 
   // eslint-disable-next-line no-null/no-null
   const customEmojiModalRef = useRef<HTMLDivElement>(null);
-  const { observe: observeIntersectionForCovers } = useIntersectionObserver({ rootRef: customEmojiModalRef });
+  const { observe: observeIntersectionForCovers } = useIntersectionObserver({
+    rootRef: customEmojiModalRef, isDisabled: !customEmojiSets,
+  });
 
   const prevCustomEmojiSets = usePrevious(customEmojiSets);
   const renderingCustomEmojiSets = customEmojiSets || prevCustomEmojiSets;
@@ -50,9 +57,9 @@ const CustomEmojiSetsModal: FC<OwnProps & StateProps> = ({
       className={styles.root}
       onClose={onClose}
       hasCloseButton
-      title="Sets of used emoji"
+      title={lang('lng_custom_emoji_used_sets')}
     >
-      <div className={buildClassName(styles.sets, 'custom-scroll')} ref={customEmojiModalRef}>
+      <div className={buildClassName(styles.sets, 'custom-scroll')} ref={customEmojiModalRef} teactFastList>
         {renderingCustomEmojiSets?.map((customEmojiSet) => (
           <StickerSetCard
             key={customEmojiSet.id}
@@ -60,6 +67,7 @@ const CustomEmojiSetsModal: FC<OwnProps & StateProps> = ({
             stickerSet={customEmojiSet}
             onClick={handleSetClick}
             observeIntersection={observeIntersectionForCovers}
+            noPlay={!canPlayAnimatedEmojis}
           />
         ))}
       </div>
@@ -73,6 +81,7 @@ export default memo(withGlobal<OwnProps>(
 
     return {
       customEmojiSets,
+      canPlayAnimatedEmojis: selectCanPlayAnimatedEmojis(global),
     };
   },
 )(CustomEmojiSetsModal));

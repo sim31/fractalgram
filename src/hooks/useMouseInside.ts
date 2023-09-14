@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef } from '../lib/teact/teact';
+import { useEffect, useRef } from '../lib/teact/teact';
 
-import { IS_TOUCH_ENV } from '../util/environment';
+import { IS_TOUCH_ENV } from '../util/windowEnvironment';
+import useLastCallback from './useLastCallback';
 
 const MENU_CLOSE_TIMEOUT = 250;
 let closeTimeout: number | undefined;
@@ -10,9 +11,9 @@ export default function useMouseInside(
 ) {
   const isMouseInside = useRef(false);
 
-  const markMouseInside = useCallback(() => {
+  const markMouseInside = useLastCallback(() => {
     isMouseInside.current = true;
-  }, []);
+  });
 
   useEffect(() => {
     if (closeTimeout) {
@@ -29,11 +30,11 @@ export default function useMouseInside(
     }
   }, [isDisabled, isOpen, menuCloseTimeout, onClose]);
 
-  const handleMouseEnter = useCallback(() => {
+  const handleMouseEnter = useLastCallback(() => {
     isMouseInside.current = true;
-  }, []);
+  });
 
-  const handleMouseLeave = useCallback(() => {
+  const handleMouseLeave = useLastCallback(() => {
     isMouseInside.current = false;
 
     if (closeTimeout) {
@@ -46,7 +47,7 @@ export default function useMouseInside(
         onClose();
       }
     }, menuCloseTimeout);
-  }, [menuCloseTimeout, onClose]);
+  });
 
   return [handleMouseEnter, handleMouseLeave, markMouseInside];
 }

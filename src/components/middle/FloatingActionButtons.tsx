@@ -1,15 +1,15 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
-  useCallback, memo, useRef, useEffect,
-} from '../../lib/teact/teact';
+import React, { memo, useEffect, useRef } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type { MessageListType } from '../../global/types';
 import { MAIN_THREAD_ID } from '../../api/types';
 
 import { selectChat, selectCurrentMessageList } from '../../global/selectors';
+import animateScroll from '../../util/animateScroll';
 import buildClassName from '../../util/buildClassName';
-import fastSmoothScroll from '../../util/fastSmoothScroll';
+
+import useLastCallback from '../../hooks/useLastCallback';
 
 import ScrollDownButton from './ScrollDownButton';
 
@@ -64,7 +64,7 @@ const FloatingActionButtons: FC<OwnProps & StateProps> = ({
     }
   }, [chatId, fetchUnreadMentions, hasUnreadMentions]);
 
-  const handleClick = useCallback(() => {
+  const handleClick = useLastCallback(() => {
     if (!isShown) {
       return;
     }
@@ -79,9 +79,9 @@ const FloatingActionButtons: FC<OwnProps & StateProps> = ({
         return;
       }
 
-      fastSmoothScroll(messagesContainer, lastMessageElement, 'end', FOCUS_MARGIN);
+      animateScroll(messagesContainer, lastMessageElement, 'end', FOCUS_MARGIN);
     }
-  }, [isShown, messageListType, focusNextReply]);
+  });
 
   const fabClassName = buildClassName(
     styles.root,

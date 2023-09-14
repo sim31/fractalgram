@@ -1,16 +1,16 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
-  useCallback, useEffect, useRef, memo,
-} from '../../../lib/teact/teact';
-import { getActions, withGlobal } from '../../../global';
+import React, { memo, useEffect, useRef } from '../../../lib/teact/teact';
+import { getActions, getGlobal } from '../../../global';
 
+import type { ApiBotCommand } from '../../../api/types';
 import type { Signal } from '../../../util/signals';
-import type { ApiBotCommand, ApiUser } from '../../../api/types';
 
 import buildClassName from '../../../util/buildClassName';
 import setTooltipItemVisible from '../../../util/setTooltipItemVisible';
-import useShowTransition from '../../../hooks/useShowTransition';
+
+import useLastCallback from '../../../hooks/useLastCallback';
 import usePrevious from '../../../hooks/usePrevious';
+import useShowTransition from '../../../hooks/useShowTransition';
 import { useKeyboardNavigation } from './hooks/useKeyboardNavigation';
 
 import BotCommand from './BotCommand';
@@ -26,12 +26,7 @@ export type OwnProps = {
   onClose: NoneToVoidFunction;
 };
 
-type StateProps = {
-  usersById: Record<string, ApiUser>;
-};
-
-const BotCommandTooltip: FC<OwnProps & StateProps> = ({
-  usersById,
+const BotCommandTooltip: FC<OwnProps> = ({
   isOpen,
   withUsername,
   botCommands,
@@ -45,15 +40,18 @@ const BotCommandTooltip: FC<OwnProps & StateProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const { shouldRender, transitionClassNames } = useShowTransition(isOpen, undefined, undefined, false);
 
-  const handleSendCommand = useCallback(({ botId, command }: ApiBotCommand) => {
+  const handleSendCommand = useLastCallback(({ botId, command }: ApiBotCommand) => {
+    // No need for expensive global updates on users and chats, so we avoid them
+    const usersById = getGlobal().users.byId;
     const bot = usersById[botId];
+
     sendBotCommand({
       command: `/${command}${withUsername && bot ? `@${bot.usernames![0].username}` : ''}`,
     });
     onClick();
-  }, [onClick, sendBotCommand, usersById, withUsername]);
+  });
 
-  const handleSelect = useCallback((botCommand: ApiBotCommand) => {
+  const handleSelect = useLastCallback((botCommand: ApiBotCommand) => {
     // We need an additional check because tooltip is updated with throttling
     if (!botCommand.command.startsWith(getHtml().slice(1))) {
       return false;
@@ -61,7 +59,7 @@ const BotCommandTooltip: FC<OwnProps & StateProps> = ({
 
     handleSendCommand(botCommand);
     return true;
-  }, [getHtml, handleSendCommand]);
+  });
 
   const selectedCommandIndex = useKeyboardNavigation({
     isActive: isOpen,
@@ -98,7 +96,8 @@ const BotCommandTooltip: FC<OwnProps & StateProps> = ({
         <BotCommand
           key={`${chatBotCommand.botId}_${chatBotCommand.command}`}
           botCommand={chatBotCommand}
-          bot={usersById[chatBotCommand.botId]}
+          // No need for expensive global updates on users and chats, so we avoid them
+          bot={getGlobal().users.byId[chatBotCommand.botId]}
           withAvatar
           onClick={handleSendCommand}
           focus={selectedCommandIndex === index}
@@ -108,8 +107,4 @@ const BotCommandTooltip: FC<OwnProps & StateProps> = ({
   );
 };
 
-export default memo(withGlobal<OwnProps>(
-  (global): StateProps => ({
-    usersById: global.users.byId,
-  }),
-)(BotCommandTooltip));
+export default memo(BotCommandTooltip);

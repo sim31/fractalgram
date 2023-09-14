@@ -1,8 +1,10 @@
-import type { GlobalState } from '../types';
-import type {
-  ISettings, IThemeSettings, ThemeKey, NotifyException,
-} from '../../types';
 import type { ApiNotifyException } from '../../api/types';
+import type {
+  ISettings, IThemeSettings, NotifyException,
+  ThemeKey,
+} from '../../types';
+import type { GlobalState } from '../types';
+
 import { updateUserBlockedState } from './users';
 
 export function replaceSettings<T extends GlobalState>(global: T, newSettings?: Partial<ISettings>): T {
@@ -85,7 +87,7 @@ export function updateNotifySettings<T extends GlobalState>(
   }
 }
 
-export function addBlockedContact<T extends GlobalState>(global: T, contactId: string): T {
+export function addBlockedUser<T extends GlobalState>(global: T, contactId: string): T {
   global = updateUserBlockedState(global, contactId, true);
 
   return {
@@ -98,7 +100,7 @@ export function addBlockedContact<T extends GlobalState>(global: T, contactId: s
   };
 }
 
-export function removeBlockedContact<T extends GlobalState>(global: T, contactId: string): T {
+export function removeBlockedUser<T extends GlobalState>(global: T, contactId: string): T {
   global = updateUserBlockedState(global, contactId, false);
 
   return {

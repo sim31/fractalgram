@@ -1,16 +1,16 @@
 import BigInt from 'big-integer';
-import Api from '../tl/api';
-import type TelegramClient from './TelegramClient';
-import { sleep } from '../Helpers';
-import { getDownloadPartSize } from '../Utils';
-import errors from '../errors';
+
 import Deferred from '../../../util/Deferred';
 import { Foreman } from '../../../util/foreman';
+import errors from '../errors';
+import Api from '../tl/api';
+
+import { sleep } from '../Helpers';
+import { getDownloadPartSize } from '../Utils';
+import type TelegramClient from './TelegramClient';
 
 interface OnProgress {
     isCanceled?: boolean;
-    acceptsBuffer?: boolean;
-
     (
         progress: number, // Float between 0 and 1.
         ...args: any[]
@@ -95,11 +95,12 @@ export async function downloadFile(
     client: TelegramClient,
     inputLocation: Api.InputFileLocation,
     fileParams: DownloadFileParams,
+    shouldDebugExportedSenders?: boolean,
 ) {
     const { dcId } = fileParams;
     for (let i = 0; i < SENDER_RETRIES; i++) {
         try {
-            return await downloadFile2(client, inputLocation, fileParams);
+            return await downloadFile2(client, inputLocation, fileParams, shouldDebugExportedSenders);
         } catch (err: any) {
             if (
                 (err.message.startsWith('SESSION_REVOKED') || err.message.startsWith('CONNECTION_NOT_INITED'))
@@ -127,6 +128,7 @@ async function downloadFile2(
     client: TelegramClient,
     inputLocation: Api.InputFileLocation,
     fileParams: DownloadFileParams,
+    shouldDebugExportedSenders?: boolean,
 ) {
     let {
         partSizeKb, end,
@@ -134,17 +136,26 @@ async function downloadFile2(
     const {
         fileSize,
     } = fileParams;
+
+    const fileId = 'id' in inputLocation ? inputLocation.id : undefined;
+    const logWithId = (...args: any[]) => {
+        if (!shouldDebugExportedSenders) return;
+        // eslint-disable-next-line no-console
+        console.log(`⬇️ [${fileId}/${fileParams.dcId}]`, ...args);
+    };
+
+    logWithId('Downloading file...');
     const isPremium = Boolean(client.isPremium);
     const { dcId, progressCallback, start = 0 } = fileParams;
 
     end = end && end < fileSize ? end : fileSize - 1;
 
     if (!partSizeKb) {
-        partSizeKb = fileSize ? getDownloadPartSize(fileSize) : DEFAULT_CHUNK_SIZE;
+        partSizeKb = fileSize ? getDownloadPartSize(start ? (end - start + 1) : fileSize) : DEFAULT_CHUNK_SIZE;
     }
 
     const partSize = partSizeKb * 1024;
-    const partsCount = end ? Math.ceil((end - start) / partSize) : 1;
+    const partsCount = end ? Math.ceil((end + 1 - start + 1) / partSize) : 1;
     const noParallel = !end;
     const shouldUseMultipleConnections = fileSize
         && fileSize >= MULTIPLE_CONNECTIONS_MIN_FILE_SIZE
@@ -186,6 +197,10 @@ async function downloadFile2(
             isPrecise = true;
         }
 
+        if (offset % MIN_CHUNK_SIZE !== 0 || limit % MIN_CHUNK_SIZE !== 0) {
+            isPrecise = true;
+        }
+
         // Use only first connection for avatars, because no size is known and we don't want to
         // download empty parts using all connections at once
         const senderIndex = !shouldUseMultipleConnections ? 0 : currentForemanIndex % (
@@ -202,6 +217,9 @@ async function downloadFile2(
             foremans[senderIndex].releaseWorker();
             break;
         }
+        const logWithSenderIndex = (...args: any[]) => {
+            logWithId(`[${senderIndex}/${dcId}]`, ...args);
+        };
 
         // eslint-disable-next-line no-loop-func, @typescript-eslint/no-loop-func
         promises.push((async (offsetMemo: number) => {
@@ -209,7 +227,23 @@ async function downloadFile2(
             while (true) {
                 let sender;
                 try {
+                    let isDone = false;
+                    if (shouldDebugExportedSenders) {
+                        setTimeout(() => {
+                            if (isDone) return;
+                            logWithSenderIndex(`❗️️ getSender took too long ${offsetMemo}`);
+                        }, 8000);
+                    }
                     sender = await client.getSender(dcId, senderIndex, isPremium);
+                    isDone = true;
+
+                    let isDone2 = false;
+                    if (shouldDebugExportedSenders) {
+                        setTimeout(() => {
+                            if (isDone2) return;
+                            logWithSenderIndex(`❗️️ sender.send took too long ${offsetMemo}`);
+                        }, 6000);
+                    }
                     // sometimes a session is revoked and will cause this to hang.
                     const result = await Promise.race([
                         sender.send(new Api.upload.GetFile({
@@ -221,19 +255,24 @@ async function downloadFile2(
                         sleep(SENDER_TIMEOUT).then(() => {
                             // If we're on the main DC we just cancel the download and let the user retry later
                             if (dcId === client.session.dcId) {
+                                logWithSenderIndex(`Download timed out ${offsetMemo}`);
                                 return Promise.reject(new Error('USER_CANCELED'));
                             } else {
+                                logWithSenderIndex(`Download timed out [not main] ${offsetMemo}`);
                                 return Promise.reject(new Error('SESSION_REVOKED'));
                             }
                         }),
                     ]);
+                    client.releaseExportedSender(sender);
 
+                    isDone2 = true;
                     if (progressCallback) {
                         if (progressCallback.isCanceled) {
                             throw new Error('USER_CANCELED');
                         }
 
                         progress += (1 / partsCount);
+                        logWithSenderIndex(`⬇️️ ${progress * 100}%`);
                         progressCallback(progress);
                     }
 
@@ -256,10 +295,12 @@ async function downloadFile2(
                         continue;
                     }
 
+                    logWithSenderIndex(`Ended not gracefully ${offsetMemo}`);
                     foremans[senderIndex].releaseWorker();
                     if (deferred) deferred.resolve();
 
                     hasEnded = true;
+                    client.releaseExportedSender(sender);
                     throw err;
                 }
             }

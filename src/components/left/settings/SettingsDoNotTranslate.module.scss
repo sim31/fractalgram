@@ -1,5 +1,3 @@
-@import "../../../styles/mixins";
-
 .root, .item {
   display: flex;
   flex-direction: column;
@@ -8,13 +6,14 @@
 .item {
   overflow: hidden;
   min-height: 25rem;
+  padding-bottom: 0 !important;
 }
 
 .checkbox {
-  margin: 0;
+  margin-right: 0 !important;
 }
 
 .languages {
   overflow-y: auto;
-  @include overflow-y-overlay();
+  margin-bottom: 0 !important;
 }

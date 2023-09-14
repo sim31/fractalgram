@@ -1,17 +1,23 @@
-import type { GroupCallParticipant as TypeGroupCallParticipant } from '../../../lib/secret-sauce';
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback, useMemo } from '../../../lib/teact/teact';
+import React, { memo, useMemo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import useLang from '../../../hooks/useLang';
-import { selectActiveGroupCall } from '../../../global/selectors/calls';
-import useInfiniteScroll from '../../../hooks/useInfiniteScroll';
+import type { GroupCallParticipant as TypeGroupCallParticipant } from '../../../lib/secret-sauce';
 
-import GroupCallParticipant from './GroupCallParticipant';
+import { selectActiveGroupCall } from '../../../global/selectors/calls';
+import buildClassName from '../../../util/buildClassName';
+
+import useInfiniteScroll from '../../../hooks/useInfiniteScroll';
+import useLastCallback from '../../../hooks/useLastCallback';
+
 import InfiniteScroll from '../../ui/InfiniteScroll';
+import GroupCallParticipant from './GroupCallParticipant';
+
+import styles from './GroupCallParticipantList.module.scss';
 
 type OwnProps = {
-  openParticipantMenu: (anchor: HTMLDivElement, participant: TypeGroupCallParticipant) => void;
+  panelOffset: number;
+  isLandscape: boolean;
 };
 
 type StateProps = {
@@ -21,64 +27,61 @@ type StateProps = {
 };
 
 const GroupCallParticipantList: FC<OwnProps & StateProps> = ({
+  panelOffset,
   participants,
   participantsCount,
-  openParticipantMenu,
+  isLandscape,
 }) => {
   const {
-    createGroupCallInviteLink,
     loadMoreGroupCallParticipants,
   } = getActions();
 
-  const lang = useLang();
-
-  const participantsIds = useMemo(() => {
-    return Object.keys(participants || {});
+  const orderedParticipantIds = useMemo(() => {
+    return Object.values(participants || {}).sort(compareParticipants).map((participant) => participant.id);
   }, [participants]);
 
-  const handleLoadMoreGroupCallParticipants = useCallback(() => {
+  const handleLoadMoreGroupCallParticipants = useLastCallback(() => {
     loadMoreGroupCallParticipants();
-  }, [loadMoreGroupCallParticipants]);
+  });
 
   const [viewportIds, getMore] = useInfiniteScroll(
     handleLoadMoreGroupCallParticipants,
-    participantsIds,
-    participantsIds.length >= participantsCount,
+    orderedParticipantIds,
+    orderedParticipantIds.length >= participantsCount,
   );
-
-  function handleCreateGroupCallInviteLink() {
-    createGroupCallInviteLink();
-  }
 
   return (
-    <div className="participants">
-      <div className="invite-btn" onClick={handleCreateGroupCallInviteLink}>
-        <div className="icon">
-          <i className="icon-add-user" />
-        </div>
-        <div className="text">{lang('VoipGroupInviteMember')}</div>
-      </div>
-
-      <InfiniteScroll
-        items={viewportIds}
-        onLoadMore={getMore}
-      >
-        {viewportIds?.map(
-          (participantId) => (
-            participants![participantId] && (
-              <GroupCallParticipant
-                key={participantId}
-                openParticipantMenu={openParticipantMenu}
-                participant={participants![participantId]}
-              />
-            )
-          ),
-        )}
-      </InfiniteScroll>
-
-    </div>
+    <InfiniteScroll
+      items={viewportIds}
+      onLoadMore={getMore}
+      style={`transform: translateY(${panelOffset}px);`}
+      className={buildClassName(styles.root, !isLandscape && styles.portrait)}
+    >
+      {participants && viewportIds?.map(
+        (participantId) => (
+          participants[participantId] && (
+            <GroupCallParticipant
+              key={participantId}
+              teactOrderKey={orderedParticipantIds.indexOf(participantId)}
+              participant={participants[participantId]}
+            />
+          )
+        ),
+      )}
+    </InfiniteScroll>
   );
 };
+
+function compareFields<T>(a: T, b: T) {
+  return Number(b) - Number(a);
+}
+
+function compareParticipants(a: TypeGroupCallParticipant, b: TypeGroupCallParticipant) {
+  return compareFields(!a.isMuted, !b.isMuted)
+        || compareFields(a.presentation, b.presentation)
+        || compareFields(a.video, b.video)
+        || compareFields(a.raiseHandRating, b.raiseHandRating);
+}
 
 export default memo(withGlobal<OwnProps>(
   (global): StateProps => {

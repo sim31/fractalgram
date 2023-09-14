@@ -1,5 +1,8 @@
+import type {
+  ApiChat, ApiUser, ApiUserFullInfo, ApiUserStatus,
+} from '../../api/types';
 import type { GlobalState } from '../types';
-import type { ApiChat, ApiUser, ApiUserStatus } from '../../api/types';
+
 import { isUserBot } from '../helpers';
 
 export function selectUser<T extends GlobalState>(global: T, userId: string): ApiUser | undefined {
@@ -10,10 +13,12 @@ export function selectUserStatus<T extends GlobalState>(global: T, userId: strin
   return global.users.statusesById[userId];
 }
 
-export function selectIsUserBlocked<T extends GlobalState>(global: T, userId: string) {
-  const user = selectUser(global, userId);
+export function selectUserFullInfo<T extends GlobalState>(global: T, userId: string): ApiUserFullInfo | undefined {
+  return global.users.fullInfoById[userId];
+}
 
-  return user?.fullInfo?.isBlocked;
+export function selectIsUserBlocked<T extends GlobalState>(global: T, userId: string) {
+  return selectUserFullInfo(global, userId)?.isBlocked;
 }
 
 export function selectIsCurrentUserPremium<T extends GlobalState>(global: T) {
@@ -24,14 +29,6 @@ export function selectIsCurrentUserPremium<T extends GlobalState>(global: T) {
 
 export function selectIsPremiumPurchaseBlocked<T extends GlobalState>(global: T) {
   return global.appConfig?.isPremiumPurchaseBlocked ?? true;
-}
-
-// Slow, not to be used in `withGlobal`
-export function selectUserByUsername<T extends GlobalState>(global: T, username: string) {
-  const usernameLowered = username.toLowerCase();
-  return Object.values(global.users.byId).find(
-    (user) => user.usernames?.some((u) => u.username.toLowerCase() === usernameLowered),
-  );
 }
 
 // Slow, not to be used in `withGlobal`

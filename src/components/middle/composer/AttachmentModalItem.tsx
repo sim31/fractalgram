@@ -1,13 +1,15 @@
-import React, { memo, useCallback, useMemo } from '../../../lib/teact/teact';
-
 import type { FC } from '../../../lib/teact/teact';
+import React, { memo, useMemo } from '../../../lib/teact/teact';
+
 import type { ApiAttachment } from '../../../api/types';
 
-import { SUPPORTED_IMAGE_CONTENT_TYPES, SUPPORTED_VIDEO_CONTENT_TYPES } from '../../../config';
-import { getFileExtension } from '../../common/helpers/documentInfo';
+import { GIF_MIME_TYPE, SUPPORTED_IMAGE_CONTENT_TYPES, SUPPORTED_VIDEO_CONTENT_TYPES } from '../../../config';
 import buildClassName from '../../../util/buildClassName';
 import { formatMediaDuration } from '../../../util/dateFormat';
+import { getFileExtension } from '../../common/helpers/documentInfo';
 import { REM } from '../../common/helpers/mediaDimensions';
+
+import useLastCallback from '../../../hooks/useLastCallback';
 
 import File from '../../common/File';
 import MediaSpoiler from '../../common/MediaSpoiler';
@@ -39,9 +41,9 @@ const AttachmentModalItem: FC<OwnProps> = ({
 }) => {
   const displayType = getDisplayType(attachment, shouldDisplayCompressed);
 
-  const handleSpoilerClick = useCallback(() => {
+  const handleSpoilerClick = useLastCallback(() => {
     onToggleSpoiler?.(index);
-  }, [index, onToggleSpoiler]);
+  });
 
   const content = useMemo(() => {
     switch (displayType) {
@@ -83,7 +85,7 @@ const AttachmentModalItem: FC<OwnProps> = ({
             />
             {onDelete && (
               <i
-                className={buildClassName('icon-delete', styles.actionItem, styles.deleteFile)}
+                className={buildClassName('icon', 'icon-delete', styles.actionItem, styles.deleteFile)}
                 onClick={() => onDelete(index)}
               />
             )}
@@ -93,7 +95,9 @@ const AttachmentModalItem: FC<OwnProps> = ({
   }, [attachment, displayType, index, onDelete]);
 
   const shouldSkipGrouping = displayType === 'file' || !shouldDisplayGrouped;
-  const shouldDisplaySpoiler = Boolean(displayType !== 'file' && attachment.shouldSendAsSpoiler);
+  const canDisplaySpoilerButton = attachment.mimeType !== GIF_MIME_TYPE;
+  const shouldDisplaySpoiler = Boolean(displayType !== 'file' && canDisplaySpoilerButton
+    && attachment.shouldSendAsSpoiler);
   const shouldRenderOverlay = displayType !== 'file';
 
   const rootClassName = buildClassName(
@@ -111,15 +115,21 @@ const AttachmentModalItem: FC<OwnProps> = ({
       />
       {shouldRenderOverlay && (
         <div className={styles.overlay}>
-          <i
-            className={buildClassName(
-              attachment.shouldSendAsSpoiler ? 'icon-spoiler-disable' : 'icon-spoiler',
-              styles.actionItem,
-            )}
-            onClick={handleSpoilerClick}
-          />
+          {canDisplaySpoilerButton && (
+            <i
+              className={buildClassName(
+                'icon',
+                attachment.shouldSendAsSpoiler ? 'icon-spoiler-disable' : 'icon-spoiler',
+                styles.actionItem,
+              )}
+              onClick={handleSpoilerClick}
+            />
+          )}
           {onDelete && (
-            <i className={buildClassName('icon-delete', styles.actionItem)} onClick={() => onDelete(index)} />
+            <i
+              className={buildClassName('icon', 'icon-delete', styles.actionItem)}
+              onClick={() => onDelete(index)}
+            />
           )}
         </div>
       )}

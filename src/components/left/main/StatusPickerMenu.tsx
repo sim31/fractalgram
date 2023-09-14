@@ -1,17 +1,19 @@
 import type { RefObject } from 'react';
+import type { FC } from '../../../lib/teact/teact';
 import React, {
-  useCallback, memo, useEffect, useRef,
+  memo, useCallback, useEffect, useRef,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
 import type { ApiSticker } from '../../../api/types';
+
+import { selectIsContextMenuTranslucent } from '../../../global/selectors';
 
 import useFlag from '../../../hooks/useFlag';
 
+import CustomEmojiPicker from '../../common/CustomEmojiPicker';
 import Menu from '../../ui/Menu';
 import Portal from '../../ui/Portal';
-import CustomEmojiPicker from '../../middle/composer/CustomEmojiPicker';
 
 import styles from './StatusPickerMenu.module.scss';
 
@@ -24,12 +26,14 @@ export type OwnProps = {
 
 interface StateProps {
   areFeaturedStickersLoaded?: boolean;
+  isTranslucent?: boolean;
 }
 
 const StatusPickerMenu: FC<OwnProps & StateProps> = ({
   isOpen,
   statusButtonRef,
   areFeaturedStickersLoaded,
+  isTranslucent,
   onEmojiStatusSelect,
   onClose,
 }) => {
@@ -66,7 +70,9 @@ const StatusPickerMenu: FC<OwnProps & StateProps> = ({
         <CustomEmojiPicker
           idPrefix="status-emoji-set-"
           loadAndPlay={isOpen}
+          isHidden={!isOpen}
           isStatusPicker
+          isTranslucent={isTranslucent}
           onContextMenuOpen={markContextMenuShown}
           onContextMenuClose={unmarkContextMenuShown}
           onCustomEmojiSelect={handleEmojiSelect}
@@ -80,5 +86,6 @@ const StatusPickerMenu: FC<OwnProps & StateProps> = ({
 export default memo(withGlobal<OwnProps>((global): StateProps => {
   return {
     areFeaturedStickersLoaded: Boolean(global.customEmojis.featuredIds?.length),
+    isTranslucent: selectIsContextMenuTranslucent(global),
   };
 })(StatusPickerMenu));

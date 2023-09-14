@@ -1,27 +1,29 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useRef, useCallback } from '../../lib/teact/teact';
+import React, { memo, useCallback, useRef } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type { ApiChat, ApiVideo } from '../../api/types';
+import type { MessageList } from '../../global/types';
 
-import { IS_TOUCH_ENV } from '../../util/environment';
+import { getAllowedAttachmentOptions, getCanPostInChat } from '../../global/helpers';
 import {
-  selectCurrentGifSearch,
-  selectChat,
-  selectIsChatWithBot,
-  selectCurrentMessageList,
   selectCanScheduleUntilOnline,
+  selectChat,
+  selectCurrentGifSearch,
+  selectCurrentMessageList,
+  selectIsChatWithBot,
   selectIsChatWithSelf, selectThreadInfo,
 } from '../../global/selectors';
-import { getAllowedAttachmentOptions, getCanPostInChat } from '../../global/helpers';
 import buildClassName from '../../util/buildClassName';
+import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
+
+import useHistoryBack from '../../hooks/useHistoryBack';
 import { useIntersectionObserver } from '../../hooks/useIntersectionObserver';
 import useLang from '../../hooks/useLang';
-import useHistoryBack from '../../hooks/useHistoryBack';
 import useSchedule from '../../hooks/useSchedule';
 
-import InfiniteScroll from '../ui/InfiniteScroll';
 import GifButton from '../common/GifButton';
+import InfiniteScroll from '../ui/InfiniteScroll';
 import Loading from '../ui/Loading';
 
 import './GifSearch.scss';
@@ -39,6 +41,7 @@ type StateProps = {
   canScheduleUntilOnline?: boolean;
   isSavedMessages?: boolean;
   canPostInChat?: boolean;
+  currentMessageList?: MessageList;
 };
 
 const PRELOAD_BACKWARDS = 96; // GIF Search bot results are multiplied by 24
@@ -53,6 +56,7 @@ const GifSearch: FC<OwnProps & StateProps> = ({
   canScheduleUntilOnline,
   isSavedMessages,
   canPostInChat,
+  currentMessageList,
   onClose,
 }) => {
   const {
@@ -74,19 +78,28 @@ const GifSearch: FC<OwnProps & StateProps> = ({
 
   const handleGifClick = useCallback((gif: ApiVideo, isSilent?: boolean, shouldSchedule?: boolean) => {
     if (canSendGifs) {
+      if (!currentMessageList) {
+        return;
+      }
+
       if (shouldSchedule) {
         requestCalendar((scheduledAt) => {
-          sendMessage({ gif, scheduledAt, isSilent });
+          sendMessage({
+            messageList: currentMessageList,
+            gif,
+            scheduledAt,
+            isSilent,
+          });
         });
       } else {
-        sendMessage({ gif, isSilent });
+        sendMessage({ messageList: currentMessageList, gif, isSilent });
       }
     }
 
     if (IS_TOUCH_ENV) {
       setGifSearchQuery({ query: undefined });
     }
-  }, [canSendGifs, requestCalendar, sendMessage, setGifSearchQuery]);
+  }, [canSendGifs, currentMessageList, requestCalendar]);
 
   const handleSearchMoreGifs = useCallback(() => {
     searchMoreGifs();
@@ -167,6 +180,7 @@ export default memo(withGlobal(
       isSavedMessages,
       canPostInChat,
       canScheduleUntilOnline: Boolean(chatId) && selectCanScheduleUntilOnline(global, chatId),
+      currentMessageList: selectCurrentMessageList(global),
     };
   },
 )(GifSearch));

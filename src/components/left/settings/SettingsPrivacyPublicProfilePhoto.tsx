@@ -1,27 +1,31 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, {
   memo, useCallback, useEffect, useRef,
 } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
-import type { ApiUser } from '../../../api/types';
+import type { ApiPhoto } from '../../../api/types';
 
 import useFlag from '../../../hooks/useFlag';
 import useLang from '../../../hooks/useLang';
 
-import ListItem from '../../ui/ListItem';
-import SelectAvatar from '../../ui/SelectAvatar';
 import Avatar from '../../common/Avatar';
 import ConfirmDialog from '../../ui/ConfirmDialog';
+import ListItem from '../../ui/ListItem';
+import SelectAvatar from '../../ui/SelectAvatar';
 
 import styles from './SettingsPrivacyPublicPhoto.module.scss';
 
 type OwnProps = {
-  currentUser: ApiUser;
+  currentUserId: string;
+  hasCurrentUserFullInfo?: boolean;
+  currentUserFallbackPhoto?: ApiPhoto;
 };
 
 const SettingsPrivacyPublicProfilePhoto: FC<OwnProps> = ({
-  currentUser,
+  currentUserId,
+  hasCurrentUserFullInfo,
+  currentUserFallbackPhoto,
 }) => {
   const {
     loadFullUser, uploadProfilePhoto, deleteProfilePhoto, showNotification,
@@ -29,17 +33,16 @@ const SettingsPrivacyPublicProfilePhoto: FC<OwnProps> = ({
 
   const lang = useLang();
 
-  const fallbackPhoto = currentUser.fullInfo?.fallbackPhoto;
   const [isDeleteFallbackPhotoModalOpen, openDeleteFallbackPhotoModal, closeDeleteFallbackPhotoModal] = useFlag(false);
 
   // eslint-disable-next-line no-null/no-null
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!currentUser.fullInfo) {
-      loadFullUser({ userId: currentUser.id });
+    if (!hasCurrentUserFullInfo) {
+      loadFullUser({ userId: currentUserId });
     }
-  }, [currentUser.fullInfo, currentUser.id, loadFullUser]);
+  }, [hasCurrentUserFullInfo, currentUserId, loadFullUser]);
 
   const handleSelectFile = useCallback((file: File) => {
     uploadProfilePhoto({
@@ -53,8 +56,8 @@ const SettingsPrivacyPublicProfilePhoto: FC<OwnProps> = ({
 
   const handleConfirmDelete = useCallback(() => {
     closeDeleteFallbackPhotoModal();
-    deleteProfilePhoto({ photo: fallbackPhoto! });
-  }, [closeDeleteFallbackPhotoModal, deleteProfilePhoto, fallbackPhoto]);
+    deleteProfilePhoto({ photo: currentUserFallbackPhoto! });
+  }, [closeDeleteFallbackPhotoModal, deleteProfilePhoto, currentUserFallbackPhoto]);
 
   const handleOpenFileSelector = useCallback(() => {
     inputRef.current?.click();
@@ -70,15 +73,17 @@ const SettingsPrivacyPublicProfilePhoto: FC<OwnProps> = ({
           onChange={handleSelectFile}
           inputRef={inputRef}
         />
-        {lang(fallbackPhoto ? 'Privacy.ProfilePhoto.UpdatePublicPhoto' : 'Privacy.ProfilePhoto.SetPublicPhoto')}
+        {lang(currentUserFallbackPhoto
+          ? 'Privacy.ProfilePhoto.UpdatePublicPhoto'
+          : 'Privacy.ProfilePhoto.SetPublicPhoto')}
       </ListItem>
-      {fallbackPhoto && (
+      {currentUserFallbackPhoto && (
         <ListItem
-          leftElement={<Avatar photo={fallbackPhoto} size="mini" className={styles.fallbackPhoto} />}
+          leftElement={<Avatar photo={currentUserFallbackPhoto} size="mini" className={styles.fallbackPhoto} />}
           onClick={openDeleteFallbackPhotoModal}
           destructive
         >
-          {lang(fallbackPhoto.isVideo
+          {lang(currentUserFallbackPhoto.isVideo
             ? 'Privacy.ProfilePhoto.RemovePublicVideo'
             : 'Privacy.ProfilePhoto.RemovePublicPhoto')}
           <ConfirmDialog

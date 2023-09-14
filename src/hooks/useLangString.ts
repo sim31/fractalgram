@@ -1,16 +1,21 @@
 import * as langProvider from '../util/langProvider';
-import { useState } from '../lib/teact/teact';
+import useAsync from './useAsync';
 
-const useLangString = (langCode: string | undefined, key: string): string | undefined => {
-  const [translation, setTranslation] = useState<string>();
+const useLangString = (
+  langCode: string | undefined,
+  key: string,
+  shouldIgnoreSameValue = false,
+): string | undefined => {
+  const defaultValue = shouldIgnoreSameValue ? undefined : key;
+  const { result } = useAsync(() => {
+    if (langCode) {
+      return langProvider.getTranslationForLangString(langCode, key);
+    }
 
-  if (langCode) {
-    langProvider
-      .getTranslationForLangString(langCode, key)
-      .then(setTranslation);
-  }
+    return Promise.resolve();
+  }, [langCode, key], defaultValue);
 
-  return translation;
+  return result || defaultValue;
 };
 
 export default useLangString;

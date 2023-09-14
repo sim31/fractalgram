@@ -14,14 +14,16 @@
   opacity: 0;
   pointer-events: none;
 
-  #MediaViewer.zoomed & {
-    display: none;
-  }
-
-  @media (max-width: 600px) {
+  &.mobile {
     position: fixed;
     padding: 2.25rem 0.5rem 0.75rem;
     background: none;
+    .player-seekline {
+      top: 1rem;
+    }
+    .playback-rate-menu .bubble {
+      bottom: 4.6875rem;
+    }
   }
 
   &.active {
@@ -44,6 +46,9 @@
     padding: 0;
     margin: 0.25rem;
     height: 2rem;
+    @media (max-width: 320px) {
+      margin: 0.125rem;
+    }
   }
 
   .volume-slider {
@@ -83,6 +88,7 @@
 
   .player-time {
     color: rgba(255, 255, 255, 0.5);
+    font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
 
@@ -91,61 +97,8 @@
     overflow: hidden;
     text-overflow: ellipsis;
     margin-left: 0.5rem;
-  }
-
-  .player-seekline {
-    position: absolute;
-    left: 1rem;
-    right: 1rem;
-    top: 1rem;
-    height: 1rem;
-    touch-action: none;
-    cursor: pointer;
-
-    @media (max-width: 600px) {
-      top: 1rem;
-    }
-
-    &-track {
-      position: absolute;
-      top: 50%;
-      left: -0.25rem;
-      right: -0.25rem;
-      height: 5px;
-      transform: translateY(-50%);
-      background-color: rgba(255, 255, 255, 0.16);
-      border-radius: var(--border-radius-default);
-    }
-
-    &-buffered,
-    &-played,
-    &-input {
-      position: absolute;
-      top: 0;
-      left: 0;
-      height: 100%;
-      border-radius: var(--border-radius-default);
-    }
-
-    &-buffered {
-      position: absolute;
-      background-color: rgba(255, 255, 255, 0.5);
-    }
-
-    &-played {
-      background: var(--color-primary);
-
-      &::after {
-        content: "";
-        position: absolute;
-        width: 0.75rem;
-        height: 0.75rem;
-        border-radius: 50%;
-        background-color: var(--color-primary);
-        right: 0;
-        top: 50%;
-        transform: translate(0.325rem, -50%);
-      }
+    @media (max-width: 320px) {
+      margin: 0.25rem;
     }
   }
 
@@ -155,9 +108,6 @@
       min-width: 3.5rem;
       margin-right: 5.8125rem;
       bottom: 4.1875rem;
-      @media (max-width: 600px) {
-        bottom: 4.6875rem;
-      }
     }
 
     &.no-fullscreen, &.no-pip {

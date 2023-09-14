@@ -5,23 +5,25 @@ import React, {
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiMessage } from '../../../api/types';
+import type { StateProps } from './helpers/createMapStateToProps';
 import { LoadMoreDirection } from '../../../types';
 
 import { SLIDE_TRANSITION_DURATION } from '../../../config';
-import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
-import type { StateProps } from './helpers/createMapStateToProps';
-import { createMapStateToProps } from './helpers/createMapStateToProps';
-import { formatMonthAndYear, toYearMonth } from '../../../util/dateFormat';
-import { getSenderName } from './helpers/getSenderName';
-import { throttle } from '../../../util/schedulers';
 import { getMessageDocument } from '../../../global/helpers';
-import useAsyncRendering from '../../right/hooks/useAsyncRendering';
-import useLang from '../../../hooks/useLang';
+import buildClassName from '../../../util/buildClassName';
+import { formatMonthAndYear, toYearMonth } from '../../../util/dateFormat';
+import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
+import { throttle } from '../../../util/schedulers';
+import { createMapStateToProps } from './helpers/createMapStateToProps';
+import { getSenderName } from './helpers/getSenderName';
+
 import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
+import useLang from '../../../hooks/useLang';
+import useAsyncRendering from '../../right/hooks/useAsyncRendering';
 
 import Document from '../../common/Document';
-import InfiniteScroll from '../../ui/InfiniteScroll';
 import NothingFound from '../../common/NothingFound';
+import InfiniteScroll from '../../ui/InfiniteScroll';
 import Loading from '../../ui/Loading';
 
 export type OwnProps = {
@@ -41,7 +43,6 @@ const FileResults: FC<OwnProps & StateProps> = ({
   globalMessagesByChatId,
   foundIds,
   activeDownloads,
-  lastSyncTime,
 }) => {
   const {
     searchMessagesGlobal,
@@ -59,7 +60,7 @@ const FileResults: FC<OwnProps & StateProps> = ({
   });
 
   const handleLoadMore = useCallback(({ direction }: { direction: LoadMoreDirection }) => {
-    if (lastSyncTime && direction === LoadMoreDirection.Backwards) {
+    if (direction === LoadMoreDirection.Backwards) {
       runThrottled(() => {
         searchMessagesGlobal({
           type: CURRENT_TYPE,
@@ -67,7 +68,7 @@ const FileResults: FC<OwnProps & StateProps> = ({
       });
     }
   // eslint-disable-next-line react-hooks-static-deps/exhaustive-deps -- `searchQuery` is required to prevent infinite message loading
-  }, [lastSyncTime, searchMessagesGlobal, searchQuery]);
+  }, [searchQuery]);
 
   const foundMessages = useMemo(() => {
     if (!foundIds || !globalMessagesByChatId) {
@@ -88,7 +89,8 @@ const FileResults: FC<OwnProps & StateProps> = ({
 
   function renderList() {
     return foundMessages.map((message, index) => {
-      const shouldDrawDateDivider = index === 0
+      const isFirst = index === 0;
+      const shouldDrawDateDivider = isFirst
         || toYearMonth(message.date) !== toYearMonth(foundMessages[index - 1].date);
       return (
         <div
@@ -96,7 +98,16 @@ const FileResults: FC<OwnProps & StateProps> = ({
           key={message.id}
         >
           {shouldDrawDateDivider && (
-            <p className="section-heading">{formatMonthAndYear(lang, new Date(message.date * 1000))}</p>
+            <p
+              className={buildClassName(
+                'section-heading',
+                isFirst && 'section-heading-first',
+                !isFirst && 'section-heading-with-border',
+              )}
+              dir={lang.isRtl ? 'rtl' : undefined}
+            >
+              {formatMonthAndYear(lang, new Date(message.date * 1000))}
+            </p>
           )}
           <Document
             message={message}
@@ -105,7 +116,7 @@ const FileResults: FC<OwnProps & StateProps> = ({
             smaller
             sender={getSenderName(lang, message, chatsById, usersById)}
             className="scroll-item"
-            isDownloading={activeDownloads[message.chatId]?.includes(message.id)}
+            isDownloading={activeDownloads[message.chatId]?.ids?.includes(message.id)}
             observeIntersection={observeIntersectionForMedia}
             onDateClick={handleMessageFocus}
           />

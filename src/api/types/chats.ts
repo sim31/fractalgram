@@ -1,7 +1,7 @@
+import type { ApiBotCommand } from './bots';
 import type {
   ApiChatReactions, ApiMessage, ApiPhoto, ApiStickerSet,
 } from './messages';
-import type { ApiBotCommand } from './bots';
 import type { ApiChatInviteImporter } from './misc';
 import type { ApiFakeType, ApiUsername } from './users';
 
@@ -25,6 +25,7 @@ export interface ApiChat {
   unreadReactionsCount?: number;
   isVerified?: boolean;
   isMuted?: boolean;
+  muteUntil?: number;
   isSignaturesShown?: boolean;
   hasPrivateLink?: boolean;
   accessHash?: string;
@@ -67,8 +68,6 @@ export interface ApiChat {
 
   // Obtained from GetChatSettings
   settings?: ApiChatSettings;
-  // Obtained from GetFullChat / GetFullChannel
-  fullInfo?: ApiChatFullInfo;
 
   joinRequests?: ApiChatInviteImporter[];
   isJoinToSend?: boolean;
@@ -77,6 +76,9 @@ export interface ApiChat {
 
   unreadReactions?: number[];
   unreadMentions?: number[];
+
+  // Locally determined field
+  detectedLanguage?: string;
 }
 
 export interface ApiTypingStatus {
@@ -115,6 +117,7 @@ export interface ApiChatFullInfo {
   stickerSet?: ApiStickerSet;
   profilePhoto?: ApiPhoto;
   areParticipantsHidden?: boolean;
+  isTranslationDisabled?: true;
 }
 
 export interface ApiChatMember {
@@ -189,6 +192,8 @@ export interface ApiChatFolder {
   pinnedChatIds?: string[];
   includedChatIds: string[];
   excludedChatIds: string[];
+  isChatList?: true;
+  hasMyInvites?: true;
 }
 
 export interface ApiChatSettings {
@@ -221,6 +226,28 @@ export interface ApiTopic {
   unreadMentionsCount: number;
   unreadReactionsCount: number;
   fromId: string;
-
   isMuted?: boolean;
+  muteUntil?: number;
+}
+
+export interface ApiChatlistInviteNew {
+  title: string;
+  emoticon?: string;
+  peerIds: string[];
+  slug: string;
+}
+
+export interface ApiChatlistInviteAlready {
+  folderId: number;
+  missingPeerIds: string[];
+  alreadyPeerIds: string[];
+  slug: string;
+}
+
+export type ApiChatlistInvite = ApiChatlistInviteNew | ApiChatlistInviteAlready;
+
+export interface ApiChatlistExportedInvite {
+  title: string;
+  url: string;
+  peerIds: string[];
 }

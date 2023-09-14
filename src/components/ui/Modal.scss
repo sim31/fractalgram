@@ -1,9 +1,10 @@
 .Modal {
   position: relative;
   z-index: var(--z-modal);
+  color: var(--color-text);
 
   &.confirm {
-    z-index: var(--z-lock-screen);
+    z-index: var(--z-modal-confirm);
   }
 
   &.delete,
@@ -17,7 +18,7 @@
   }
 
   &.error {
-    .modal-content > div {
+    .modal-content .dialog-buttons {
       margin-top: 1rem;
     }
   }
@@ -78,7 +79,7 @@
 
     transition: transform 0.2s ease, opacity 0.2s ease;
 
-    body.animation-level-0 & {
+    body.no-page-transitions & {
       transition: none;
       transform: none !important;
     }
@@ -112,7 +113,7 @@
     text-overflow: ellipsis;
 
     &:not(:only-child) {
-      margin: 0 1.3125rem;
+      margin: 0 1.5rem;
     }
   }
 

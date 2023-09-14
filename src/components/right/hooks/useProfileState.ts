@@ -1,10 +1,12 @@
-import { useCallback, useEffect } from '../../../lib/teact/teact';
+import { useEffect } from '../../../lib/teact/teact';
 
 import { ProfileState } from '../../../types';
 
-import fastSmoothScroll from '../../../util/fastSmoothScroll';
+import animateScroll from '../../../util/animateScroll';
 import { throttle } from '../../../util/schedulers';
+
 import useEffectWithPrevDeps from '../../../hooks/useEffectWithPrevDeps';
+import useLastCallback from '../../../hooks/useLastCallback';
 
 const TRANSITION_DURATION = 300;
 const PROGRAMMATIC_SCROLL_TIMEOUT_MS = 350;
@@ -25,9 +27,13 @@ export default function useProfileState(
       const container = containerRef.current!;
       const tabsEl = container.querySelector<HTMLDivElement>('.TabList')!;
       if (container.scrollTop < tabsEl.offsetTop) {
-        onProfileStateChange(tabType === 'members' ? ProfileState.MemberList : ProfileState.SharedMedia);
+        onProfileStateChange(
+          tabType === 'members'
+            ? ProfileState.MemberList
+            : (tabType === 'stories' ? ProfileState.StoryList : ProfileState.SharedMedia),
+        );
         isScrollingProgrammatically = true;
-        fastSmoothScroll(container, tabsEl, 'start', undefined, undefined, undefined, TRANSITION_DURATION);
+        animateScroll(container, tabsEl, 'start', undefined, undefined, undefined, TRANSITION_DURATION);
         setTimeout(() => {
           isScrollingProgrammatically = false;
         }, PROGRAMMATIC_SCROLL_TIMEOUT_MS);
@@ -52,7 +58,7 @@ export default function useProfileState(
     }
 
     isScrollingProgrammatically = true;
-    fastSmoothScroll(
+    animateScroll(
       container,
       container.firstElementChild as HTMLElement,
       'start',
@@ -67,7 +73,7 @@ export default function useProfileState(
     onProfileStateChange(profileState);
   }, [profileState, containerRef, onProfileStateChange]);
 
-  const determineProfileState = useCallback(() => {
+  const determineProfileState = useLastCallback(() => {
     const container = containerRef.current;
     if (!container) {
       return;
@@ -82,11 +88,11 @@ export default function useProfileState(
     if (container.scrollTop >= tabListEl.offsetTop) {
       state = tabType === 'members'
         ? ProfileState.MemberList
-        : ProfileState.SharedMedia;
+        : (tabType === 'stories' ? ProfileState.StoryList : ProfileState.SharedMedia);
     }
 
     onProfileStateChange(state);
-  }, [containerRef, onProfileStateChange, tabType]);
+  });
 
   // Determine profile state when switching tabs
   useEffect(() => {
@@ -98,13 +104,13 @@ export default function useProfileState(
   }, [determineProfileState, tabType]);
 
   // Determine profile state when scrolling
-  const handleScroll = useCallback(() => {
+  const handleScroll = useLastCallback(() => {
     if (isScrollingProgrammatically) {
       return;
     }
 
     runThrottledForScroll(determineProfileState);
-  }, [determineProfileState]);
+  });
 
   return { handleScroll };
 }

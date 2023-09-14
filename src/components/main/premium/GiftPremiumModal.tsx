@@ -1,24 +1,27 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, {
   memo, useCallback, useEffect, useMemo, useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
 import type { ApiPremiumGiftOption, ApiUser } from '../../../api/types';
-import type { AnimationLevel } from '../../../types';
 
+import { getUserFirstOrLastName } from '../../../global/helpers';
+import {
+  selectTabState,
+  selectUser,
+  selectUserFullInfo,
+} from '../../../global/selectors';
 import { formatCurrency } from '../../../util/formatCurrency';
 import renderText from '../../common/helpers/renderText';
-import { getUserFirstOrLastName } from '../../../global/helpers';
-import { selectTabState, selectUser } from '../../../global/selectors';
 
 import useCurrentOrPrev from '../../../hooks/useCurrentOrPrev';
 import useLang from '../../../hooks/useLang';
 
-import Modal from '../../ui/Modal';
+import Avatar from '../../common/Avatar';
 import Button from '../../ui/Button';
 import Link from '../../ui/Link';
-import Avatar from '../../common/Avatar';
+import Modal from '../../ui/Modal';
 import GiftOption from './GiftOption';
 
 import styles from './GiftPremiumModal.module.scss';
@@ -32,7 +35,6 @@ type StateProps = {
   gifts?: ApiPremiumGiftOption[];
   monthlyCurrency?: string;
   monthlyAmount?: number;
-  animationLevel: AnimationLevel;
 };
 
 const GiftPremiumModal: FC<OwnProps & StateProps> = ({
@@ -41,7 +43,6 @@ const GiftPremiumModal: FC<OwnProps & StateProps> = ({
   gifts,
   monthlyCurrency,
   monthlyAmount,
-  animationLevel,
 }) => {
   const { openPremiumModal, closeGiftPremiumModal, openUrl } = getActions();
 
@@ -121,9 +122,13 @@ const GiftPremiumModal: FC<OwnProps & StateProps> = ({
           onClick={() => closeGiftPremiumModal()}
           ariaLabel={lang('Close')}
         >
-          <i className="icon-close" />
+          <i className="icon icon-close" />
         </Button>
-        <Avatar user={renderedUser} size="jumbo" className={styles.avatar} animationLevel={animationLevel} withVideo />
+        <Avatar
+          peer={renderedUser}
+          size="jumbo"
+          className={styles.avatar}
+        />
         <h2 className={styles.headerText}>
           {lang('GiftTelegramPremiumTitle')}
         </h2>
@@ -162,13 +167,12 @@ const GiftPremiumModal: FC<OwnProps & StateProps> = ({
 export default memo(withGlobal<OwnProps>((global): StateProps => {
   const { forUserId, monthlyCurrency, monthlyAmount } = selectTabState(global).giftPremiumModal || {};
   const user = forUserId ? selectUser(global, forUserId) : undefined;
-  const gifts = user ? user.fullInfo?.premiumGifts : undefined;
+  const gifts = user ? selectUserFullInfo(global, user.id)?.premiumGifts : undefined;
 
   return {
     user,
     gifts,
     monthlyCurrency,
     monthlyAmount: monthlyAmount ? Number(monthlyAmount) : undefined,
-    animationLevel: global.settings.byKey.animationLevel,
   };
 })(GiftPremiumModal));

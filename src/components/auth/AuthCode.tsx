@@ -1,20 +1,22 @@
 import type { FormEvent } from 'react';
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  useState, useEffect, useCallback, memo, useRef,
+  memo, useCallback, useEffect, useRef, useState,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
+
 import type { GlobalState } from '../../global/types';
 
-import { IS_TOUCH_ENV } from '../../util/environment';
 import { pick } from '../../util/iteratees';
+import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
 import renderText from '../common/helpers/renderText';
+
 import useHistoryBack from '../../hooks/useHistoryBack';
 import useLang from '../../hooks/useLang';
 
+import TrackingMonkey from '../common/TrackingMonkey';
 import InputText from '../ui/InputText';
 import Loading from '../ui/Loading';
-import TrackingMonkey from '../common/TrackingMonkey';
 
 type StateProps = Pick<GlobalState, 'authPhoneNumber' | 'authIsCodeViaApp' | 'authIsLoading' | 'authError'>;
 
@@ -98,13 +100,13 @@ const AuthCode: FC<StateProps> = ({
         <h1>
           {authPhoneNumber}
           <div
-            className="auth-number-edit"
+            className="auth-number-edit div-button"
             onClick={handleReturnToAuthPhoneNumber}
             role="button"
             tabIndex={0}
             title={lang('WrongNumber')}
           >
-            <i className="icon-edit" />
+            <i className="icon icon-edit" />
           </div>
         </h1>
         <p className="note">

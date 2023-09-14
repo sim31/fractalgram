@@ -1,5 +1,6 @@
-import type { TelegramClient } from '../../../lib/gramjs';
 import { Api as GramJs } from '../../../lib/gramjs';
+
+import type { TelegramClient } from '../../../lib/gramjs';
 import type { ApiOnProgress, ApiParsedMedia } from '../../types';
 import {
   ApiMediaFormat,
@@ -12,13 +13,15 @@ import {
   MEDIA_CACHE_NAME,
   MEDIA_CACHE_NAME_AVATARS,
 } from '../../../config';
-import localDb from '../localDb';
 import * as cacheApi from '../../../util/cacheApi';
 import { getEntityTypeById } from '../gramjsBuilders';
+import localDb from '../localDb';
 
 const MEDIA_ENTITY_TYPES = new Set([
   'msg', 'sticker', 'gif', 'wallpaper', 'photo', 'webDocument', 'document', 'videoAvatar',
 ]);
+
+const JPEG_SIZE_TYPES = new Set(['s', 'm', 'x', 'y', 'w', 'a', 'b', 'c', 'd']);
 
 export default async function downloadMedia(
   {
@@ -27,12 +30,11 @@ export default async function downloadMedia(
     url: string; mediaFormat: ApiMediaFormat; start?: number; end?: number; isHtmlAllowed?: boolean;
   },
   client: TelegramClient,
-  isConnected: boolean,
   onProgress?: ApiOnProgress,
 ) {
   const {
     data, mimeType, fullSize,
-  } = await download(url, client, isConnected, onProgress, start, end, mediaFormat, isHtmlAllowed) || {};
+  } = await download(url, client, onProgress, start, end, isHtmlAllowed) || {};
 
   if (!data) {
     return undefined;
@@ -71,11 +73,9 @@ export type EntityType = (
 async function download(
   url: string,
   client: TelegramClient,
-  isConnected: boolean,
   onProgress?: ApiOnProgress,
   start?: number,
   end?: number,
-  mediaFormat?: ApiMediaFormat,
   isHtmlAllowed?: boolean,
 ) {
   const parsed = parseMediaUrl(url);
@@ -85,10 +85,6 @@ async function download(
   const {
     entityType, entityId, sizeType, params, mediaMatchType,
   } = parsed;
-
-  if (!isConnected) {
-    return Promise.reject(new Error('ERROR: Client is not connected'));
-  }
 
   if (entityType === 'staticMap') {
     const accessHash = entityId;
@@ -150,10 +146,6 @@ async function download(
   }
 
   if (MEDIA_ENTITY_TYPES.has(entityType)) {
-    if (mediaFormat === ApiMediaFormat.Stream) {
-      onProgress!.acceptsBuffer = true;
-    }
-
     const data = await client.downloadMedia(entity, {
       sizeType, start, end, progressCallback: onProgress, workers: DOWNLOAD_WORKERS,
     });
@@ -184,7 +176,11 @@ async function download(
       mimeType = (entity as GramJs.TypeWebDocument).mimeType;
       fullSize = (entity as GramJs.TypeWebDocument).size;
     } else {
-      mimeType = (entity as GramJs.Document).mimeType;
+      if (JPEG_SIZE_TYPES.has(sizeType || '')) {
+        mimeType = 'image/jpeg';
+      } else {
+        mimeType = (entity as GramJs.Document).mimeType;
+      }
       fullSize = (entity as GramJs.Document).size.toJSNumber();
     }
 
@@ -222,14 +218,17 @@ function getMessageMediaMimeType(message: GramJs.Message, sizeType?: string) {
     return 'image/png';
   }
 
-  if (message.media instanceof GramJs.MessageMediaDocument && message.media.document instanceof GramJs.Document) {
-    if (sizeType) {
-      return message.media.document!.attributes.some((a) => a instanceof GramJs.DocumentAttributeSticker)
-        ? 'image/webp'
-        : 'image/jpeg';
-    }
+  if (message.media instanceof GramJs.MessageMediaDocument) {
+    const document = message.media.document;
+    if (document instanceof GramJs.Document) {
+      if (sizeType) {
+        return document.attributes.some((a) => a instanceof GramJs.DocumentAttributeSticker)
+          ? 'image/webp'
+          : 'image/jpeg';
+      }
 
-    return message.media.document!.mimeType;
+      return document.mimeType;
+    }
   }
 
   if (message.media instanceof GramJs.MessageMediaWebPage

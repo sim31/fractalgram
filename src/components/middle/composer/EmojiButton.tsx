@@ -1,10 +1,12 @@
-import React, { memo, useCallback } from '../../../lib/teact/teact';
-
 import type { FC } from '../../../lib/teact/teact';
+import React, { memo } from '../../../lib/teact/teact';
 
-import { IS_EMOJI_SUPPORTED } from '../../../util/environment';
-import { handleEmojiLoad, LOADED_EMOJIS } from '../../../util/emoji';
+import { IS_ELECTRON, PRODUCTION_URL } from '../../../config';
 import buildClassName from '../../../util/buildClassName';
+import { handleEmojiLoad, LOADED_EMOJIS } from '../../../util/emoji';
+import { IS_EMOJI_SUPPORTED } from '../../../util/windowEnvironment';
+
+import useLastCallback from '../../../hooks/useLastCallback';
 
 import './EmojiButton.scss';
 
@@ -17,19 +19,19 @@ type OwnProps = {
 const EmojiButton: FC<OwnProps> = ({
   emoji, focus, onClick,
 }) => {
-  const handleClick = useCallback((e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
+  const handleClick = useLastCallback((e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
     // Preventing safari from losing focus on Composer MessageInput
     e.preventDefault();
 
     onClick(emoji.native, emoji.id);
-  }, [emoji, onClick]);
+  });
 
   const className = buildClassName(
     'EmojiButton',
     focus && 'focus',
   );
 
-  const src = `./img-apple-64/${emoji.image}.png`;
+  const src = `${IS_ELECTRON ? PRODUCTION_URL : '.'}/img-apple-64/${emoji.image}.png`;
   const isLoaded = LOADED_EMOJIS.has(src);
 
   return (

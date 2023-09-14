@@ -1,13 +1,15 @@
 import type { MouseEvent as ReactMouseEvent, RefObject } from 'react';
-
 import type { FC } from '../../lib/teact/teact';
-import React, { useRef, useCallback, useState } from '../../lib/teact/teact';
+import React, { useRef, useState } from '../../lib/teact/teact';
 
 import buildClassName from '../../util/buildClassName';
 import buildStyle from '../../util/buildStyle';
+import { IS_TOUCH_ENV, MouseButton } from '../../util/windowEnvironment';
 
-import Spinner from './Spinner';
+import useLastCallback from '../../hooks/useLastCallback';
+
 import RippleEffect from './RippleEffect';
+import Spinner from './Spinner';
 
 import './Button.scss';
 
@@ -17,7 +19,8 @@ export type OwnProps = {
   children: React.ReactNode;
   size?: 'default' | 'smaller' | 'tiny';
   color?: (
-    'primary' | 'secondary' | 'gray' | 'danger' | 'translucent' | 'translucent-white' | 'translucent-black' | 'dark'
+    'primary' | 'secondary' | 'gray' | 'danger' | 'translucent' | 'translucent-white' | 'translucent-black'
+    | 'translucent-bordered' | 'dark'
   );
   backgroundImage?: string;
   id?: string;
@@ -34,6 +37,7 @@ export type OwnProps = {
   download?: string;
   disabled?: boolean;
   allowDisabledClick?: boolean;
+  noFastClick?: boolean;
   ripple?: boolean;
   faded?: boolean;
   tabIndex?: number;
@@ -46,6 +50,7 @@ export type OwnProps = {
   onClick?: (e: ReactMouseEvent<HTMLButtonElement, MouseEvent>) => void;
   onContextMenu?: (e: ReactMouseEvent<HTMLButtonElement, MouseEvent>) => void;
   onMouseDown?: (e: ReactMouseEvent<HTMLButtonElement>) => void;
+  onMouseUp?: (e: ReactMouseEvent<HTMLButtonElement>) => void;
   onMouseEnter?: (e: ReactMouseEvent<HTMLButtonElement>) => void;
   onMouseLeave?: NoneToVoidFunction;
   onFocus?: NoneToVoidFunction;
@@ -62,6 +67,7 @@ const Button: FC<OwnProps> = ({
   onClick,
   onContextMenu,
   onMouseDown,
+  onMouseUp,
   onMouseEnter,
   onMouseLeave,
   onFocus,
@@ -85,6 +91,7 @@ const Button: FC<OwnProps> = ({
   download,
   disabled,
   allowDisabledClick,
+  noFastClick = color === 'danger',
   ripple,
   faded,
   tabIndex,
@@ -121,7 +128,7 @@ const Button: FC<OwnProps> = ({
     withPremiumGradient && 'premium',
   );
 
-  const handleClick = useCallback((e: ReactMouseEvent<HTMLButtonElement, MouseEvent>) => {
+  const handleClick = useLastCallback((e: ReactMouseEvent<HTMLButtonElement, MouseEvent>) => {
     if ((allowDisabledClick || !disabled) && onClick) {
       onClick(e);
     }
@@ -132,15 +139,19 @@ const Button: FC<OwnProps> = ({
     setTimeout(() => {
       setIsClicked(false);
     }, CLICKED_TIMEOUT);
-  }, [allowDisabledClick, disabled, onClick, shouldStopPropagation]);
+  });
 
-  const handleMouseDown = useCallback((e: ReactMouseEvent<HTMLButtonElement>) => {
+  const handleMouseDown = useLastCallback((e: ReactMouseEvent<HTMLButtonElement>) => {
     if (!noPreventDefault) e.preventDefault();
 
     if ((allowDisabledClick || !disabled) && onMouseDown) {
       onMouseDown(e);
     }
-  }, [allowDisabledClick, disabled, noPreventDefault, onMouseDown]);
+
+    if (!IS_TOUCH_ENV && e.button === MouseButton.Main && !noFastClick) {
+      handleClick(e);
+    }
+  });
 
   if (href) {
     return (
@@ -172,9 +183,10 @@ const Button: FC<OwnProps> = ({
       id={id}
       type={type}
       className={fullClassName}
-      onClick={handleClick}
+      onClick={IS_TOUCH_ENV || noFastClick ? handleClick : undefined}
       onContextMenu={onContextMenu}
       onMouseDown={handleMouseDown}
+      onMouseUp={onMouseUp}
       onMouseEnter={onMouseEnter && !disabled ? onMouseEnter : undefined}
       onMouseLeave={onMouseLeave && !disabled ? onMouseLeave : undefined}
       onTransitionEnd={onTransitionEnd}

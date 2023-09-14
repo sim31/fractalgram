@@ -1,13 +1,14 @@
 import type { GlobalState } from '../types';
-import { selectChat } from './chats';
-import { isChatBasicGroup } from '../helpers';
+
+import { getMainUsername, isChatBasicGroup } from '../helpers';
+import { selectChat, selectChatFullInfo } from './chats';
 import { selectUser } from './users';
 
 export function selectChatGroupCall<T extends GlobalState>(global: T, chatId: string) {
-  const chat = selectChat(global, chatId);
-  if (!chat || !chat.fullInfo || !chat.fullInfo.groupCallId) return undefined;
+  const fullInfo = selectChatFullInfo(global, chatId);
+  if (!fullInfo || !fullInfo.groupCallId) return undefined;
 
-  return selectGroupCall(global, chat.fullInfo.groupCallId);
+  return selectGroupCall(global, fullInfo.groupCallId);
 }
 
 export function selectGroupCall<T extends GlobalState>(global: T, groupCallId: string) {
@@ -48,4 +49,25 @@ export function selectPhoneCallUser<T extends GlobalState>(global: T) {
 
   const id = phoneCall.adminId === currentUserId ? phoneCall.participantId : phoneCall.adminId;
   return selectUser(global, id);
+}
+
+export function selectCanInviteToActiveGroupCall<T extends GlobalState>(global: T) {
+  const groupCall = selectActiveGroupCall(global);
+
+  if (!groupCall || !groupCall.chatId) {
+    return false;
+  }
+
+  const chat = selectChat(global, groupCall.chatId);
+  if (!chat) {
+    return false;
+  }
+
+  const hasPublicUsername = Boolean(getMainUsername(chat));
+  if (hasPublicUsername) {
+    return true;
+  }
+
+  const inviteLink = selectChatFullInfo(global, chat.id)?.inviteLink;
+  return Boolean(inviteLink);
 }

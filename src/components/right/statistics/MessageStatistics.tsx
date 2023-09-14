@@ -1,16 +1,18 @@
 import type { FC } from '../../../lib/teact/teact';
 import React, {
-  memo, useState, useEffect, useRef,
+  memo, useEffect, useRef,
+  useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import { callApi } from '../../../api/gramjs';
-import type { ApiMessageStatistics, ApiMessagePublicForward, StatisticsGraph } from '../../../api/types';
-import { selectChat, selectTabState } from '../../../global/selectors';
+import type { ApiMessagePublicForward, ApiMessageStatistics, StatisticsGraph } from '../../../api/types';
 
+import { selectChatFullInfo, selectTabState } from '../../../global/selectors';
 import buildClassName from '../../../util/buildClassName';
-import useLang from '../../../hooks/useLang';
+import { callApi } from '../../../api/gramjs';
+
 import useForceUpdate from '../../../hooks/useForceUpdate';
+import useLang from '../../../hooks/useLang';
 
 import Loading from '../../ui/Loading';
 import StatisticsOverview from './StatisticsOverview';
@@ -173,8 +175,7 @@ const Statistics: FC<OwnProps & StateProps> = ({
 
 export default memo(withGlobal<OwnProps>(
   (global, { chatId }): StateProps => {
-    const chat = selectChat(global, chatId);
-    const dcId = chat?.fullInfo?.statisticsDcId;
+    const dcId = selectChatFullInfo(global, chatId)?.statisticsDcId;
     const tabState = selectTabState(global);
     const statistics = tabState.statistics.currentMessage;
     const messageId = tabState.statistics.currentMessageId;

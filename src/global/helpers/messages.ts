@@ -1,19 +1,20 @@
 import type {
-  ApiChat, ApiMessage, ApiMessageEntityTextUrl, ApiUser,
+  ApiChat, ApiMessage, ApiMessageEntityTextUrl, ApiStory, ApiUser,
 } from '../../api/types';
-import { ApiMessageEntityTypes } from '../../api/types';
 import type { LangFn } from '../../hooks/useLang';
+import { ApiMessageEntityTypes } from '../../api/types';
 
 import {
   CONTENT_NOT_SUPPORTED,
-  LOCAL_MESSAGE_MIN_ID,
   RE_LINK_TEMPLATE,
   SERVICE_NOTIFICATIONS_USER_ID,
 } from '../../config';
-import { getUserFullName } from './users';
-import { IS_OPUS_SUPPORTED, isWebpSupported } from '../../util/environment';
-import { getChatTitle, isUserId } from './chats';
+import { areSortedArraysIntersecting, unique } from '../../util/iteratees';
+import { getServerTime } from '../../util/serverTime';
+import { IS_OPUS_SUPPORTED, isWebpSupported } from '../../util/windowEnvironment';
 import { getGlobal } from '../index';
+import { getChatTitle, isUserId } from './chats';
+import { getUserFullName } from './users';
 
 const RE_LINK = new RegExp(RE_LINK_TEMPLATE, 'i');
 
@@ -51,25 +52,27 @@ export function getMessageTranscription(message: ApiMessage) {
   return transcriptionId && global.transcriptions[transcriptionId]?.text;
 }
 
-export function hasMessageText(message: ApiMessage) {
+export function hasMessageText(message: ApiMessage | ApiStory) {
   const {
     text, sticker, photo, video, audio, voice, document, poll, webPage, contact, invoice, location,
-    game, action,
+    game, action, storyData,
   } = message.content;
 
   return Boolean(text) || !(
     sticker || photo || video || audio || voice || document || contact || poll || webPage || invoice || location
-    || game || action?.phoneCall
+    || game || action?.phoneCall || storyData
   );
 }
 
-export function getMessageText(message: ApiMessage) {
+export function getMessageText(message: ApiMessage | ApiStory) {
   return hasMessageText(message) ? message.content.text?.text || CONTENT_NOT_SUPPORTED : undefined;
 }
 
 export function getMessageCustomShape(message: ApiMessage): boolean {
   const {
-    text, sticker, photo, video, audio, voice, document, poll, webPage, contact, action, game, invoice, location,
+    text, sticker, photo, video, audio, voice,
+    document, poll, webPage, contact, action,
+    game, invoice, location, storyData,
   } = message.content;
 
   if (sticker || (video?.isRound)) {
@@ -77,7 +80,7 @@ export function getMessageCustomShape(message: ApiMessage): boolean {
   }
 
   if (!text || photo || video || audio || voice || document || poll || webPage || contact || action || game || invoice
-    || location) {
+    || location || storyData) {
     return false;
   }
 
@@ -166,7 +169,7 @@ export function isReplyMessage(message: ApiMessage) {
 }
 
 export function isForwardedMessage(message: ApiMessage) {
-  return Boolean(message.forwardInfo);
+  return Boolean(message.forwardInfo || message.content.storyData);
 }
 
 export function isActionMessage(message: ApiMessage) {
@@ -197,8 +200,12 @@ export function isMessageLocal(message: ApiMessage) {
   return isLocalMessageId(message.id);
 }
 
+export function isMessageFailed(message: ApiMessage) {
+  return message.sendingState === 'messageSendingStateFailed';
+}
+
 export function isLocalMessageId(id: number) {
-  return id > LOCAL_MESSAGE_MIN_ID;
+  return !Number.isInteger(id);
 }
 
 export function isHistoryClearMessage(message: ApiMessage) {
@@ -229,7 +236,7 @@ export function getMessageContentFilename(message: ApiMessage) {
     return content.audio.fileName;
   }
 
-  const baseFilename = getMessageKey(message);
+  const baseFilename = `${getMessageKey(message)}${message.isScheduled ? '_scheduled' : ''}`;
 
   if (photo) {
     return `${baseFilename}.jpg`;
@@ -242,14 +249,93 @@ export function getMessageContentFilename(message: ApiMessage) {
   return baseFilename;
 }
 
-export function isGeoLiveExpired(message: ApiMessage, timestamp = Date.now() / 1000) {
+export function isGeoLiveExpired(message: ApiMessage) {
   const { location } = message.content;
   if (location?.type !== 'geoLive') return false;
-  return (timestamp - (message.date || 0) >= location.period);
+  return getServerTime() - (message.date || 0) >= location.period;
+}
+
+export function isMessageTranslatable(message: ApiMessage, allowOutgoing?: boolean) {
+  const { text, game } = message.content;
+
+  const isLocal = isMessageLocal(message);
+  const isServiceNotification = isServiceNotificationMessage(message);
+  const isAction = isActionMessage(message);
+
+  return Boolean(text?.text.length && !message.emojiOnlyCount && !game && (allowOutgoing || !message.isOutgoing)
+    && !isLocal && !isServiceNotification && !isAction && !message.isScheduled);
 }
 
 export function getMessageSingleInlineButton(message: ApiMessage) {
   return message.inlineButtons?.length === 1
     && message.inlineButtons[0].length === 1
     && message.inlineButtons[0][0];
+}
+
+export function orderHistoryIds(listedIds: number[]) {
+  return listedIds.sort((a, b) => a - b);
+}
+
+export function orderPinnedIds(pinnedIds: number[]) {
+  return pinnedIds.sort((a, b) => b - a);
+}
+
+export function mergeIdRanges(ranges: number[][], idsUpdate: number[]): number[][] {
+  let hasIntersection = false;
+  let newOutlyingLists = ranges.length ? ranges.map((list) => {
+    if (areSortedArraysIntersecting(list, idsUpdate) && !hasIntersection) {
+      hasIntersection = true;
+      return orderHistoryIds(unique(list.concat(idsUpdate)));
+    }
+    return list;
+  }) : [idsUpdate];
+
+  if (!hasIntersection) {
+    newOutlyingLists = newOutlyingLists.concat([idsUpdate]);
+  }
+
+  newOutlyingLists.sort((a, b) => a[0] - b[0]);
+
+  let length = newOutlyingLists.length;
+  for (let i = 0; i < length; i++) {
+    const array = newOutlyingLists[i];
+    const prevArray = newOutlyingLists[i - 1];
+
+    if (prevArray && (prevArray.includes(array[0]) || prevArray.includes(array[0] - 1))) {
+      newOutlyingLists[i - 1] = orderHistoryIds(unique(array.concat(prevArray)));
+      newOutlyingLists.splice(i, 1);
+
+      length--;
+      i--;
+    }
+  }
+
+  return newOutlyingLists;
+}
+
+export function extractMessageText(message: ApiMessage | ApiStory, inChatList = false) {
+  const contentText = message.content.text;
+  if (!contentText) return undefined;
+
+  const { text } = contentText;
+  let { entities } = contentText;
+
+  if (text && inChatList && 'chatId' in message && message.chatId === SERVICE_NOTIFICATIONS_USER_ID
+    // eslint-disable-next-line eslint-multitab-tt/no-immediate-global
+    && !getGlobal().settings.byKey.shouldShowLoginCodeInChatList) {
+    const authCode = text.match(/^\D*([\d-]{5,7})\D/)?.[1];
+    if (authCode) {
+      entities = [
+        ...entities || [],
+        {
+          type: ApiMessageEntityTypes.Spoiler,
+          offset: text.indexOf(authCode),
+          length: authCode.length,
+        },
+      ];
+      entities.sort((a, b) => (a.offset > b.offset ? 1 : -1));
+    }
+  }
+
+  return { text, entities };
 }

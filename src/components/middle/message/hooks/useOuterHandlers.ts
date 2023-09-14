@@ -3,13 +3,18 @@ import type React from '../../../../lib/teact/teact';
 import { useEffect, useRef } from '../../../../lib/teact/teact';
 import { getActions } from '../../../../global';
 
-import { IS_ANDROID, IS_TOUCH_ENV } from '../../../../util/environment';
-import windowSize from '../../../../util/windowSize';
+import type { Signal } from '../../../../util/signals';
+
+import { requestMeasure } from '../../../../lib/fasterdom/fasterdom';
 import { captureEvents, SwipeDirection } from '../../../../util/captureEvents';
-import useFlag from '../../../../hooks/useFlag';
-import { preventMessageInputBlur } from '../../helpers/preventMessageInputBlur';
 import stopEvent from '../../../../util/stopEvent';
+import { IS_ANDROID, IS_TOUCH_ENV } from '../../../../util/windowEnvironment';
+import windowSize from '../../../../util/windowSize';
 import { REM } from '../../../common/helpers/mediaDimensions';
+import { preventMessageInputBlur } from '../../helpers/preventMessageInputBlur';
+
+import useFlag from '../../../../hooks/useFlag';
+import useThrottledCallback from '../../../../hooks/useThrottledCallback';
 
 const ANDROID_KEYBOARD_HIDE_DELAY_MS = 350;
 const SWIPE_ANIMATION_DURATION = 150;
@@ -22,7 +27,6 @@ export default function useOuterHandlers(
   selectMessage: (e?: React.MouseEvent<HTMLDivElement, MouseEvent>, groupedId?: string) => void,
   containerRef: RefObject<HTMLDivElement>,
   messageId: number,
-  isAlbum: boolean,
   isInSelectMode: boolean,
   canReply: boolean,
   isProtected: boolean,
@@ -30,9 +34,9 @@ export default function useOuterHandlers(
   handleBeforeContextMenu: (e: React.MouseEvent) => void,
   chatId: string,
   isContextMenuShown: boolean,
-  contentRef: RefObject<HTMLDivElement>,
-  isOwn: boolean,
+  quickReactionRef: RefObject<HTMLDivElement>,
   shouldHandleMouseLeave: boolean,
+  getIsMessageListReady: Signal<boolean>,
 ) {
   const { setReplyingToId, sendDefaultReaction } = getActions();
 
@@ -45,25 +49,28 @@ export default function useOuterHandlers(
     handleBeforeContextMenu(e);
   }
 
-  function handleMouseMove(e: React.MouseEvent) {
-    const container = contentRef.current;
-    if (!container) return;
+  const handleMouseMove = useThrottledCallback((e: React.MouseEvent) => {
+    const quickReactionContainer = quickReactionRef.current;
+    if (!quickReactionContainer) return;
 
     const { clientX, clientY } = e;
     const {
-      x, width, y, height,
-    } = container.getBoundingClientRect();
+      x: quickReactionX, width: quickReactionWidth, y: quickReactionY, height: quickReactionHeight,
+    } = quickReactionContainer.getBoundingClientRect();
+    const x = quickReactionX + quickReactionWidth / 2;
+    const y = quickReactionY + quickReactionHeight / 2;
 
-    const isVisibleX = Math.abs((isOwn ? (clientX - x) : (x + width - clientX))) < QUICK_REACTION_AREA_WIDTH;
-    const isVisibleY = Math.abs(y + height - clientY) < QUICK_REACTION_AREA_HEIGHT;
+    const isVisibleX = Math.abs(x - clientX) < QUICK_REACTION_AREA_WIDTH;
+    const isVisibleY = Math.abs(y - clientY) < QUICK_REACTION_AREA_HEIGHT;
     if (isVisibleX && isVisibleY) {
       markQuickReactionVisible();
     } else {
       unmarkQuickReactionVisible();
     }
-  }
+  }, [quickReactionRef], requestMeasure);
 
-  function handleSendQuickReaction() {
+  function handleSendQuickReaction(e: React.MouseEvent<HTMLDivElement, MouseEvent>) {
+    e.stopPropagation();
     sendDefaultReaction({
       chatId,
       messageId,
@@ -139,7 +146,7 @@ export default function useOuterHandlers(
   }
 
   useEffect(() => {
-    if (!IS_TOUCH_ENV || isInSelectMode || !canReply || isContextMenuShown) {
+    if (!IS_TOUCH_ENV || isInSelectMode || !canReply || isContextMenuShown || !getIsMessageListReady()) {
       return undefined;
     }
 
@@ -173,10 +180,13 @@ export default function useOuterHandlers(
     });
   }, [
     containerRef, isInSelectMode, messageId, setReplyingToId, markSwiped, unmarkSwiped, canReply, isContextMenuShown,
+    getIsMessageListReady,
   ]);
 
   function handleMouseLeave(e: React.MouseEvent<HTMLDivElement>) {
-    unmarkQuickReactionVisible();
+    // Because `mousemove` event is throttled, we need to also throttle `mouseleave` event,
+    // so the order of events is preserved
+    requestMeasure(unmarkQuickReactionVisible);
     if (shouldHandleMouseLeave) handleDocumentGroupMouseLeave(e);
   }
 

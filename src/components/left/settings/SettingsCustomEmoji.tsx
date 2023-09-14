@@ -1,14 +1,15 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, {
   memo, useCallback, useMemo, useRef,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
 import type { ApiSticker, ApiStickerSet } from '../../../api/types';
 import type { ISettings } from '../../../types';
 
-import renderText from '../../common/helpers/renderText';
+import { selectCanPlayAnimatedEmojis } from '../../../global/selectors';
 import { pick } from '../../../util/iteratees';
+import renderText from '../../common/helpers/renderText';
 
 import useHistoryBack from '../../../hooks/useHistoryBack';
 import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
@@ -27,6 +28,7 @@ type StateProps = Pick<ISettings, (
 )> & {
   customEmojiSetIds?: string[];
   stickerSetsById: Record<string, ApiStickerSet>;
+  canPlayAnimatedEmojis: boolean;
 };
 
 const SettingsCustomEmoji: FC<OwnProps & StateProps> = ({
@@ -34,6 +36,7 @@ const SettingsCustomEmoji: FC<OwnProps & StateProps> = ({
   customEmojiSetIds,
   stickerSetsById,
   shouldSuggestCustomEmoji,
+  canPlayAnimatedEmojis,
   onReset,
 }) => {
   const { openStickerSet, setSettingOption } = getActions();
@@ -78,6 +81,7 @@ const SettingsCustomEmoji: FC<OwnProps & StateProps> = ({
                 stickerSet={stickerSet}
                 observeIntersection={observeIntersectionForCovers}
                 onClick={handleStickerSetClick}
+                noPlay={!canPlayAnimatedEmojis}
               />
             ))}
           </div>
@@ -91,13 +95,14 @@ const SettingsCustomEmoji: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global) => {
+  (global): StateProps => {
     return {
       ...pick(global.settings.byKey, [
         'shouldSuggestCustomEmoji',
       ]),
       customEmojiSetIds: global.customEmojis.added.setIds,
       stickerSetsById: global.stickers.setsById,
+      canPlayAnimatedEmojis: selectCanPlayAnimatedEmojis(global),
     };
   },
 )(SettingsCustomEmoji));

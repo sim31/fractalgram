@@ -1,5 +1,6 @@
-import type { LangFn } from '../../hooks/useLang';
 import type { ApiMessage } from '../../api/types';
+import type { LangFn } from '../../hooks/useLang';
+
 import { renderMessageText } from '../../components/common/helpers/renderMessageText';
 import { getMessageSummaryDescription, getMessageSummaryEmoji } from './messageSummary';
 
@@ -10,9 +11,9 @@ export function renderMessageSummaryHtml(
   const emoji = getMessageSummaryEmoji(message);
   const emojiWithSpace = emoji ? `${emoji} ` : '';
   const text = renderMessageText(
-    message, undefined, undefined, undefined, undefined, undefined, true,
+    { message, shouldRenderAsHtml: true },
   )?.join('');
-  const description = getMessageSummaryDescription(lang, message, text, true, true);
+  const description = getMessageSummaryDescription(lang, message, text, true);
 
   return `${emojiWithSpace}${description}`;
 }

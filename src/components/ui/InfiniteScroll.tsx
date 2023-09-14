@@ -1,18 +1,22 @@
 import type { RefObject, UIEvent } from 'react';
-import { LoadMoreDirection } from '../../types';
-
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  useCallback, useEffect, useLayoutEffect, useMemo, useRef,
+  useEffect, useLayoutEffect, useMemo, useRef,
 } from '../../lib/teact/teact';
 
-import { debounce } from '../../util/schedulers';
-import resetScroll from '../../util/resetScroll';
-import { IS_ANDROID } from '../../util/environment';
+import { LoadMoreDirection } from '../../types';
+
+import { requestForcedReflow } from '../../lib/fasterdom/fasterdom';
 import buildStyle from '../../util/buildStyle';
+import resetScroll from '../../util/resetScroll';
+import { debounce } from '../../util/schedulers';
+import { IS_ANDROID } from '../../util/windowEnvironment';
+
+import useLastCallback from '../../hooks/useLastCallback';
 
 type OwnProps = {
   ref?: RefObject<HTMLDivElement>;
+  style?: string;
   className?: string;
   items?: any[];
   itemSelector?: string;
@@ -28,6 +32,8 @@ type OwnProps = {
   children: React.ReactNode;
   onLoadMore?: ({ direction }: { direction: LoadMoreDirection; noScroll?: boolean }) => void;
   onScroll?: (e: UIEvent<HTMLDivElement>) => void;
+  onWheel?: (e: React.WheelEvent<HTMLDivElement>) => void;
+  onClick?: (e: React.MouseEvent<HTMLDivElement>) => void;
   onKeyDown?: (e: React.KeyboardEvent<any>) => void;
   onDragOver?: (e: React.DragEvent<HTMLDivElement>) => void;
   onDragLeave?: (e: React.DragEvent<HTMLDivElement>) => void;
@@ -39,6 +45,7 @@ const DEFAULT_SENSITIVE_AREA = 800;
 
 const InfiniteScroll: FC<OwnProps> = ({
   ref,
+  style,
   className,
   items,
   itemSelector = DEFAULT_LIST_SELECTOR,
@@ -56,6 +63,8 @@ const InfiniteScroll: FC<OwnProps> = ({
   children,
   onLoadMore,
   onScroll,
+  onWheel,
+  onClick,
   onKeyDown,
   onDragOver,
   onDragLeave,
@@ -108,39 +117,44 @@ const InfiniteScroll: FC<OwnProps> = ({
 
   // Restore `scrollTop` after adding items
   useLayoutEffect(() => {
-    const container = containerRef.current!;
-    const state = stateRef.current;
+    requestForcedReflow(() => {
+      const container = containerRef.current!;
+      const state = stateRef.current;
 
-    state.listItemElements = container.querySelectorAll<HTMLDivElement>(itemSelector);
+      state.listItemElements = container.querySelectorAll<HTMLDivElement>(itemSelector);
 
-    let newScrollTop;
+      let newScrollTop: number;
 
-    if (state.currentAnchor && Array.from(state.listItemElements).includes(state.currentAnchor)) {
-      const { scrollTop } = container;
-      const newAnchorTop = state.currentAnchor.getBoundingClientRect().top;
-      newScrollTop = scrollTop + (newAnchorTop - state.currentAnchorTop!);
-    } else {
-      const nextAnchor = state.listItemElements[0];
-      if (nextAnchor) {
-        state.currentAnchor = nextAnchor;
-        state.currentAnchorTop = nextAnchor.getBoundingClientRect().top;
+      if (state.currentAnchor && Array.from(state.listItemElements).includes(state.currentAnchor)) {
+        const { scrollTop } = container;
+        const newAnchorTop = state.currentAnchor!.getBoundingClientRect().top;
+        newScrollTop = scrollTop + (newAnchorTop - state.currentAnchorTop!);
+      } else {
+        const nextAnchor = state.listItemElements[0];
+        if (nextAnchor) {
+          state.currentAnchor = nextAnchor;
+          state.currentAnchorTop = nextAnchor.getBoundingClientRect().top;
+        }
       }
-    }
 
-    if (withAbsolutePositioning || noScrollRestore) {
-      return;
-    }
+      if (withAbsolutePositioning || noScrollRestore) {
+        return undefined;
+      }
 
-    if (noScrollRestoreOnTop && container.scrollTop === 0) {
-      return;
-    }
+      const { scrollTop } = container;
+      if (noScrollRestoreOnTop && scrollTop === 0) {
+        return undefined;
+      }
 
-    resetScroll(container, newScrollTop);
+      return () => {
+        resetScroll(container, newScrollTop);
 
-    state.isScrollTopJustUpdated = true;
+        state.isScrollTopJustUpdated = true;
+      };
+    });
   }, [items, itemSelector, noScrollRestore, noScrollRestoreOnTop, cacheBuster, withAbsolutePositioning]);
 
-  const handleScroll = useCallback((e: UIEvent<HTMLDivElement>) => {
+  const handleScroll = useLastCallback((e: UIEvent<HTMLDivElement>) => {
     if (loadMoreForwards && loadMoreBackwards) {
       const {
         isScrollTopJustUpdated, currentAnchor, currentAnchorTop,
@@ -220,17 +234,20 @@ const InfiniteScroll: FC<OwnProps> = ({
     if (onScroll) {
       onScroll(e);
     }
-  }, [loadMoreBackwards, loadMoreForwards, onScroll, sensitiveArea]);
+  });
 
   return (
     <div
       ref={containerRef}
       className={className}
       onScroll={handleScroll}
+      onWheel={onWheel}
       teactFastList={!noFastList && !withAbsolutePositioning}
       onKeyDown={onKeyDown}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
+      onClick={onClick}
+      style={style}
     >
       {beforeChildren}
       {withAbsolutePositioning && items?.length ? (

@@ -1,19 +1,19 @@
+import type { ApiUser } from '../../../api/types';
+import type { ActionReturnType } from '../../types';
+import { ManagementProgress } from '../../../types';
+
+import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import { buildCollectionByKey, unique } from '../../../util/iteratees';
+import * as langProvider from '../../../util/langProvider';
+import { throttle } from '../../../util/schedulers';
+import { getServerTime } from '../../../util/serverTime';
+import { callApi } from '../../../api/gramjs';
+import { isUserBot, isUserId } from '../../helpers';
 import {
   addActionHandler,
   getGlobal,
   setGlobal,
 } from '../../index';
-
-import type { ApiUser } from '../../../api/types';
-import { ManagementProgress } from '../../../types';
-
-import { throttle } from '../../../util/schedulers';
-import { buildCollectionByKey, unique } from '../../../util/iteratees';
-import { isUserBot, isUserId } from '../../helpers';
-import { callApi } from '../../../api/gramjs';
-import {
-  selectChat, selectCurrentMessageList, selectTabState, selectUser,
-} from '../../selectors';
 import {
   addChats,
   addUsers,
@@ -23,35 +23,45 @@ import {
   updateChat,
   updateManagementProgress,
   updateUser,
+  updateUserFullInfo,
   updateUsers,
   updateUserSearch,
   updateUserSearchFetchingStatus,
 } from '../../reducers';
-import { getServerTime } from '../../../util/serverTime';
-import * as langProvider from '../../../util/langProvider';
-import type { ActionReturnType } from '../../types';
-import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import {
+  selectChat, selectCurrentMessageList, selectTabState, selectUser, selectUserFullInfo,
+} from '../../selectors';
 
 const TOP_PEERS_REQUEST_COOLDOWN = 60; // 1 min
 const runThrottledForSearch = throttle((cb) => cb(), 500, false);
 
 addActionHandler('loadFullUser', async (global, actions, payload): Promise<void> => {
-  const { userId } = payload!;
+  const { userId, withPhotos } = payload!;
   const user = selectUser(global, userId);
   if (!user) {
     return;
   }
 
   const { id, accessHash } = user;
-  const newUser = await callApi('fetchFullUser', { id, accessHash });
-  if (!newUser) return;
+  const result = await callApi('fetchFullUser', { id, accessHash });
+  if (!result?.user) return;
 
+  global = getGlobal();
+  const fullInfo = selectUserFullInfo(global, userId);
+  const { user: newUser, fullInfo: newFullInfo } = result;
   const hasChangedAvatarHash = user.avatarHash !== newUser.avatarHash;
-  const hasChangedProfilePhoto = user.fullInfo?.profilePhoto?.id !== newUser.fullInfo?.profilePhoto?.id;
-  const hasChangedFallbackPhoto = user.fullInfo?.fallbackPhoto?.id !== newUser.fullInfo?.fallbackPhoto?.id;
-  const hasChangedPersonalPhoto = user.fullInfo?.personalPhoto?.id !== newUser.fullInfo?.personalPhoto?.id;
-  if ((hasChangedAvatarHash || hasChangedProfilePhoto || hasChangedFallbackPhoto || hasChangedPersonalPhoto)
-    && user.photos?.length) {
+  const hasChangedProfilePhoto = fullInfo?.profilePhoto?.id !== newFullInfo?.profilePhoto?.id;
+  const hasChangedFallbackPhoto = fullInfo?.fallbackPhoto?.id !== newFullInfo?.fallbackPhoto?.id;
+  const hasChangedPersonalPhoto = fullInfo?.personalPhoto?.id !== newFullInfo?.personalPhoto?.id;
+  const hasChangedPhoto = hasChangedAvatarHash
+    || hasChangedProfilePhoto
+    || hasChangedFallbackPhoto
+    || hasChangedPersonalPhoto;
+
+  global = updateUser(global, userId, result.user);
+  global = updateUserFullInfo(global, userId, result.fullInfo);
+  setGlobal(global);
+  if (withPhotos || (user.photos?.length && hasChangedPhoto)) {
     actions.loadProfilePhotos({ profileId: userId });
   }
 });
@@ -203,6 +213,7 @@ addActionHandler('updateContact', async (global, actions, payload): Promise<void
 
   if (result) {
     actions.loadChatSettings({ chatId: userId });
+    actions.loadUserStories({ userId });
 
     global = getGlobal();
     global = updateUser(
@@ -246,10 +257,16 @@ addActionHandler('loadProfilePhotos', async (global, actions, payload): Promise<
     return;
   }
 
-  if (user && !user?.fullInfo) {
+  let fullInfo = selectUserFullInfo(global, profileId);
+  if (user && !fullInfo?.profilePhoto) {
     const { id, accessHash } = user;
-    user = await callApi('fetchFullUser', { id, accessHash });
-    if (!user) return;
+    const result = await callApi('fetchFullUser', { id, accessHash });
+    if (!result?.user) {
+      return;
+    }
+
+    user = result.user;
+    fullInfo = result.fullInfo;
   }
 
   const result = await callApi('fetchProfilePhotos', user, chat);
@@ -261,11 +278,13 @@ addActionHandler('loadProfilePhotos', async (global, actions, payload): Promise<
 
   const userOrChat = user || chat;
   const { photos, users } = result;
-  photos.sort((a) => (a.id === userOrChat?.avatarHash ? -1 : 1));
-  const fallbackPhoto = user?.fullInfo?.fallbackPhoto;
-  const personalPhoto = user?.fullInfo?.personalPhoto;
+
+  const fallbackPhoto = fullInfo?.fallbackPhoto;
+  const personalPhoto = fullInfo?.personalPhoto;
   if (fallbackPhoto) photos.push(fallbackPhoto);
   if (personalPhoto) photos.unshift(personalPhoto);
+
+  photos.sort((a) => (a.id === userOrChat?.avatarHash ? -1 : 1));
 
   global = addUsers(global, buildCollectionByKey(users, 'id'));
 
@@ -352,4 +371,29 @@ addActionHandler('setEmojiStatus', (global, actions, payload): ActionReturnType 
   const { emojiStatus, expires } = payload!;
 
   void callApi('updateEmojiStatus', emojiStatus, expires);
+});
+
+addActionHandler('saveCloseFriends', async (global, actions, payload): Promise<void> => {
+  const { userIds } = payload!;
+
+  const result = await callApi('saveCloseFriends', userIds);
+  if (!result) {
+    return;
+  }
+
+  global = getGlobal();
+  global.contactList?.userIds.forEach((userId) => {
+    const { isCloseFriend } = global.users.byId[userId] || {};
+    if (isCloseFriend && !userIds.includes(userId)) {
+      global = updateUser(global, userId, {
+        isCloseFriend: undefined,
+      });
+    }
+  });
+  userIds.forEach((userId) => {
+    global = updateUser(global, userId, {
+      isCloseFriend: true,
+    });
+  });
+  setGlobal(global);
 });

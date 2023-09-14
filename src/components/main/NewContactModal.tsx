@@ -6,20 +6,21 @@ import { getActions, withGlobal } from '../../global';
 
 import type { ApiCountryCode, ApiUser, ApiUserStatus } from '../../api/types';
 
-import { IS_TOUCH_ENV } from '../../util/environment';
 import { getUserStatus } from '../../global/helpers';
 import { selectUser, selectUserStatus } from '../../global/selectors';
-import renderText from '../common/helpers/renderText';
 import { formatPhoneNumberWithCode } from '../../util/phoneNumber';
-import useLang from '../../hooks/useLang';
-import useFlag from '../../hooks/useFlag';
-import useCurrentOrPrev from '../../hooks/useCurrentOrPrev';
+import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
+import renderText from '../common/helpers/renderText';
 
-import Modal from '../ui/Modal';
+import useCurrentOrPrev from '../../hooks/useCurrentOrPrev';
+import useFlag from '../../hooks/useFlag';
+import useLang from '../../hooks/useLang';
+
 import Avatar from '../common/Avatar';
-import InputText from '../ui/InputText';
-import Checkbox from '../ui/Checkbox';
 import Button from '../ui/Button';
+import Checkbox from '../ui/Checkbox';
+import InputText from '../ui/InputText';
+import Modal from '../ui/Modal';
 
 import './NewContactModal.scss';
 
@@ -120,7 +121,11 @@ const NewContactModal: FC<OwnProps & StateProps> = ({
     return (
       <>
         <div className="NewContactModal__profile" dir={lang.isRtl ? 'rtl' : undefined}>
-          <Avatar size="jumbo" user={renderingUser} text={`${firstName} ${lastName}`} />
+          <Avatar
+            size="jumbo"
+            peer={renderingUser}
+            text={`${firstName} ${lastName}`}
+          />
           <div className="NewContactModal__profile-info">
             <p className="NewContactModal__phone-number">
               {renderingUser?.phoneNumber
@@ -227,8 +232,9 @@ const NewContactModal: FC<OwnProps & StateProps> = ({
 
 export default memo(withGlobal<OwnProps>(
   (global, { userId }): StateProps => {
+    const user = userId ? selectUser(global, userId) : undefined;
     return {
-      user: userId ? selectUser(global, userId) : undefined,
+      user,
       userStatus: userId ? selectUserStatus(global, userId) : undefined,
       phoneCodeList: global.countryList.phoneCodes,
     };

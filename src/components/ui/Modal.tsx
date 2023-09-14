@@ -1,18 +1,20 @@
-import type { RefObject } from 'react';
 import type { FC, TeactNode } from '../../lib/teact/teact';
 import React, { useEffect, useRef } from '../../lib/teact/teact';
 
 import type { TextPart } from '../../types';
 
-import captureKeyboardListeners from '../../util/captureKeyboardListeners';
-import trapFocus from '../../util/trapFocus';
 import buildClassName from '../../util/buildClassName';
-import { enableDirectTextInput, disableDirectTextInput } from '../../util/directInputManager';
+import captureKeyboardListeners from '../../util/captureKeyboardListeners';
+import { disableDirectTextInput, enableDirectTextInput } from '../../util/directInputManager';
+import freezeWhenClosed from '../../util/hoc/freezeWhenClosed';
+import trapFocus from '../../util/trapFocus';
+
 import { dispatchHeavyAnimationEvent } from '../../hooks/useHeavyAnimationCheck';
-import useShowTransition from '../../hooks/useShowTransition';
-import useEffectWithPrevDeps from '../../hooks/useEffectWithPrevDeps';
-import useLang from '../../hooks/useLang';
 import useHistoryBack from '../../hooks/useHistoryBack';
+import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
+import useLayoutEffectWithPrevDeps from '../../hooks/useLayoutEffectWithPrevDeps';
+import useShowTransition from '../../hooks/useShowTransition';
 
 import Button from './Button';
 import Portal from './Portal';
@@ -24,6 +26,7 @@ const ANIMATION_DURATION = 200;
 type OwnProps = {
   title?: string | TextPart[];
   className?: string;
+  contentClassName?: string;
   isOpen?: boolean;
   header?: TeactNode;
   isSlim?: boolean;
@@ -35,7 +38,7 @@ type OwnProps = {
   onClose: () => void;
   onCloseAnimationEnd?: () => void;
   onEnter?: () => void;
-  dialogRef?: RefObject<HTMLDivElement>;
+  dialogRef?: React.RefObject<HTMLDivElement>;
 };
 
 type StateProps = {
@@ -46,6 +49,7 @@ const Modal: FC<OwnProps & StateProps> = ({
   dialogRef,
   title,
   className,
+  contentClassName,
   isOpen,
   isSlim,
   header,
@@ -78,9 +82,19 @@ const Modal: FC<OwnProps & StateProps> = ({
     return enableDirectTextInput;
   }, [isOpen]);
 
-  useEffect(() => (isOpen
-    ? captureKeyboardListeners({ onEsc: onClose, onEnter })
-    : undefined), [isOpen, onClose, onEnter]);
+  const handleEnter = useLastCallback((e: KeyboardEvent) => {
+    if (!onEnter) {
+      return false;
+    }
+
+    e.preventDefault();
+    onEnter();
+    return true;
+  });
+
+  useEffect(() => (
+    isOpen ? captureKeyboardListeners({ onEsc: onClose, onEnter: handleEnter }) : undefined
+  ), [isOpen, onClose, handleEnter]);
   useEffect(() => (isOpen && modalRef.current ? trapFocus(modalRef.current) : undefined), [isOpen]);
 
   useHistoryBack({
@@ -88,7 +102,7 @@ const Modal: FC<OwnProps & StateProps> = ({
     onBack: onClose,
   });
 
-  useEffectWithPrevDeps(([prevIsOpen]) => {
+  useLayoutEffectWithPrevDeps(([prevIsOpen]) => {
     document.body.classList.toggle('has-open-dialog', Boolean(isOpen));
 
     if (isOpen || (!isOpen && prevIsOpen !== undefined)) {
@@ -125,7 +139,7 @@ const Modal: FC<OwnProps & StateProps> = ({
             ariaLabel={lang('Close')}
             onClick={onClose}
           >
-            <i className="icon-close" />
+            <i className="icon icon-close" />
           </Button>
         )}
         <div className="modal-title">{title}</div>
@@ -153,7 +167,7 @@ const Modal: FC<OwnProps & StateProps> = ({
           <div className="modal-backdrop" onClick={!noBackdropClose ? onClose : undefined} />
           <div className="modal-dialog" ref={dialogRef}>
             {renderHeader()}
-            <div className="modal-content custom-scroll" style={style}>
+            <div className={buildClassName('modal-content custom-scroll', contentClassName)} style={style}>
               {children}
             </div>
           </div>
@@ -163,4 +177,4 @@ const Modal: FC<OwnProps & StateProps> = ({
   );
 };
 
-export default Modal;
+export default freezeWhenClosed(Modal);

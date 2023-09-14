@@ -1,5 +1,5 @@
-import type { GlobalState, TabArgs, TranslatedMessage } from '../types';
 import type { ApiFormattedText } from '../../api/types';
+import type { GlobalState, TabArgs, TranslatedMessage } from '../types';
 
 import { getCurrentTabId } from '../../util/establishMultitabRole';
 import { omit } from '../../util/iteratees';
@@ -75,6 +75,40 @@ export function updateMessageTranslations<T extends GlobalState>(
       isPending: false,
     });
   });
+
+  return global;
+}
+
+export function updateRequestedChatTranslation<T extends GlobalState>(
+  global: T, chatId: string, toLanguageCode?: string, ...[tabId = getCurrentTabId()]: TabArgs<T>
+) {
+  const tabState = selectTabState(global, tabId);
+  global = updateTabState(global, {
+    requestedTranslations: {
+      ...tabState.requestedTranslations,
+      byChatId: {
+        ...tabState.requestedTranslations.byChatId,
+        [chatId]: {
+          toLanguage: toLanguageCode,
+        },
+      },
+    },
+  }, tabId);
+
+  return global;
+}
+
+export function removeRequestedChatTranslation<T extends GlobalState>(
+  global: T, chatId: string, ...[tabId = getCurrentTabId()]: TabArgs<T>
+) {
+  const tabState = selectTabState(global, tabId);
+
+  global = updateTabState(global, {
+    requestedTranslations: {
+      ...tabState.requestedTranslations,
+      byChatId: omit(tabState.requestedTranslations.byChatId, [chatId]),
+    },
+  }, tabId);
 
   return global;
 }

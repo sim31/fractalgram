@@ -1,16 +1,16 @@
 import { Api as GramJs } from '../../../lib/gramjs';
 
-import { invokeRequest } from './client';
-import { buildInputEntity, buildInputPeer } from '../gramjsBuilders';
 import type {
-  ApiChat, ApiError, ApiUser, OnApiUpdate,
+  ApiChat, ApiError, ApiUser, ApiUsername, OnApiUpdate,
 } from '../../types';
 
 import { USERNAME_PURCHASE_ERROR } from '../../../config';
-import { addEntitiesWithPhotosToLocalDb } from '../helpers';
+import { buildCollectionByKey } from '../../../util/iteratees';
 import { buildApiExportedInvite, buildChatInviteImporter } from '../apiBuilders/chats';
 import { buildApiUser } from '../apiBuilders/users';
-import { buildCollectionByKey } from '../../../util/iteratees';
+import { buildInputEntity, buildInputPeer } from '../gramjsBuilders';
+import { addEntitiesToLocalDb } from '../helpers';
+import { invokeRequest } from './client';
 
 let onUpdate: OnApiUpdate;
 
@@ -25,7 +25,9 @@ export async function checkChatUsername({ username }: { username: string }) {
     const result = await invokeRequest(new GramJs.channels.CheckUsername({
       channel: new GramJs.InputChannelEmpty(),
       username,
-    }), undefined, true);
+    }), {
+      shouldThrow: true,
+    });
 
     return { result, error: undefined };
   } catch (error) {
@@ -50,11 +52,36 @@ export async function setChatUsername(
     username,
   }));
 
-  const usernames = chat.usernames
-    ? chat.usernames.map((u) => (u.isEditable ? { ...u, username } : u))
-    : [{ username, isEditable: true, isActive: true }];
+  let usernames: ApiUsername[] = username ? [{ username, isEditable: true, isActive: true }] : [];
+  if (chat.usernames) {
+    // User can remove username from chat when changing it type to private, so we need to filter out empty usernames
+    usernames = usernames.concat(chat.usernames.filter((u) => u.username && !u.isEditable));
+  }
 
   if (result) {
+    onUpdate({
+      '@type': 'updateChat',
+      id: chat.id,
+      chat: { usernames: usernames.length ? usernames : undefined },
+    });
+  }
+
+  return result;
+}
+
+export async function deactivateAllUsernames({ chat }: { chat: ApiChat }) {
+  const result = await invokeRequest(new GramJs.channels.DeactivateAllUsernames({
+    channel: buildInputEntity(chat.id, chat.accessHash) as GramJs.InputChannel,
+  }));
+
+  if (result) {
+    const usernames = chat.usernames
+      ? chat.usernames
+        .map((u) => ({ ...u, isActive: false }))
+        // User can remove username from chat when changing it type to private, so we need to filter out empty usernames
+        .filter((u) => u.username)
+      : undefined;
+
     onUpdate({
       '@type': 'updateChat',
       id: chat.id,
@@ -97,10 +124,12 @@ export async function fetchExportedChatInvites({
     adminId: buildInputEntity(admin.id, admin.accessHash) as GramJs.InputUser,
     limit,
     revoked: isRevoked || undefined,
-  }));
+  }), {
+    abortControllerChatId: peer.id,
+  });
 
   if (!exportedInvites) return undefined;
-  addEntitiesWithPhotosToLocalDb(exportedInvites.users);
+  addEntitiesToLocalDb(exportedInvites.users);
 
   const invites = (exportedInvites.invites
     .filter((invite): invite is GramJs.ChatInviteExported => invite instanceof GramJs.ChatInviteExported))
@@ -135,7 +164,7 @@ export async function editExportedChatInvite({
 
   if (!invite) return undefined;
 
-  addEntitiesWithPhotosToLocalDb(invite.users);
+  addEntitiesToLocalDb(invite.users);
   if (invite instanceof GramJs.messages.ExportedChatInvite && invite.invite instanceof GramJs.ChatInviteExported) {
     const replaceInvite = buildApiExportedInvite(invite.invite);
     return {
@@ -219,11 +248,13 @@ export async function fetchChatInviteImporters({
       ? buildInputEntity(offsetUser.id, offsetUser.accessHash) as GramJs.InputUser : new GramJs.InputUserEmpty(),
     limit,
     requested: isRequested || undefined,
-  }));
+  }), {
+    abortControllerChatId: peer.id,
+  });
 
   if (!result) return undefined;
   const users = result.users.map((user) => buildApiUser(user)).filter(Boolean);
-  addEntitiesWithPhotosToLocalDb(result.users);
+  addEntitiesToLocalDb(result.users);
   return {
     importers: result.importers.map((importer) => buildChatInviteImporter(importer)),
     users: buildCollectionByKey(users, 'id'),
@@ -243,7 +274,9 @@ export function hideChatJoinRequest({
     peer: buildInputPeer(peer.id, peer.accessHash),
     userId: buildInputEntity(user.id, user.accessHash) as GramJs.InputUser,
     approved: isApproved || undefined,
-  }), true);
+  }), {
+    shouldReturnTrue: true,
+  });
 }
 
 export function hideAllChatJoinRequests({
@@ -259,7 +292,9 @@ export function hideAllChatJoinRequests({
     peer: buildInputPeer(peer.id, peer.accessHash),
     approved: isApproved || undefined,
     link,
-  }), true);
+  }), {
+    shouldReturnTrue: true,
+  });
 }
 
 export function hideChatReportPanel(chat: ApiChat) {

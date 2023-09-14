@@ -1,23 +1,25 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { useCallback, memo, useEffect } from '../../lib/teact/teact';
+import React, { memo, useEffect } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import {
-  selectCanDeleteSelectedMessages, selectCurrentChat, selectTabState, selectUser,
-} from '../../global/selectors';
-import {
-  isUserId,
-  getUserFirstOrLastName,
   getPrivateChatUserId,
+  getUserFirstOrLastName,
   isChatBasicGroup,
   isChatSuperGroup,
+  isUserId,
 } from '../../global/helpers';
+import {
+  selectCanDeleteSelectedMessages, selectCurrentChat, selectTabState, selectUser,
+} from '../../global/selectors';
 import renderText from '../common/helpers/renderText';
+
 import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
 import usePrevious from '../../hooks/usePrevious';
 
-import Modal from '../ui/Modal';
 import Button from '../ui/Button';
+import Modal from '../ui/Modal';
 
 export type OwnProps = {
   isOpen: boolean;
@@ -51,12 +53,12 @@ const DeleteSelectedMessageModal: FC<OwnProps & StateProps> = ({
 
   const prevIsOpen = usePrevious(isOpen);
 
-  const handleDeleteMessageForAll = useCallback(() => {
+  const handleDeleteMessageForAll = useLastCallback(() => {
     onClose();
     deleteMessages({ messageIds: selectedMessageIds!, shouldDeleteForAll: true });
-  }, [deleteMessages, selectedMessageIds, onClose]);
+  });
 
-  const handleDeleteMessageForSelf = useCallback(() => {
+  const handleDeleteMessageForSelf = useLastCallback(() => {
     if (isSchedule) {
       deleteScheduledMessages({ messageIds: selectedMessageIds! });
     } else {
@@ -64,7 +66,7 @@ const DeleteSelectedMessageModal: FC<OwnProps & StateProps> = ({
     }
 
     onClose();
-  }, [isSchedule, onClose, deleteScheduledMessages, selectedMessageIds, deleteMessages]);
+  });
 
   const lang = useLang();
 

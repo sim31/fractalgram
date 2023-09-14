@@ -1,7 +1,8 @@
-import type { ApiMessageEntity, ApiFormattedText } from '../api/types';
+import type { ApiFormattedText, ApiMessageEntity } from '../api/types';
 import { ApiMessageEntityTypes } from '../api/types';
+
 import { RE_LINK_TEMPLATE } from '../config';
-import { IS_EMOJI_SUPPORTED } from './environment';
+import { IS_EMOJI_SUPPORTED } from './windowEnvironment';
 
 export const ENTITY_CLASS_BY_NODE_NAME: Record<string, ApiMessageEntityTypes> = {
   B: ApiMessageEntityTypes.Bold,
@@ -114,20 +115,20 @@ function parseMarkdown(html: string) {
 
   // Other simple markdown
   parsedHtml = parsedHtml.replace(
-    /(^|\s)(?!<(code|pre)[^<]*|<\/)[*]{2}([^*\n]+)[*]{2}(?![^<]*<\/(code|pre)>)(\s|$)/g,
-    '$1<b>$3</b>$5',
+    /(?!<(code|pre)[^<]*|<\/)[*]{2}([^*\n]+)[*]{2}(?![^<]*<\/(code|pre)>)/g,
+    '<b>$2</b>',
   );
   parsedHtml = parsedHtml.replace(
-    /(^|\s)(?!<(code|pre)[^<]*|<\/)[_]{2}([^_\n]+)[_]{2}(?![^<]*<\/(code|pre)>)(\s|$)/g,
-    '$1<i>$3</i>$5',
+    /(?!<(code|pre)[^<]*|<\/)[_]{2}([^_\n]+)[_]{2}(?![^<]*<\/(code|pre)>)/g,
+    '<i>$2</i>',
   );
   parsedHtml = parsedHtml.replace(
-    /(^|\s)(?!<(code|pre)[^<]*|<\/)[~]{2}([^~\n]+)[~]{2}(?![^<]*<\/(code|pre)>)(\s|$)/g,
-    '$1<s>$3</s>$5',
+    /(?!<(code|pre)[^<]*|<\/)[~]{2}([^~\n]+)[~]{2}(?![^<]*<\/(code|pre)>)/g,
+    '<s>$2</s>',
   );
   parsedHtml = parsedHtml.replace(
-    /(^|\s)(?!<(code|pre)[^<]*|<\/)[|]{2}([^|\n]+)[|]{2}(?![^<]*<\/(code|pre)>)(\s|$)/g,
-    `$1<span data-entity-type="${ApiMessageEntityTypes.Spoiler}">$3</span>$5`,
+    /(?!<(code|pre)[^<]*|<\/)[|]{2}([^|\n]+)[|]{2}(?![^<]*<\/(code|pre)>)/g,
+    `<span data-entity-type="${ApiMessageEntityTypes.Spoiler}">$2</span>`,
   );
 
   return parsedHtml;
@@ -135,7 +136,7 @@ function parseMarkdown(html: string) {
 
 function parseMarkdownLinks(html: string) {
   return html.replace(new RegExp(`\\[([^\\]]+?)]\\((${RE_LINK_TEMPLATE}+?)\\)`, 'g'), (_, text, link) => {
-    const url = link.includes('://') ? link : link.includes('@') ? `mailto:${link}` : `http://${link}`;
+    const url = link.includes('://') ? link : link.includes('@') ? `mailto:${link}` : `https://${link}`;
     return `<a href="${url}">${text}</a>`;
   });
 }

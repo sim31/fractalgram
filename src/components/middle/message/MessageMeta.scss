@@ -9,7 +9,7 @@
   border-radius: 0.625rem;
   padding: 0 0.25rem;
   color: white;
-  cursor: pointer;
+  cursor: var(--custom-cursor, pointer);
   max-width: 100%;
   user-select: none;
 
@@ -18,9 +18,15 @@
   .message-signature,
   .message-views,
   .message-replies,
-  .message-translated {
+  .message-translated,
+  .message-pinned {
     font-size: 0.75rem;
     white-space: nowrap;
+  }
+
+  .message-replies-wrapper {
+    display: flex;
+    align-items: center;
   }
 
   .message-time {
@@ -39,6 +45,10 @@
 
   .message-translated {
     margin-inline-end: 0.25rem;
+  }
+
+  .message-pinned {
+    margin-inline-end: 0.1875rem;
   }
 
   .message-imported,
@@ -74,7 +84,7 @@
 
   .media:not(.text) &,
   .Message .custom-shape &,
-  .Message .invoice & {
+  .Message .invoice:not(.has-reactions) & {
     --color-accent-own: white;
     --color-accent: white;
     color: white !important;
@@ -85,13 +95,13 @@
     height: 1.125rem;
     padding: 0 0.3125rem 0 0.375rem;
 
-    .MessageOutgoingStatus i {
+    .MessageOutgoingStatus .icon {
       background: transparent;
     }
   }
 
   .media:not(.text) &,
-  .Message .invoice & {
+  .Message .invoice:not(.has-reactions) & {
     background: rgba(0, 0, 0, 0.2);
   }
 
@@ -158,8 +168,6 @@
 
 .Message:not(.own) {
   .custom-shape .with-subheader + .MessageMeta {
-    right: auto;
-    left: 13.25rem;
     bottom: 0.25rem;
   }
 }

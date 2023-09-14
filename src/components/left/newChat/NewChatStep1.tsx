@@ -1,18 +1,19 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { useCallback, useMemo, memo } from '../../../lib/teact/teact';
+import React, { memo, useCallback, useMemo } from '../../../lib/teact/teact';
 import { getActions, getGlobal, withGlobal } from '../../../global';
 
 import type { ApiChat } from '../../../api/types';
 
+import { filterUsersByName, isUserBot, sortChatIds } from '../../../global/helpers';
 import { selectTabState } from '../../../global/selectors';
 import { unique } from '../../../util/iteratees';
-import { filterUsersByName, isUserBot, sortChatIds } from '../../../global/helpers';
-import useLang from '../../../hooks/useLang';
+
 import useHistoryBack from '../../../hooks/useHistoryBack';
+import useLang from '../../../hooks/useLang';
 
 import Picker from '../../common/Picker';
-import FloatingActionButton from '../../ui/FloatingActionButton';
 import Button from '../../ui/Button';
+import FloatingActionButton from '../../ui/FloatingActionButton';
 
 export type OwnProps = {
   isChannel?: boolean;
@@ -59,7 +60,7 @@ const NewChatStep1: FC<OwnProps & StateProps> = ({
 
   const handleFilterChange = useCallback((query: string) => {
     setGlobalSearchQuery({ query });
-  }, [setGlobalSearchQuery]);
+  }, []);
 
   const displayedIds = useMemo(() => {
     // No need for expensive global updates on users, so we avoid them
@@ -86,11 +87,9 @@ const NewChatStep1: FC<OwnProps & StateProps> = ({
   }, [localContactIds, chatsById, searchQuery, localUserIds, globalUserIds, selectedMemberIds]);
 
   const handleNextStep = useCallback(() => {
-    if (selectedMemberIds.length || isChannel) {
-      setGlobalSearchQuery({ query: '' });
-      onNextStep();
-    }
-  }, [selectedMemberIds.length, isChannel, setGlobalSearchQuery, onNextStep]);
+    setGlobalSearchQuery({ query: '' });
+    onNextStep();
+  }, [onNextStep]);
 
   return (
     <div className="NewChat step-1">
@@ -102,7 +101,7 @@ const NewChatStep1: FC<OwnProps & StateProps> = ({
           onClick={onReset}
           ariaLabel="Return to Chat List"
         >
-          <i className="icon-arrow-left" />
+          <i className="icon icon-arrow-left" />
         </Button>
         <h3>{lang('GroupAddMembers')}</h3>
       </div>
@@ -114,16 +113,17 @@ const NewChatStep1: FC<OwnProps & StateProps> = ({
           filterPlaceholder={lang('SendMessageTo')}
           searchInputId="new-group-picker-search"
           isLoading={isSearching}
+          isSearchable
           onSelectedIdsChange={onSelectedMemberIdsChange}
           onFilterChange={handleFilterChange}
         />
 
         <FloatingActionButton
-          isShown={Boolean(selectedMemberIds.length || isChannel)}
+          isShown
           onClick={handleNextStep}
           ariaLabel={isChannel ? 'Continue To Channel Info' : 'Continue To Group Info'}
         >
-          <i className="icon-arrow-right" />
+          <i className="icon icon-arrow-right" />
         </FloatingActionButton>
       </div>
     </div>

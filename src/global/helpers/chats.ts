@@ -1,26 +1,26 @@
 import type {
   ApiChat,
-  ApiUser,
-  ApiChatBannedRights,
   ApiChatAdminRights,
-  ApiChatFolder, ApiTopic, ApiUserFullInfo,
+  ApiChatBannedRights,
+  ApiChatFolder,
+  ApiChatFullInfo,
+  ApiTopic,
+  ApiUser,
 } from '../../api/types';
+import type { Rank } from '../../config';
+import type { LangFn } from '../../hooks/useLang';
+import type { NotifyException, NotifySettings } from '../../types';
 import {
   MAIN_THREAD_ID,
 } from '../../api/types';
 
-import type { NotifyException, NotifySettings } from '../../types';
-import type { LangFn } from '../../hooks/useLang';
-
 import {
   ARCHIVED_FOLDER_ID, GENERAL_TOPIC_ID, REPLIES_USER_ID, TME_LINK_PREFIX,
 } from '../../config';
-import type { Rank } from '../../config';
-import { orderBy } from '../../util/iteratees';
-import { getUserFirstOrLastName } from './users';
 import { formatDateToString, formatTime } from '../../util/dateFormat';
+import { orderBy } from '../../util/iteratees';
 import { prepareSearchWordsForNeedle } from '../../util/searchWords';
-import { getVideoAvatarMediaHash } from './media';
+import { getUserFirstOrLastName } from './users';
 
 const FOREVER_BANNED_DATE = Date.now() / 1000 + 31622400; // 366 days
 
@@ -81,33 +81,17 @@ export function getPrivateChatUserId(chat: ApiChat) {
   return chat.id;
 }
 
-// TODO Get rid of `user`
-export function getChatTitle(lang: LangFn, chat: ApiChat, user?: ApiUser, isSelf = false) {
-  if (isSelf || (user && chat.id === user.id && user.isSelf)) {
+export function getChatTitle(lang: LangFn, chat: ApiChat, isSelf = false) {
+  if (isSelf) {
     return lang('SavedMessages');
   }
   return chat.title || lang('HiddenName');
 }
 
-export function getChatDescription(chat: ApiChat) {
-  if (!chat.fullInfo) {
-    return undefined;
-  }
-  return chat.fullInfo.about;
-}
-
 export function getChatLink(chat: ApiChat) {
-  const { usernames } = chat;
-  if (usernames) {
-    const activeUsername = usernames.find((u) => u.isActive);
-    if (activeUsername) {
-      return `${TME_LINK_PREFIX}${activeUsername.username}`;
-    }
-  }
+  const activeUsername = chat.usernames?.find((u) => u.isActive);
 
-  const { inviteLink } = chat.fullInfo || {};
-
-  return inviteLink;
+  return activeUsername ? `${TME_LINK_PREFIX}${activeUsername.username}` : undefined;
 }
 
 export function getChatMessageLink(chatId: string, chatUsername?: string, threadId?: number, messageId?: number) {
@@ -124,25 +108,9 @@ export function getTopicLink(chatId: string, chatUsername?: string, topicId?: nu
 export function getChatAvatarHash(
   owner: ApiChat | ApiUser,
   size: 'normal' | 'big' = 'normal',
-  type: 'photo' | 'video' = 'photo',
   avatarHash = owner.avatarHash,
 ) {
   if (!avatarHash) {
-    return undefined;
-  }
-  const { fullInfo } = owner;
-
-  if (type === 'video') {
-    const userFullInfo = isUserId(owner.id) ? fullInfo as ApiUserFullInfo : undefined;
-    if (userFullInfo?.personalPhoto?.isVideo) {
-      return getVideoAvatarMediaHash(userFullInfo.personalPhoto);
-    }
-    if (fullInfo?.profilePhoto?.isVideo) {
-      return getVideoAvatarMediaHash(fullInfo.profilePhoto);
-    }
-    if (userFullInfo?.fallbackPhoto?.isVideo) {
-      return getVideoAvatarMediaHash(userFullInfo.fallbackPhoto);
-    }
     return undefined;
   }
 
@@ -231,7 +199,12 @@ export interface IAllowedAttachmentOptions {
   canSendDocuments: boolean;
 }
 
-export function getAllowedAttachmentOptions(chat?: ApiChat, isChatWithBot = false): IAllowedAttachmentOptions {
+export function getAllowedAttachmentOptions(
+  chat?: ApiChat,
+  isChatWithBot = false,
+  isStoryReply = false,
+  fullChatInfo?: ApiChatFullInfo,
+): IAllowedAttachmentOptions {
   if (!chat) {
     return {
       canAttachMedia: false,
@@ -262,15 +235,17 @@ export function getAllowedAttachmentOptions(chat?: ApiChat, isChatWithBot = fals
 
   const isAdmin = isChatAdmin(chat);
   // Need full info for creating polls as well
-  const memberCount = chat.fullInfo?.members?.length;
+  const memberCount = fullChatInfo?.members?.length;
   const canDoConsensus = memberCount ? memberCount > 2 && memberCount < 7 : false;
 
   return {
-    canAttachMedia: isAdmin || !isUserRightBanned(chat, 'sendMedia'),
-    canAttachPolls: (isAdmin || !isUserRightBanned(chat, 'sendPolls')) && (!isUserId(chat.id) || isChatWithBot),
-    canSendStickers: isAdmin || !isUserRightBanned(chat, 'sendStickers'),
-    canSendGifs: isAdmin || !isUserRightBanned(chat, 'sendGifs'),
-    canAttachEmbedLinks: isAdmin || !isUserRightBanned(chat, 'embedLinks'),
+    canAttachMedia: isAdmin || isStoryReply || !isUserRightBanned(chat, 'sendMedia'),
+    canAttachPolls: !isStoryReply
+      && (isAdmin || !isUserRightBanned(chat, 'sendPolls'))
+      && (!isUserId(chat.id) || isChatWithBot),
+    canSendStickers: isAdmin || isStoryReply || !isUserRightBanned(chat, 'sendStickers'),
+    canSendGifs: isAdmin || isStoryReply || !isUserRightBanned(chat, 'sendGifs'),
+    canAttachEmbedLinks: !isStoryReply && (isAdmin || !isUserRightBanned(chat, 'embedLinks')),
     canAttachAccountPrompts: canDoConsensus,
     canAttachDelegatePolls: canDoConsensus,
     canAttachResultReport: canDoConsensus,
@@ -282,13 +257,13 @@ export function getAllowedAttachmentOptions(chat?: ApiChat, isChatWithBot = fals
       2: canDoConsensus && memberCount ? memberCount >= 5 : false,
       1: canDoConsensus && memberCount ? memberCount >= 6 : false,
     },
-    canSendPhotos: isAdmin || !isUserRightBanned(chat, 'sendPhotos'),
-    canSendVideos: isAdmin || !isUserRightBanned(chat, 'sendVideos'),
-    canSendRoundVideos: isAdmin || !isUserRightBanned(chat, 'sendRoundvideos'),
-    canSendAudios: isAdmin || !isUserRightBanned(chat, 'sendAudios'),
-    canSendVoices: isAdmin || !isUserRightBanned(chat, 'sendVoices'),
-    canSendPlainText: isAdmin || !isUserRightBanned(chat, 'sendPlain'),
-    canSendDocuments: isAdmin || !isUserRightBanned(chat, 'sendDocs'),
+    canSendPhotos: isAdmin || isStoryReply || !isUserRightBanned(chat, 'sendPhotos'),
+    canSendVideos: isAdmin || isStoryReply || !isUserRightBanned(chat, 'sendVideos'),
+    canSendRoundVideos: isAdmin || isStoryReply || !isUserRightBanned(chat, 'sendRoundvideos'),
+    canSendAudios: isAdmin || isStoryReply || !isUserRightBanned(chat, 'sendAudios'),
+    canSendVoices: isAdmin || isStoryReply || !isUserRightBanned(chat, 'sendVoices'),
+    canSendPlainText: isAdmin || isStoryReply || !isUserRightBanned(chat, 'sendPlain'),
+    canSendDocuments: isAdmin || isStoryReply || !isUserRightBanned(chat, 'sendDocs'),
   };
 }
 
@@ -341,14 +316,6 @@ export function getForumComposerPlaceholder(
   return undefined;
 }
 
-export function getChatSlowModeOptions(chat?: ApiChat) {
-  if (!chat || !chat.fullInfo) {
-    return undefined;
-  }
-
-  return chat.fullInfo.slowMode;
-}
-
 export function isChatArchived(chat: ApiChat) {
   return chat.folderId === ARCHIVED_FOLDER_ID;
 }
@@ -393,11 +360,11 @@ export function getCanDeleteChat(chat: ApiChat) {
 
 export function getFolderDescriptionText(lang: LangFn, folder: ApiChatFolder, chatsCount?: number) {
   const {
-    id, title, emoticon, description, pinnedChatIds,
     excludedChatIds, includedChatIds,
-    excludeArchived, excludeMuted, excludeRead,
-    ...filters
+    bots, groups, contacts, nonContacts, channels,
   } = folder;
+
+  const filters = [bots, groups, contacts, nonContacts, channels];
 
   // If folder has multiple additive filters or uses include/exclude lists,
   // we display folder chats count
@@ -411,15 +378,15 @@ export function getFolderDescriptionText(lang: LangFn, folder: ApiChatFolder, ch
   }
 
   // Otherwise, we return a short description of a single filter
-  if (filters.bots) {
+  if (bots) {
     return lang('FilterBots');
-  } else if (filters.groups) {
+  } else if (groups) {
     return lang('FilterGroups');
-  } else if (filters.channels) {
+  } else if (channels) {
     return lang('FilterChannels');
-  } else if (filters.contacts) {
+  } else if (contacts) {
     return lang('FilterContacts');
-  } else if (filters.nonContacts) {
+  } else if (nonContacts) {
     return lang('FilterNonContacts');
   } else {
     return undefined;
@@ -494,8 +461,15 @@ export function filterChatsByName(
     if (!chat) {
       return false;
     }
+    const isSelf = id === currentUserId;
 
-    return searchWords(getChatTitle(lang, chat, undefined, id === currentUserId));
+    const translatedTitle = getChatTitle(lang, chat, isSelf);
+    if (isSelf) {
+      // Search both "Saved Messages" and user title
+      return searchWords(translatedTitle) || searchWords(chat.title);
+    }
+
+    return searchWords(translatedTitle);
   });
 }
 

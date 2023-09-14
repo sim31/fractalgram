@@ -1,27 +1,26 @@
 import type { FC } from '../../lib/teact/teact';
-import { memo, useCallback, useEffect } from '../../lib/teact/teact';
-import { getActions, withGlobal } from '../../global';
+import { memo, useEffect } from '../../lib/teact/teact';
+import { getActions, getGlobal, withGlobal } from '../../global';
 
-import type { Thread } from '../../global/types';
 import type { ApiMessage } from '../../api/types';
+import type { GlobalState, TabState } from '../../global/types';
 import { ApiMediaFormat } from '../../api/types';
 
-import { selectTabState } from '../../global/selectors';
-import { IS_OPFS_SUPPORTED, IS_SERVICE_WORKER_SUPPORTED, MAX_BUFFER_SIZE } from '../../util/environment';
-import * as mediaLoader from '../../util/mediaLoader';
-import download from '../../util/download';
 import {
   getMessageContentFilename, getMessageMediaFormat, getMessageMediaHash,
 } from '../../global/helpers';
+import { selectTabState } from '../../global/selectors';
+import download from '../../util/download';
+import { compact } from '../../util/iteratees';
+import * as mediaLoader from '../../util/mediaLoader';
+import { IS_OPFS_SUPPORTED, IS_SERVICE_WORKER_SUPPORTED, MAX_BUFFER_SIZE } from '../../util/windowEnvironment';
 
+import useLastCallback from '../../hooks/useLastCallback';
 import useRunDebounced from '../../hooks/useRunDebounced';
 
 type StateProps = {
-  activeDownloads: Record<string, number[]>;
-  messages: Record<string, {
-    byId: Record<number, ApiMessage>;
-    threadsById: Record<number, Thread>;
-  }>;
+  activeDownloads: TabState['activeDownloads']['byChatId'];
+  messages?: GlobalState['messages']['byChatId'];
 };
 
 const GLOBAL_UPDATE_DEBOUNCE = 1000;
@@ -31,13 +30,12 @@ const downloadedMessages = new Set<ApiMessage>();
 
 const DownloadManager: FC<StateProps> = ({
   activeDownloads,
-  messages,
 }) => {
   const { cancelMessagesMediaDownload, showNotification } = getActions();
 
   const runDebounced = useRunDebounced(GLOBAL_UPDATE_DEBOUNCE, true);
 
-  const handleMessageDownloaded = useCallback((message: ApiMessage) => {
+  const handleMessageDownloaded = useLastCallback((message: ApiMessage) => {
     downloadedMessages.add(message);
     runDebounced(() => {
       if (downloadedMessages.size) {
@@ -45,12 +43,19 @@ const DownloadManager: FC<StateProps> = ({
         downloadedMessages.clear();
       }
     });
-  }, [cancelMessagesMediaDownload, runDebounced]);
+  });
 
   useEffect(() => {
-    const activeMessages = Object.entries(activeDownloads).map(([chatId, messageIds]) => (
-      messageIds.map((id) => messages[chatId].byId[id])
-    )).flat();
+    // No need for expensive global updates on messages, so we avoid them
+    const messages = getGlobal().messages.byChatId;
+    const scheduledMessages = getGlobal().scheduledMessages.byChatId;
+
+    const activeMessages = Object.entries(activeDownloads).map(([chatId, chatActiveDownloads]) => {
+      const chatMessages = chatActiveDownloads.ids?.map((id) => messages[chatId]?.byId[id]);
+      const chatScheduledMessages = chatActiveDownloads.scheduledIds?.map((id) => scheduledMessages[chatId]?.byId[id]);
+
+      return compact([...chatMessages || [], ...chatScheduledMessages || []]);
+    }).flat();
 
     if (!activeMessages.length) {
       processedMessages.clear();
@@ -107,7 +112,7 @@ const DownloadManager: FC<StateProps> = ({
         handleMessageDownloaded(message);
       });
     });
-  }, [messages, activeDownloads, cancelMessagesMediaDownload, handleMessageDownloaded, showNotification]);
+  }, [activeDownloads, cancelMessagesMediaDownload, handleMessageDownloaded, showNotification]);
 
   return undefined;
 };
@@ -115,10 +120,9 @@ const DownloadManager: FC<StateProps> = ({
 export default memo(withGlobal(
   (global): StateProps => {
     const activeDownloads = selectTabState(global).activeDownloads.byChatId;
-    const messages = global.messages.byChatId;
+
     return {
       activeDownloads,
-      messages,
     };
   },
 )(DownloadManager));

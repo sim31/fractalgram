@@ -1,15 +1,16 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useRef, useState,
+  memo, useEffect, useLayoutEffect, useRef,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
-import cycleRestrict from '../../util/cycleRestrict';
 
-import type { GlobalState, MessageListType } from '../../global/types';
 import type {
   ApiChat, ApiMessage, ApiTypingStatus, ApiUser,
 } from '../../api/types';
+import type { GlobalState, MessageListType } from '../../global/types';
+import type { Signal } from '../../util/signals';
 import { MAIN_THREAD_ID } from '../../api/types';
+import { StoryViewerOrigin } from '../../types';
 
 import {
   EDITABLE_INPUT_CSS_SELECTOR,
@@ -20,15 +21,20 @@ import {
   SAFE_SCREEN_WIDTH_FOR_CHAT_INFO,
   SAFE_SCREEN_WIDTH_FOR_STATIC_RIGHT_COLUMN,
 } from '../../config';
+import { requestMutation } from '../../lib/fasterdom/fasterdom';
 import {
-  getChatTitle, getMessageKey, getSenderTitle, isChatChannel, isChatSuperGroup, isUserId,
+  getChatTitle,
+  getMessageKey,
+  getSenderTitle,
+  isChatChannel,
+  isChatSuperGroup,
+  isUserId,
 } from '../../global/helpers';
 import {
   selectAllowedMessageActions,
   selectChat,
   selectChatMessage,
   selectChatMessages,
-  selectTabState,
   selectForwardedSender,
   selectIsChatBotNotStarted,
   selectIsChatWithBot,
@@ -38,30 +44,37 @@ import {
   selectIsUserBlocked,
   selectPinnedIds,
   selectScheduledIds,
+  selectTabState,
   selectThreadInfo,
   selectThreadParam,
   selectThreadTopMessageId,
 } from '../../global/selectors';
-import useEnsureMessage from '../../hooks/useEnsureMessage';
-import useWindowSize from '../../hooks/useWindowSize';
-import useShowTransition from '../../hooks/useShowTransition';
-import useCurrentOrPrev from '../../hooks/useCurrentOrPrev';
 import buildClassName from '../../util/buildClassName';
-import useLang from '../../hooks/useLang';
-import useConnectionStatus from '../../hooks/useConnectionStatus';
-import usePrevious from '../../hooks/usePrevious';
-import useAppLayout from '../../hooks/useAppLayout';
+import cycleRestrict from '../../util/cycleRestrict';
 
-import PrivateChatInfo from '../common/PrivateChatInfo';
+import useAppLayout from '../../hooks/useAppLayout';
+import useConnectionStatus from '../../hooks/useConnectionStatus';
+import useCurrentOrPrev from '../../hooks/useCurrentOrPrev';
+import useDerivedState from '../../hooks/useDerivedState';
+import useElectronDrag from '../../hooks/useElectronDrag';
+import useEnsureMessage from '../../hooks/useEnsureMessage';
+import { useFastClick } from '../../hooks/useFastClick';
+import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
+import usePrevious from '../../hooks/usePrevious';
+import useShowTransition from '../../hooks/useShowTransition';
+import useWindowSize from '../../hooks/useWindowSize';
+
+import GroupCallTopPane from '../calls/group/GroupCallTopPane';
 import GroupChatInfo from '../common/GroupChatInfo';
+import PrivateChatInfo from '../common/PrivateChatInfo';
 import UnreadCounter from '../common/UnreadCounter';
-import Transition from '../ui/Transition';
 import Button from '../ui/Button';
+import Transition from '../ui/Transition';
+import AudioPlayer from './AudioPlayer';
+import ChatReportPanel from './ChatReportPanel';
 import HeaderActions from './HeaderActions';
 import HeaderPinnedMessage from './HeaderPinnedMessage';
-import AudioPlayer from './AudioPlayer';
-import GroupCallTopPane from '../calls/group/GroupCallTopPane';
-import ChatReportPanel from './ChatReportPanel';
 
 import './MiddleHeader.scss';
 
@@ -75,6 +88,9 @@ type OwnProps = {
   messageListType: MessageListType;
   isReady?: boolean;
   isMobile?: boolean;
+  getCurrentPinnedIndexes: Signal<Record<string, number>>;
+  getLoadingPinnedId: Signal<number | undefined>;
+  onFocusPinnedMessage: (messageId: number) => boolean;
 };
 
 type StateProps = {
@@ -91,13 +107,13 @@ type StateProps = {
   messagesCount?: number;
   isComments?: boolean;
   isChatWithSelf?: boolean;
-  lastSyncTime?: number;
   hasButtonInHeader?: boolean;
-  hasReachedFocusedMessage?: boolean;
   shouldSkipHistoryAnimations?: boolean;
   currentTransitionKey: number;
   connectionState?: GlobalState['connectionState'];
-  isSyncing?: GlobalState['isSyncing'];
+  isSyncing?: boolean;
+  isSynced?: boolean;
+  isFetchingDifference?: boolean;
 };
 
 const MiddleHeader: FC<OwnProps & StateProps> = ({
@@ -119,13 +135,16 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
   messagesCount,
   isComments,
   isChatWithSelf,
-  lastSyncTime,
   hasButtonInHeader,
   shouldSkipHistoryAnimations,
   currentTransitionKey,
   connectionState,
-  hasReachedFocusedMessage,
   isSyncing,
+  isSynced,
+  isFetchingDifference,
+  getCurrentPinnedIndexes,
+  getLoadingPinnedId,
+  onFocusPinnedMessage,
 }) => {
   const {
     openChatWithInfo,
@@ -133,19 +152,20 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
     focusMessage,
     openChat,
     openPreviousChat,
-    setReachedFocusedMessage,
     loadPinnedMessages,
     toggleLeftColumn,
     exitMessageSelectMode,
+    openPremiumModal,
   } = getActions();
 
   const lang = useLang();
   const isBackButtonActive = useRef(true);
-  const [isWaitingForPinnedMessageFocus, setWaitingForPinnedMessageFocus] = useState(false);
   const { isTablet } = useAppLayout();
 
-  const [pinnedMessageIndex, setPinnedMessageIndex] = useState(0);
-  const pinnedMessageId = Array.isArray(pinnedMessageIds) ? pinnedMessageIds[pinnedMessageIndex] : pinnedMessageIds;
+  const currentPinnedIndexes = useDerivedState(getCurrentPinnedIndexes);
+  const currentPinnedIndex = currentPinnedIndexes[`${chatId}_${threadId}`] || 0;
+  const waitingForPinnedId = useDerivedState(getLoadingPinnedId);
+  const pinnedMessageId = Array.isArray(pinnedMessageIds) ? pinnedMessageIds[currentPinnedIndex] : pinnedMessageIds;
   const pinnedMessage = messagesById && pinnedMessageId ? messagesById[pinnedMessageId] : undefined;
   const pinnedMessagesCount = Array.isArray(pinnedMessageIds)
     ? pinnedMessageIds.length : (pinnedMessageIds ? 1 : undefined);
@@ -155,29 +175,10 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
   const isForum = chat?.isForum;
 
   useEffect(() => {
-    if (lastSyncTime && isReady && (threadId === MAIN_THREAD_ID || isForum)) {
+    if (isSynced && isReady && (threadId === MAIN_THREAD_ID || isForum)) {
       loadPinnedMessages({ chatId, threadId });
     }
-  }, [chatId, loadPinnedMessages, lastSyncTime, threadId, isReady, isForum]);
-
-  // Reset pinned index when switching chats and pinning/unpinning
-  useEffect(() => {
-    setPinnedMessageIndex(0);
-    setWaitingForPinnedMessageFocus(false);
-  }, [pinnedMessageIds]);
-
-  useEffect(() => {
-    if (hasReachedFocusedMessage && isWaitingForPinnedMessageFocus) {
-      setReachedFocusedMessage({ hasReached: false });
-      setWaitingForPinnedMessageFocus(false);
-
-      const newIndex = cycleRestrict(pinnedMessagesCount || 1, pinnedMessageIndex + 1);
-      setPinnedMessageIndex(newIndex);
-    }
-  }, [
-    hasReachedFocusedMessage, isWaitingForPinnedMessageFocus, pinnedMessageIndex, pinnedMessagesCount,
-    setReachedFocusedMessage,
-  ]);
+  }, [chatId, threadId, isSynced, isReady, isForum]);
 
   useEnsureMessage(chatId, pinnedMessageId, pinnedMessage);
 
@@ -190,35 +191,46 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
   const componentRef = useRef<HTMLDivElement>(null);
   const shouldAnimateTools = useRef<boolean>(true);
 
-  const handleHeaderClick = useCallback(() => {
+  const {
+    handleClick: handleHeaderClick,
+    handleMouseDown: handleHeaderMouseDown,
+  } = useFastClick((e: React.MouseEvent<HTMLDivElement | HTMLButtonElement>) => {
+    if (e.type === 'mousedown' && (e.target as Element).closest('.title > .custom-emoji')) return;
+
     openChatWithInfo({ id: chatId, threadId });
-  }, [openChatWithInfo, chatId, threadId]);
+  });
 
-  const handleUnpinMessage = useCallback((messageId: number) => {
+  const handleUnpinMessage = useLastCallback((messageId: number) => {
     pinMessage({ messageId, isUnpin: true });
-  }, [pinMessage]);
+  });
 
-  const handlePinnedMessageClick = useCallback((): void => {
-    if (pinnedMessage) {
+  const handlePinnedMessageClick = useLastCallback((e: React.MouseEvent<HTMLElement, MouseEvent>): void => {
+    const messageId = e.shiftKey && Array.isArray(pinnedMessageIds)
+      ? pinnedMessageIds[cycleRestrict(pinnedMessageIds.length, pinnedMessageIds.indexOf(pinnedMessageId!) - 2)]
+      : pinnedMessageId!;
+
+    if (onFocusPinnedMessage(messageId)) {
       focusMessage({
-        chatId: pinnedMessage.chatId, threadId, messageId: pinnedMessage.id, noForumTopicPanel: true,
+        chatId, threadId, messageId, noForumTopicPanel: true,
       });
-
-      setWaitingForPinnedMessageFocus(true);
     }
-  }, [pinnedMessage, focusMessage, threadId]);
+  });
 
-  const handleAllPinnedClick = useCallback(() => {
+  const handleAllPinnedClick = useLastCallback(() => {
     openChat({ id: chatId, threadId, type: 'pinned' });
-  }, [openChat, chatId, threadId]);
+  });
 
-  const setBackButtonActive = useCallback(() => {
+  const setBackButtonActive = useLastCallback(() => {
     setTimeout(() => {
       isBackButtonActive.current = true;
     }, BACK_BUTTON_INACTIVE_TIME);
-  }, []);
+  });
 
-  const handleBackClick = useCallback((e: React.MouseEvent<HTMLElement, MouseEvent>) => {
+  const handleStatusClick = useLastCallback(() => {
+    openPremiumModal({ fromUserId: chatId });
+  });
+
+  const handleBackClick = useLastCallback((e: React.MouseEvent<HTMLElement, MouseEvent>) => {
     if (!isBackButtonActive.current) return;
 
     // Workaround for missing UI when quickly clicking the Back button
@@ -249,10 +261,7 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
 
     openPreviousChat();
     setBackButtonActive();
-  }, [
-    isMobile, isSelectModeActive, messageListType, currentTransitionKey, setBackButtonActive, isTablet,
-    shouldShowCloseButton,
-  ]);
+  });
 
   const canToolsCollideWithChatInfo = (
     windowWidth >= MIN_SCREEN_WIDTH_FOR_STATIC_LEFT_COLUMN
@@ -284,7 +293,7 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
   const {
     shouldRender: shouldRenderPinnedMessage,
     transitionClassNames: pinnedMessageClassNames,
-  } = useShowTransition(Boolean(pinnedMessage));
+  } = useShowTransition(Boolean(pinnedMessage), undefined, true);
 
   const renderingPinnedMessage = useCurrentOrPrev(pinnedMessage, true);
   const renderingPinnedMessagesCount = useCurrentOrPrev(pinnedMessagesCount, true);
@@ -300,7 +309,7 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
     || (shouldRenderAudioPlayer && renderingAudioMessage);
 
   // Logic for transition to and from custom display of AudioPlayer/PinnedMessage on smaller screens
-  useEffect(() => {
+  useLayoutEffect(() => {
     const componentEl = componentRef.current;
     if (!componentEl) {
       return;
@@ -320,7 +329,9 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
 
       // Remove animation class to prevent it messing up the show transitions
       setTimeout(() => {
-        componentEl.classList.remove('animated');
+        requestMutation(() => {
+          componentEl.classList.remove('animated');
+        });
       }, ANIMATION_DURATION);
     } else {
       componentEl.classList.remove('tools-stacked');
@@ -328,7 +339,7 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
     }
   }, [shouldUseStackedToolsClass, canRevealTools, canToolsCollideWithChatInfo, isRightColumnShown]);
 
-  const { connectionStatusText } = useConnectionStatus(lang, connectionState, isSyncing, true);
+  const { connectionStatusText } = useConnectionStatus(lang, connectionState, isSyncing || isFetchingDifference, true);
 
   function renderInfo() {
     if (messageListType === 'thread') {
@@ -358,7 +369,11 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
     return (
       <>
         {(isLeftColumnHideable || currentTransitionKey > 0) && renderBackButton(shouldShowCloseButton, true)}
-        <div className="chat-info-wrapper" onClick={handleHeaderClick}>
+        <div
+          className="chat-info-wrapper"
+          onClick={handleHeaderClick}
+          onMouseDown={handleHeaderMouseDown}
+        >
           {isUserId(chatId) ? (
             <PrivateChatInfo
               key={chatId}
@@ -368,10 +383,12 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
               withDots={Boolean(connectionStatusText)}
               withFullInfo
               withMediaViewer
+              withStory={!isChatWithSelf}
               withUpdatingStatus
-              withVideoAvatar={isReady}
+              storyViewerOrigin={StoryViewerOrigin.MiddleHeaderAvatar}
               emojiStatusSize={EMOJI_STATUS_SIZE}
               noRtl
+              onEmojiStatusClick={handleStatusClick}
             />
           ) : (
             <GroupChatInfo
@@ -384,7 +401,6 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
               withMediaViewer={threadId === MAIN_THREAD_ID}
               withFullInfo={threadId === MAIN_THREAD_ID}
               withUpdatingStatus
-              withVideoAvatar={isReady}
               noRtl
             />
           )}
@@ -414,10 +430,12 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
   const isPinnedMessagesFullWidth = isAudioPlayerRendered
     || (!isMobile && hasButtonInHeader && windowWidth < MAX_SCREEN_WIDTH_FOR_EXPAND_PINNED_MESSAGES);
 
+  useElectronDrag(componentRef);
+
   return (
     <div className="MiddleHeader" ref={componentRef}>
       <Transition
-        name={shouldSkipHistoryAnimations ? 'none' : 'slide-fade'}
+        name={shouldSkipHistoryAnimations ? 'none' : 'slideFade'}
         activeKey={currentTransitionKey}
         shouldCleanup
         cleanupExceptionKey={cleanupExceptionKey}
@@ -429,7 +447,7 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
         <GroupCallTopPane
           hasPinnedOffset={
             (shouldRenderPinnedMessage && Boolean(renderingPinnedMessage))
-          || (shouldRenderAudioPlayer && Boolean(renderingAudioMessage))
+            || (shouldRenderAudioPlayer && Boolean(renderingAudioMessage))
           }
           chatId={chatId}
         />
@@ -440,12 +458,14 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
           key={chatId}
           message={renderingPinnedMessage}
           count={renderingPinnedMessagesCount || 0}
-          index={pinnedMessageIndex}
+          index={currentPinnedIndex}
           customTitle={renderingPinnedMessageTitle}
-          className={buildClassName(pinnedMessageClassNames, isPinnedMessagesFullWidth && 'full-width')}
+          className={pinnedMessageClassNames}
           onUnpinMessage={renderingCanUnpin ? handleUnpinMessage : undefined}
           onClick={handlePinnedMessageClick}
           onAllPinnedClick={handleAllPinnedClick}
+          isLoading={waitingForPinnedId !== undefined}
+          isFullWidth={isPinnedMessagesFullWidth}
         />
       )}
 
@@ -485,7 +505,6 @@ export default memo(withGlobal<OwnProps>(
     const {
       isLeftColumnShown, shouldSkipHistoryAnimations, audioPlayer, messageLists,
     } = selectTabState(global);
-    const { lastSyncTime } = global;
     const chat = selectChat(global, chatId);
 
     const { chatId: audioChatId, messageId: audioMessageId } = audioPlayer;
@@ -514,7 +533,6 @@ export default memo(withGlobal<OwnProps>(
     );
     const shouldSendJoinRequest = Boolean(chat?.isNotJoined && chat.isJoinRequest);
     const typingStatus = selectThreadParam(global, chatId, threadId, 'typingStatus');
-    const focusedMessage = selectTabState(global).focusedMessage;
 
     const state: StateProps = {
       typingStatus,
@@ -525,21 +543,19 @@ export default memo(withGlobal<OwnProps>(
       chat,
       messagesCount,
       isChatWithSelf: selectIsChatWithSelf(global, chatId),
-      lastSyncTime,
       shouldSkipHistoryAnimations,
       currentTransitionKey: Math.max(0, messageLists.length - 1),
       connectionState: global.connectionState,
       isSyncing: global.isSyncing,
+      isSynced: global.isSynced,
+      isFetchingDifference: global.isFetchingDifference,
       hasButtonInHeader: canStartBot || canRestartBot || canSubscribe || shouldSendJoinRequest,
-      hasReachedFocusedMessage: !focusedMessage || focusedMessage.hasReachedMessage,
     };
 
     const messagesById = selectChatMessages(global, chatId);
     if (messageListType !== 'thread' || !messagesById) {
       return state;
     }
-
-    Object.assign(state, { messagesById });
 
     if (threadId !== MAIN_THREAD_ID && !chat?.isForum) {
       const pinnedMessageId = selectThreadTopMessageId(global, chatId, threadId);
@@ -550,6 +566,7 @@ export default memo(withGlobal<OwnProps>(
       return {
         ...state,
         pinnedMessageIds: pinnedMessageId,
+        messagesById,
         canUnpin: false,
         topMessageSender,
         isComments: Boolean(threadInfo?.originChannelId),
@@ -566,6 +583,7 @@ export default memo(withGlobal<OwnProps>(
       return {
         ...state,
         pinnedMessageIds,
+        messagesById,
         canUnpin,
       };
     }

@@ -9,12 +9,13 @@ import type { ApiPrivacySettings } from '../../../types';
 import { SettingsScreens } from '../../../types';
 
 import { ALL_FOLDER_ID, ARCHIVED_FOLDER_ID } from '../../../config';
-import { unique } from '../../../util/iteratees';
 import { filterChatsByName, isUserId } from '../../../global/helpers';
-import useLang from '../../../hooks/useLang';
-import useHistoryBack from '../../../hooks/useHistoryBack';
-import { useFolderManagerForOrderedIds } from '../../../hooks/useFolderManager';
+import { unique } from '../../../util/iteratees';
 import { getPrivacyKey } from './helpers/privacy';
+
+import { useFolderManagerForOrderedIds } from '../../../hooks/useFolderManager';
+import useHistoryBack from '../../../hooks/useHistoryBack';
+import useLang from '../../../hooks/useLang';
 
 import Picker from '../../common/Picker';
 import FloatingActionButton from '../../ui/FloatingActionButton';
@@ -107,6 +108,7 @@ const SettingsPrivacyVisibilityExceptionList: FC<OwnProps & StateProps> = ({
         filterValue={searchQuery}
         filterPlaceholder={isAllowList ? lang('AlwaysAllowPlaceholder') : lang('NeverAllowPlaceholder')}
         searchInputId="new-group-picker-search"
+        isSearchable
         onSelectedIdsChange={handleSelectedContactIdsChange}
         onFilterChange={setSearchQuery}
       />
@@ -116,7 +118,7 @@ const SettingsPrivacyVisibilityExceptionList: FC<OwnProps & StateProps> = ({
         onClick={handleSubmit}
         ariaLabel={isAllowList ? lang('AlwaysAllow') : lang('NeverAllow')}
       >
-        <i className="icon-arrow-right" />
+        <i className="icon icon-check" />
       </FloatingActionButton>
     </div>
   );

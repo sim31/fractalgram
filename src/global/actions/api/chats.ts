@@ -1,80 +1,92 @@
-import type { RequiredGlobalActions } from '../../index';
-import {
-  addActionHandler, getGlobal, setGlobal,
-} from '../../index';
-
 import type {
-  ApiChat, ApiUser, ApiError, ApiChatMember,
+  ApiChat, ApiChatFolder, ApiChatlistExportedInvite,
+  ApiChatMember, ApiError, ApiUser,
 } from '../../../api/types';
-import { MAIN_THREAD_ID } from '../../../api/types';
-import { NewChatMembersProgress, ChatCreationProgress, ManagementProgress } from '../../../types';
+import type { RequiredGlobalActions } from '../../index';
 import type {
-  GlobalState, ActionReturnType, TabArgs,
+  ActionReturnType, GlobalState, TabArgs,
 } from '../../types';
+import { MAIN_THREAD_ID } from '../../../api/types';
+import {
+  ChatCreationProgress,
+  ManagementProgress,
+  NewChatMembersProgress,
+  SettingsScreens,
+} from '../../../types';
 
 import {
+  ALL_FOLDER_ID,
   ARCHIVED_FOLDER_ID,
-  TOP_CHAT_MESSAGES_PRELOAD_LIMIT,
   CHAT_LIST_LOAD_SLICE,
+  DEBUG,
   RE_TG_LINK,
   SERVICE_NOTIFICATIONS_USER_ID,
+  TME_WEB_DOMAINS,
   TMP_CHAT_ID,
-  ALL_FOLDER_ID,
-  DEBUG,
+  TOP_CHAT_MESSAGES_PRELOAD_LIMIT,
   TOPICS_SLICE,
   TOPICS_SLICE_SECOND_LOAD,
-  TME_WEB_DOMAINS,
 } from '../../../config';
+import { formatShareText, parseChooseParameter, processDeepLink } from '../../../util/deeplink';
+import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import { getOrderedIds } from '../../../util/folderManager';
+import { buildCollectionByKey, omit } from '../../../util/iteratees';
+import * as langProvider from '../../../util/langProvider';
+import { debounce, pause, throttle } from '../../../util/schedulers';
+import { extractCurrentThemeParams } from '../../../util/themeStyle';
 import { callApi } from '../../../api/gramjs';
 import {
-  addChats,
-  addUsers,
-  addUserStatuses,
-  replaceThreadParam,
-  updateChatListIds,
-  updateChats,
-  updateChat,
-  updateChatListSecondaryInfo,
-  updateManagementProgress,
-  leaveChat,
-  replaceUsers,
-  replaceUserStatuses,
-  replaceChats,
-  replaceChatListIds,
-  addChatMembers,
-  updateUser,
-  addMessages,
-  updateTopics,
-  deleteTopic,
-  updateTopic,
-  updateThreadInfo,
-  updateListedTopicIds,
-} from '../../reducers';
-import {
-  selectChat, selectUser, selectChatListType, selectIsChatPinned,
-  selectChatFolder, selectSupportChat, selectChatByUsername,
-  selectCurrentMessageList, selectThreadInfo, selectCurrentChat, selectLastServiceNotification,
-  selectVisibleUsers, selectUserByPhoneNumber, selectDraft, selectThreadTopMessageId,
-  selectTabState, selectThreadOriginChat, selectThread,
-} from '../../selectors';
-import { buildCollectionByKey, omit } from '../../../util/iteratees';
-import { debounce, pause, throttle } from '../../../util/schedulers';
-import {
-  isChatSummaryOnly,
   isChatArchived,
   isChatBasicGroup,
   isChatChannel,
+  isChatSummaryOnly,
   isChatSuperGroup,
   isUserBot,
+  isUserId,
 } from '../../helpers';
-import { formatShareText, parseChooseParameter, processDeepLink } from '../../../util/deeplink';
+import {
+  addActionHandler, getGlobal, setGlobal,
+} from '../../index';
+import {
+  addChatMembers,
+  addChats,
+  addMessages,
+  addUsers,
+  addUserStatuses,
+  deleteTopic,
+  leaveChat,
+  replaceChatFullInfo,
+  replaceChatListIds,
+  replaceChats,
+  replaceThreadParam,
+  replaceUsers,
+  replaceUserStatuses,
+  updateChat,
+  updateChatFullInfo,
+  updateChatListIds,
+  updateChatListSecondaryInfo,
+  updateChats,
+  updateListedTopicIds,
+  updateManagementProgress,
+  updateThreadInfo,
+  updateTopic,
+  updateTopics,
+  updateUser,
+  updateUserFullInfo,
+} from '../../reducers';
 import { updateGroupCall } from '../../reducers/calls';
-import { selectGroupCall } from '../../selectors/calls';
-import { getOrderedIds } from '../../../util/folderManager';
-import * as langProvider from '../../../util/langProvider';
-import { selectCurrentLimit } from '../../selectors/limits';
 import { updateTabState } from '../../reducers/tabs';
-import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import {
+  selectChat, selectChatByUsername,
+  selectChatFolder, selectChatFullInfo, selectChatListType, selectCurrentChat, selectCurrentMessageList, selectDraft,
+  selectIsChatPinned,
+  selectLastServiceNotification,
+  selectStickerSet,
+  selectSupportChat, selectTabState, selectThread, selectThreadInfo, selectThreadOriginChat, selectThreadTopMessageId,
+  selectUser, selectUserByPhoneNumber, selectVisibleUsers,
+} from '../../selectors';
+import { selectGroupCall } from '../../selectors/calls';
+import { selectCurrentLimit } from '../../selectors/limits';
 
 const TOP_CHAT_MESSAGES_PRELOAD_INTERVAL = 100;
 const INFINITE_LOOP_MARKER = 100;
@@ -86,6 +98,11 @@ const SERVICE_NOTIFICATIONS_USER_MOCK: ApiUser = {
   isMin: true,
   phoneNumber: '',
 };
+const CHATLIST_LIMIT_ERROR_LIST = new Set([
+  'FILTERS_TOO_MUCH',
+  'CHATLISTS_TOO_MUCH',
+  'INVITES_TOO_MUCH',
+]);
 
 const runThrottledForLoadTopChats = throttle((cb) => cb(), 3000, true);
 const runDebouncedForLoadFullChat = debounce((cb) => cb(), 500, false, true);
@@ -116,8 +133,34 @@ addActionHandler('preloadTopChatMessages', async (global, actions): Promise<void
 
 addActionHandler('openChat', (global, actions, payload): ActionReturnType => {
   const {
-    id, threadId = MAIN_THREAD_ID,
+    id, threadId = MAIN_THREAD_ID, noRequestThreadInfoUpdate, tabId = getCurrentTabId(),
   } = payload;
+
+  const currentMessageList = selectCurrentMessageList(global, tabId);
+  const currentChatId = currentMessageList?.chatId;
+  const currentThreadId = currentMessageList?.threadId;
+
+  if (currentChatId && (currentChatId !== id || currentThreadId !== threadId)) {
+    const [isChatOpened, isThreadOpened] = Object.values(global.byTabId)
+      .reduce(([accHasChatOpened, accHasThreadOpened], { id: otherTabId }) => {
+        if (otherTabId === tabId || (accHasChatOpened && accHasThreadOpened)) {
+          return [accHasChatOpened, accHasThreadOpened];
+        }
+
+        const otherMessageList = selectCurrentMessageList(global, otherTabId);
+        const isSameChat = otherMessageList?.chatId === currentChatId;
+        const isSameThread = isSameChat && otherMessageList?.threadId === currentThreadId;
+
+        return [accHasChatOpened || isSameChat, accHasThreadOpened || isSameThread];
+      }, [currentChatId === id, false]);
+
+    const shouldAbortChatRequests = !isChatOpened || !isThreadOpened;
+
+    if (shouldAbortChatRequests) {
+      callApi('abortChatRequests', { chatId: currentChatId, threadId: isChatOpened ? currentThreadId : undefined });
+    }
+  }
+
   if (!id) {
     return;
   }
@@ -141,8 +184,9 @@ addActionHandler('openChat', (global, actions, payload): ActionReturnType => {
   } else if (isChatSummaryOnly(chat) && !chat.isMin) {
     actions.requestChatUpdate({ chatId: id });
   }
+  actions.closeStoryViewer({ tabId });
 
-  if (threadId !== MAIN_THREAD_ID) {
+  if (threadId !== MAIN_THREAD_ID && !noRequestThreadInfoUpdate) {
     actions.requestThreadInfoUpdate({ chatId: id, threadId });
   }
 });
@@ -160,7 +204,9 @@ addActionHandler('openComments', async (global, actions, payload): Promise<void>
         return;
       }
 
-      actions.openChat({ id: TMP_CHAT_ID, tabId });
+      actions.openChat({
+        id, threadId, tabId, noRequestThreadInfoUpdate: true,
+      });
 
       const result = await callApi('requestThreadInfoUpdate', { chat, threadId, originChannelId });
       if (!result) {
@@ -171,9 +217,20 @@ addActionHandler('openComments', async (global, actions, payload): Promise<void>
       global = addUsers(global, buildCollectionByKey(result.users, 'id'));
       setGlobal(global);
 
-      actions.openChat({ id, threadId: result.topMessageId, tabId });
+      actions.openChat({
+        id,
+        threadId: result.topMessageId,
+        tabId,
+        shouldReplaceLast: true,
+        noRequestThreadInfoUpdate: true,
+      });
     } else {
-      actions.openChat({ id, threadId: topMessageId, tabId });
+      actions.openChat({
+        id,
+        threadId: topMessageId,
+        tabId,
+        noRequestThreadInfoUpdate: true,
+      });
     }
   }
 });
@@ -270,12 +327,13 @@ addActionHandler('loadAllChats', async (global, actions, payload): Promise<void>
         .sort((chat1, chat2) => getOrderDate(chat1)! - getOrderDate(chat2)!)[0]
       : undefined;
 
-    await loadChats(global,
+    await loadChats(
       listType,
       oldestChat?.id,
       oldestChat ? getOrderDate(oldestChat) : undefined,
       shouldReplace,
-      true);
+      true,
+    );
 
     if (shouldReplace) {
       onReplace?.();
@@ -287,21 +345,33 @@ addActionHandler('loadAllChats', async (global, actions, payload): Promise<void>
 });
 
 addActionHandler('loadFullChat', (global, actions, payload): ActionReturnType => {
-  const { chatId, force, tabId = getCurrentTabId() } = payload!;
+  const {
+    chatId, force, tabId = getCurrentTabId(), withPhotos,
+  } = payload!;
   const chat = selectChat(global, chatId);
   if (!chat) {
     return;
   }
 
+  const loadChat = async () => {
+    await loadFullChat(global, actions, chat, tabId);
+    if (withPhotos) {
+      actions.loadProfilePhotos({ profileId: chatId });
+    }
+  };
+
   if (force) {
-    loadFullChat(global, actions, chat, tabId);
+    void loadChat();
   } else {
-    runDebouncedForLoadFullChat(() => loadFullChat(global, actions, chat, tabId));
+    runDebouncedForLoadFullChat(loadChat);
   }
 });
 
-addActionHandler('loadTopChats', (global): ActionReturnType => {
-  runThrottledForLoadTopChats(() => loadChats(global, 'active'));
+addActionHandler('loadTopChats', (): ActionReturnType => {
+  runThrottledForLoadTopChats(() => {
+    loadChats('active');
+    loadChats('archived');
+  });
 });
 
 addActionHandler('requestChatUpdate', (global, actions, payload): ActionReturnType => {
@@ -320,28 +390,32 @@ addActionHandler('requestChatUpdate', (global, actions, payload): ActionReturnTy
 });
 
 addActionHandler('updateChatMutedState', (global, actions, payload): ActionReturnType => {
-  const { chatId, isMuted } = payload;
+  const { chatId, muteUntil = 0 } = payload;
   const chat = selectChat(global, chatId);
   if (!chat) {
     return;
   }
+
+  const isMuted = payload.isMuted ?? muteUntil > 0;
 
   global = updateChat(global, chatId, { isMuted });
   setGlobal(global);
-  void callApi('updateChatMutedState', { chat, isMuted });
+  void callApi('updateChatMutedState', { chat, isMuted, muteUntil });
 });
 
 addActionHandler('updateTopicMutedState', (global, actions, payload): ActionReturnType => {
-  const { chatId, isMuted, topicId } = payload;
+  const { chatId, topicId, muteUntil = 0 } = payload;
   const chat = selectChat(global, chatId);
   if (!chat) {
     return;
   }
+
+  const isMuted = payload.isMuted ?? muteUntil > 0;
 
   global = updateTopic(global, chatId, topicId, { isMuted });
   setGlobal(global);
   void callApi('updateTopicMutedState', {
-    chat, topicId, isMuted,
+    chat, topicId, isMuted, muteUntil,
   });
 });
 
@@ -735,12 +809,29 @@ addActionHandler('addChatFolder', async (global, actions, payload): Promise<void
   // Clear fields from recommended folders
   const { id: recommendedId, description, ...newFolder } = folder;
 
+  const newId = maxId + 1;
+  const folderUpdate = {
+    id: newId,
+    ...newFolder,
+  };
   await callApi('editChatFolder', {
-    id: maxId + 1,
-    folderUpdate: {
-      id: maxId + 1,
-      ...newFolder,
+    id: newId,
+    folderUpdate,
+  });
+
+  // Update called from the above `callApi` is throttled, but we need to apply changes immediately
+  actions.apiUpdate({
+    '@type': 'updateChatFolder',
+    id: newId,
+    folder: folderUpdate,
+  });
+
+  actions.requestNextSettingsScreen({
+    foldersAction: {
+      type: 'setFolderId',
+      payload: maxId + 1,
     },
+    tabId,
   });
 
   if (!description) {
@@ -880,7 +971,9 @@ addActionHandler('openTelegramLink', (global, actions, payload): ActionReturnTyp
     focusMessage,
     openInvoice,
     processAttachBotParameters,
+    checkChatlistInvite,
     openChatByUsername: openChatByUsernameAction,
+    openStoryViewerByUsername,
   } = actions;
 
   if (url.match(RE_TG_LINK)) {
@@ -908,6 +1001,7 @@ addActionHandler('openTelegramLink', (global, actions, payload): ActionReturnTyp
 
   const startAttach = params.hasOwnProperty('startattach') && !params.startattach ? true : params.startattach;
   const choose = parseChooseParameter(params.choose);
+  const storyId = part2 === 's' && (Number(part3) || undefined);
 
   if (part1.match(/^\+([0-9]+)(\?|$)/)) {
     openChatByPhoneNumber({
@@ -916,6 +1010,16 @@ addActionHandler('openTelegramLink', (global, actions, payload): ActionReturnTyp
       attach: params.attach,
       tabId,
     });
+    return;
+  }
+
+  if (storyId) {
+    openStoryViewerByUsername({
+      username: part1,
+      storyId,
+      tabId,
+    });
+
     return;
   }
 
@@ -938,14 +1042,23 @@ addActionHandler('openTelegramLink', (global, actions, payload): ActionReturnTyp
     return;
   }
 
+  if (part1 === 'share') {
+    const text = formatShareText(params.url, params.text);
+    openChatWithDraft({ text, tabId });
+    return;
+  }
+
+  if (part1 === 'addlist') {
+    const slug = part2;
+    checkChatlistInvite({ slug, tabId });
+    return;
+  }
+
   const chatOrChannelPostId = part2 || undefined;
   const messageId = part3 ? Number(part3) : undefined;
   const commentId = params.comment ? Number(params.comment) : undefined;
 
-  if (part1 === 'share') {
-    const text = formatShareText(params.url, params.text);
-    openChatWithDraft({ text, tabId });
-  } else if (params.hasOwnProperty('voicechat') || params.hasOwnProperty('livestream')) {
+  if (params.hasOwnProperty('voicechat') || params.hasOwnProperty('livestream')) {
     joinVoiceChatByLink({
       username: part1,
       inviteHash: params.voicechat || params.livestream,
@@ -990,6 +1103,8 @@ addActionHandler('openTelegramLink', (global, actions, payload): ActionReturnTyp
       startParam: params.start,
       startAttach,
       attach: params.attach,
+      startApp: params.startapp,
+      originalParts: [part1, part2, part3],
       tabId,
     });
   }
@@ -1007,11 +1122,13 @@ addActionHandler('acceptInviteConfirmation', async (global, actions, payload): P
 
 addActionHandler('openChatByUsername', async (global, actions, payload): Promise<void> => {
   const {
-    username, messageId, commentId, startParam, startAttach, attach, threadId,
+    username, messageId, commentId, startParam, startAttach, attach, threadId, originalParts, startApp,
     tabId = getCurrentTabId(),
   } = payload!;
 
   const chat = selectCurrentChat(global, tabId);
+  const webAppName = originalParts?.[1];
+  const isWebApp = webAppName && !Number(webAppName) && !originalParts?.[2];
 
   if (!commentId) {
     if (!startAttach && messageId && !startParam && chat?.usernames?.some((c) => c.username === username)) {
@@ -1020,13 +1137,15 @@ addActionHandler('openChatByUsername', async (global, actions, payload): Promise
       });
       return;
     }
-    await openChatByUsername(global, actions, username, threadId, messageId, startParam, startAttach, attach, tabId);
-    return;
+    if (!isWebApp) {
+      await openChatByUsername(global, actions, username, threadId, messageId, startParam, startAttach, attach, tabId);
+      return;
+    }
   }
 
   const { chatId, type } = selectCurrentMessageList(global, tabId) || {};
   const usernameChat = selectChatByUsername(global, username);
-  if (chatId && messageId && usernameChat && type === 'thread') {
+  if (chatId && commentId && messageId && usernameChat && type === 'thread') {
     const threadInfo = selectThreadInfo(global, chatId, messageId);
 
     if (threadInfo && threadInfo.chatId === chatId) {
@@ -1040,15 +1159,28 @@ addActionHandler('openChatByUsername', async (global, actions, payload): Promise
     }
   }
 
-  if (!messageId) return;
-
-  actions.openChat({ id: TMP_CHAT_ID, tabId });
+  if (!isWebApp) actions.openChat({ id: TMP_CHAT_ID, tabId });
 
   const chatByUsername = await fetchChatByUsername(global, username);
 
   if (!chatByUsername) return;
 
   global = getGlobal();
+
+  if (isWebApp && chatByUsername) {
+    const theme = extractCurrentThemeParams();
+
+    actions.requestAppWebView({
+      appName: webAppName,
+      botId: chatByUsername.id,
+      tabId,
+      startApp,
+      theme,
+    });
+    return;
+  }
+
+  if (!messageId) return;
 
   const threadInfo = selectThreadInfo(global, chatByUsername.id, messageId);
   let discussionChatId: string | undefined;
@@ -1088,13 +1220,7 @@ addActionHandler('togglePreHistoryHidden', async (global, actions, payload): Pro
   }
 
   global = getGlobal();
-
-  global = updateChat(global, chat.id, {
-    fullInfo: {
-      ...chat.fullInfo,
-      isPreHistoryHidden: isEnabled,
-    },
-  });
+  global = updateChatFullInfo(global, chat.id, { isPreHistoryHidden: isEnabled });
   setGlobal(global);
 
   void callApi('togglePreHistoryHidden', { chat, isEnabled });
@@ -1131,34 +1257,30 @@ addActionHandler('updateChatMemberBannedRights', async (global, actions, payload
 
   global = getGlobal();
 
-  const chatAfterUpdate = selectChat(global, chatId);
-
-  if (!chatAfterUpdate || !chatAfterUpdate.fullInfo) {
+  const updatedFullInfo = selectChatFullInfo(global, chat.id);
+  if (!updatedFullInfo) {
     return;
   }
 
-  const { members, kickedMembers } = chatAfterUpdate.fullInfo;
+  const { members, kickedMembers } = updatedFullInfo;
 
   const isBanned = Boolean(bannedRights.viewMessages);
   const isUnblocked = !Object.keys(bannedRights).length;
 
-  global = updateChat(global, chatId, {
-    fullInfo: {
-      ...chatAfterUpdate.fullInfo,
-      ...(members && isBanned && {
-        members: members.filter((m) => m.userId !== userId),
-      }),
-      ...(members && !isBanned && {
-        members: members.map((m) => (
-          m.userId === userId
-            ? { ...m, bannedRights }
-            : m
-        )),
-      }),
-      ...(isUnblocked && kickedMembers && {
-        kickedMembers: kickedMembers.filter((m) => m.userId !== userId),
-      }),
-    },
+  global = updateChatFullInfo(global, chat.id, {
+    ...(members && isBanned && {
+      members: members.filter((m) => m.userId !== userId),
+    }),
+    ...(members && !isBanned && {
+      members: members.map((m) => (
+        m.userId === userId
+          ? { ...m, bannedRights }
+          : m
+      )),
+    }),
+    ...(isUnblocked && kickedMembers && {
+      kickedMembers: kickedMembers.filter((m) => m.userId !== userId),
+    }),
   });
   setGlobal(global);
 });
@@ -1206,15 +1328,11 @@ addActionHandler('updateChatAdmin', async (global, actions, payload): Promise<vo
     }
   }
 
-  global = getGlobal();
-
-  global = updateChat(global, chatId, {
-    fullInfo: {
-      ...chatAfterUpdate.fullInfo,
-      ...(newAdminMembersById && { adminMembersById: newAdminMembersById }),
-    },
-  });
-  setGlobal(global);
+  if (newAdminMembersById) {
+    global = getGlobal();
+    global = updateChatFullInfo(global, chat.id, { adminMembersById: newAdminMembersById });
+    setGlobal(global);
+  }
 });
 
 addActionHandler('updateChat', async (global, actions, payload): Promise<void> => {
@@ -1223,6 +1341,7 @@ addActionHandler('updateChat', async (global, actions, payload): Promise<void> =
   } = payload;
 
   const chat = selectChat(global, chatId);
+  const fullInfo = selectChatFullInfo(global, chatId);
   if (!chat) {
     return;
   }
@@ -1235,7 +1354,7 @@ addActionHandler('updateChat', async (global, actions, payload): Promise<void> =
     chat.title !== title
       ? callApi('updateChatTitle', chat, title)
       : undefined,
-    chat.fullInfo && chat.fullInfo.about !== about
+    fullInfo?.about !== about
       ? callApi('updateChatAbout', chat, about)
       : undefined,
     photo
@@ -1246,19 +1365,18 @@ addActionHandler('updateChat', async (global, actions, payload): Promise<void> =
   global = getGlobal();
   global = updateManagementProgress(global, ManagementProgress.Complete, tabId);
   setGlobal(global);
+
+  if (photo) {
+    actions.loadFullChat({ chatId, tabId, withPhotos: true });
+  }
 });
 
 addActionHandler('updateChatPhoto', async (global, actions, payload): Promise<void> => {
   const { photo, chatId, tabId = getCurrentTabId() } = payload;
   const chat = selectChat(global, chatId);
   if (!chat) return;
-  global = updateChat(global, chatId, {
-    avatarHash: undefined,
-    fullInfo: {
-      ...chat.fullInfo,
-      profilePhoto: undefined,
-    },
-  });
+  global = updateChat(global, chatId, { avatarHash: undefined });
+  global = updateChatFullInfo(global, chatId, { profilePhoto: undefined });
   setGlobal(global);
   // This method creates a new entry in photos array
   await callApi('editChatPhoto', {
@@ -1268,8 +1386,7 @@ addActionHandler('updateChatPhoto', async (global, actions, payload): Promise<vo
   });
   // Explicitly delete the old photo reference
   await callApi('deleteProfilePhotos', [photo]);
-  actions.loadFullChat({ chatId, tabId });
-  actions.loadProfilePhotos({ profileId: chatId });
+  actions.loadFullChat({ chatId, tabId, withPhotos: true });
 });
 
 addActionHandler('deleteChatPhoto', async (global, actions, payload): Promise<void> => {
@@ -1283,13 +1400,8 @@ addActionHandler('deleteChatPhoto', async (global, actions, payload): Promise<vo
     if (nextPhoto) {
       photosToDelete.push(nextPhoto);
     }
-    global = updateChat(global, chatId, {
-      avatarHash: undefined,
-      fullInfo: {
-        ...chat.fullInfo,
-        profilePhoto: undefined,
-      },
-    });
+    global = updateChat(global, chatId, { avatarHash: undefined });
+    global = updateChatFullInfo(global, chatId, { profilePhoto: undefined });
     setGlobal(global);
     // Set next photo as avatar
     await callApi('editChatPhoto', {
@@ -1298,11 +1410,19 @@ addActionHandler('deleteChatPhoto', async (global, actions, payload): Promise<vo
       photo: nextPhoto,
     });
   }
+
+  const { photos = [] } = chat;
+
+  const newPhotos = photos.filter((p) => photosToDelete.some((toDelete) => toDelete.id !== p.id));
+  global = getGlobal();
+  global = updateChat(global, chatId, { photos: newPhotos });
+
+  setGlobal(global);
+
   // Delete references to the old photos
   const result = await callApi('deleteProfilePhotos', photosToDelete);
   if (!result) return;
-  actions.loadFullChat({ chatId, tabId });
-  actions.loadProfilePhotos({ profileId: chatId });
+  actions.loadFullChat({ chatId, tabId, withPhotos: true });
 });
 
 addActionHandler('toggleSignatures', (global, actions, payload): ActionReturnType => {
@@ -1354,7 +1474,7 @@ addActionHandler('linkDiscussionGroup', async (global, actions, payload): Promis
 
   if (!chat) return;
 
-  let { fullInfo } = chat;
+  let fullInfo = selectChatFullInfo(global, chat.id);
   if (!fullInfo) {
     const fullChat = await callApi('fetchFullChat', chat);
     if (!fullChat) {
@@ -1366,12 +1486,7 @@ addActionHandler('linkDiscussionGroup', async (global, actions, payload): Promis
 
   if (fullInfo!.isPreHistoryHidden) {
     global = getGlobal();
-    global = updateChat(global, chat.id, {
-      fullInfo: {
-        ...chat.fullInfo,
-        isPreHistoryHidden: false,
-      },
-    });
+    global = updateChatFullInfo(global, chat.id, { isPreHistoryHidden: false });
     setGlobal(global);
 
     await callApi('togglePreHistoryHidden', { chat, isEnabled: false });
@@ -1388,9 +1503,10 @@ addActionHandler('unlinkDiscussionGroup', async (global, actions, payload): Prom
     return;
   }
 
+  const fullInfo = selectChatFullInfo(global, channelId);
   let chat: ApiChat | undefined;
-  if (channel.fullInfo?.linkedChatId) {
-    chat = selectChat(global, channel.fullInfo.linkedChatId);
+  if (fullInfo?.linkedChatId) {
+    chat = selectChat(global, fullInfo.linkedChatId);
   }
 
   await callApi('setDiscussionGroup', { channel });
@@ -1435,7 +1551,7 @@ addActionHandler('loadMoreMembers', async (global, actions, payload): Promise<vo
     return;
   }
 
-  const offset = (chat.fullInfo?.members?.length) || undefined;
+  const offset = selectChatFullInfo(global, chat.id)?.members?.length;
   if (offset !== undefined && chat.membersCount !== undefined && offset >= chat.membersCount) return;
 
   const result = await callApi('fetchMembers', chat.id, chat.accessHash!, 'recent', offset);
@@ -1510,6 +1626,24 @@ addActionHandler('setChatEnabledReactions', async (global, actions, payload): Pr
   void loadFullChat(global, actions, chat, tabId);
 });
 
+addActionHandler('fetchChat', (global, actions, payload): ActionReturnType => {
+  const { chatId } = payload;
+  const chat = selectChat(global, chatId);
+
+  if (chat) {
+    return;
+  }
+
+  if (chatId === global.currentUserId) {
+    void callApi('fetchChat', { type: 'self' });
+  } else {
+    const user = selectUser(global, chatId);
+    if (user) {
+      void callApi('fetchChat', { type: 'user', user });
+    }
+  }
+});
+
 addActionHandler('loadChatSettings', async (global, actions, payload): Promise<void> => {
   const { chatId } = payload;
   const chat = selectChat(global, chatId);
@@ -1546,6 +1680,8 @@ addActionHandler('toggleJoinRequest', async (global, actions, payload): Promise<
 
 addActionHandler('openForumPanel', (global, actions, payload): ActionReturnType => {
   const { chatId, tabId = getCurrentTabId() } = payload;
+  actions.toggleStoryRibbon({ isShown: false, tabId });
+  actions.toggleStoryRibbon({ isShown: false, isArchived: true, tabId });
   return updateTabState(global, {
     forumPanelChatId: chatId,
   }, tabId);
@@ -1670,12 +1806,6 @@ addActionHandler('toggleForum', async (global, actions, payload): Promise<void> 
     return;
   }
 
-  global = getGlobal();
-
-  const prevIsForum = chat.isForum;
-  global = updateChat(global, chatId, { isForum: isEnabled });
-  setGlobal(global);
-
   let result: true | undefined;
   try {
     result = await callApi('toggleForum', { chat, isEnabled });
@@ -1687,10 +1817,16 @@ addActionHandler('toggleForum', async (global, actions, payload): Promise<void> 
     }
   }
 
-  if (!result) {
+  if (result) {
     global = getGlobal();
-    global = updateChat(global, chatId, { isForum: prevIsForum });
+    global = updateChat(global, chat.id, { isForum: isEnabled });
     setGlobal(global);
+
+    if (!isEnabled) {
+      actions.closeForumPanel({ tabId });
+    } else {
+      actions.openForumPanel({ chatId: chat.id, tabId });
+    }
   }
 });
 
@@ -1701,26 +1837,15 @@ addActionHandler('toggleParticipantsHidden', async (global, actions, payload): P
     return;
   }
 
-  const prevIsEnabled = chat.fullInfo?.areParticipantsHidden;
-
-  global = updateChat(global, chatId, {
-    fullInfo: {
-      ...chat.fullInfo,
-      areParticipantsHidden: isEnabled,
-    },
-  });
+  const prevIsEnabled = selectChatFullInfo(global, chat.id)?.areParticipantsHidden;
+  global = updateChatFullInfo(global, chatId, { areParticipantsHidden: isEnabled });
   setGlobal(global);
 
   const result = await callApi('toggleParticipantsHidden', { chat, isEnabled });
 
   if (!result && prevIsEnabled !== undefined) {
     global = getGlobal();
-    global = updateChat(global, chatId, {
-      fullInfo: {
-        ...chat.fullInfo,
-        areParticipantsHidden: prevIsEnabled,
-      },
-    });
+    global = updateChatFullInfo(global, chatId, { areParticipantsHidden: prevIsEnabled });
     setGlobal(global);
   }
 });
@@ -1817,15 +1942,321 @@ addActionHandler('toggleTopicPinned', (global, actions, payload): ActionReturnTy
   void callApi('togglePinnedTopic', { chat, topicId, isPinned });
 });
 
-async function loadChats<T extends GlobalState>(
-  global: T,
+addActionHandler('checkChatlistInvite', async (global, actions, payload): Promise<void> => {
+  const { slug, tabId = getCurrentTabId() } = payload;
+
+  const result = await callApi('checkChatlistInvite', { slug });
+  if (!result) {
+    actions.showNotification({
+      message: langProvider.translate('lng_group_invite_bad_link'),
+      tabId,
+    });
+    return;
+  }
+
+  global = getGlobal();
+
+  global = addUsers(global, buildCollectionByKey(result.users, 'id'));
+  global = addChats(global, buildCollectionByKey(result.chats, 'id'));
+
+  global = updateTabState(global, {
+    chatlistModal: {
+      invite: result.invite,
+    },
+  }, tabId);
+
+  setGlobal(global);
+});
+
+addActionHandler('joinChatlistInvite', async (global, actions, payload): Promise<void> => {
+  const { invite, peerIds, tabId = getCurrentTabId() } = payload;
+
+  const peers = peerIds.map((peerId) => selectChat(global, peerId)).filter(Boolean);
+  const notJoinedCount = peers.filter((peer) => peer.isNotJoined).length;
+
+  const folder = 'folderId' in invite ? selectChatFolder(global, invite.folderId) : undefined;
+  const folderTitle = 'title' in invite ? invite.title : folder?.title;
+
+  try {
+    const result = await callApi('joinChatlistInvite', { slug: invite.slug, peers });
+    if (!result) return;
+
+    actions.showNotification({
+      title: langProvider.translate(folder ? 'FolderLinkUpdatedTitle' : 'FolderLinkAddedTitle', folderTitle),
+      message: langProvider.translate('FolderLinkAddedSubtitle', notJoinedCount, 'i'),
+      tabId,
+    });
+  } catch (error) {
+    if ((error as ApiError).message === 'CHATLISTS_TOO_MUCH') {
+      actions.openLimitReachedModal({ limit: 'chatlistJoined', tabId });
+    } else {
+      actions.showDialog({ data: { ...(error as ApiError), hasErrorKey: true }, tabId });
+    }
+  }
+});
+
+addActionHandler('leaveChatlist', async (global, actions, payload): Promise<void> => {
+  const { folderId, peerIds, tabId = getCurrentTabId() } = payload;
+
+  const folder = selectChatFolder(global, folderId);
+
+  const peers = peerIds?.map((peerId) => selectChat(global, peerId)).filter(Boolean) || [];
+
+  const result = await callApi('leaveChatlist', { folderId, peers });
+
+  if (!result) return;
+
+  actions.showNotification({
+    title: langProvider.translate('FolderLinkDeletedTitle', folder.title),
+    message: langProvider.translate('FolderLinkDeletedSubtitle', peers.length, 'i'),
+    tabId,
+  });
+});
+
+addActionHandler('loadChatlistInvites', async (global, actions, payload): Promise<void> => {
+  const { folderId } = payload;
+
+  const result = await callApi('fetchChatlistInvites', { folderId });
+
+  if (!result) return;
+
+  global = getGlobal();
+
+  global = addUsers(global, buildCollectionByKey(result.users, 'id'));
+  global = addChats(global, buildCollectionByKey(result.chats, 'id'));
+  global = {
+    ...global,
+    chatFolders: {
+      ...global.chatFolders,
+      invites: {
+        ...global.chatFolders.invites,
+        [folderId]: result.invites,
+      },
+    },
+  };
+  setGlobal(global);
+});
+
+addActionHandler('createChatlistInvite', async (global, actions, payload): Promise<void> => {
+  const { folderId, tabId = getCurrentTabId() } = payload;
+
+  const folder = selectChatFolder(global, folderId);
+  if (!folder) return;
+
+  global = updateTabState(global, {
+    shareFolderScreen: {
+      ...selectTabState(global, tabId).shareFolderScreen!,
+      isLoading: true,
+    },
+  }, tabId);
+  setGlobal(global);
+
+  let result: { filter: ApiChatFolder; invite: ApiChatlistExportedInvite | undefined } | undefined;
+
+  try {
+    result = await callApi('createChalistInvite', {
+      folderId,
+      peers: folder.includedChatIds.concat(folder.pinnedChatIds || [])
+        .map((chatId) => selectChat(global, chatId) || selectUser(global, chatId)).filter(Boolean),
+    });
+  } catch (error) {
+    if (CHATLIST_LIMIT_ERROR_LIST.has((error as ApiError).message)) {
+      actions.openLimitReachedModal({ limit: 'chatlistInvites', tabId });
+      actions.requestNextSettingsScreen({ screen: SettingsScreens.Folders, tabId });
+    } else {
+      actions.showDialog({ data: { ...(error as ApiError), hasErrorKey: true }, tabId });
+    }
+  }
+
+  if (!result || !result.invite) return;
+
+  const { shareFolderScreen } = selectTabState(global, tabId);
+
+  if (!shareFolderScreen) return;
+
+  global = getGlobal();
+  global = {
+    ...global,
+    chatFolders: {
+      ...global.chatFolders,
+      byId: {
+        ...global.chatFolders.byId,
+        [folderId]: {
+          ...global.chatFolders.byId[folderId],
+          ...result.filter,
+        },
+      },
+      invites: {
+        ...global.chatFolders.invites,
+        [folderId]: [
+          ...(global.chatFolders.invites[folderId] || []),
+          result.invite,
+        ],
+      },
+    },
+  };
+  global = updateTabState(global, {
+    shareFolderScreen: {
+      ...shareFolderScreen,
+      url: result.invite.url,
+      isLoading: false,
+    },
+  }, tabId);
+  setGlobal(global);
+});
+
+addActionHandler('editChatlistInvite', async (global, actions, payload): Promise<void> => {
+  const {
+    folderId, peerIds, url, tabId = getCurrentTabId(),
+  } = payload;
+
+  const slug = url.split('/').pop();
+  if (!slug) return;
+
+  const peers = peerIds
+    .map((chatId) => selectChat(global, chatId) || selectUser(global, chatId)).filter(Boolean);
+
+  global = updateTabState(global, {
+    shareFolderScreen: {
+      ...selectTabState(global, tabId).shareFolderScreen!,
+      isLoading: true,
+    },
+  }, tabId);
+  setGlobal(global);
+
+  try {
+    const result = await callApi('editChatlistInvite', { folderId, slug, peers });
+
+    if (!result) {
+      return;
+    }
+
+    global = getGlobal();
+    global = {
+      ...global,
+      chatFolders: {
+        ...global.chatFolders,
+        invites: {
+          ...global.chatFolders.invites,
+          [folderId]: global.chatFolders.invites[folderId]?.map((invite) => {
+            if (invite.url === url) {
+              return result;
+            }
+            return invite;
+          }),
+        },
+      },
+    };
+    setGlobal(global);
+  } catch (error) {
+    actions.showDialog({ data: { ...(error as ApiError), hasErrorKey: true }, tabId });
+  } finally {
+    global = getGlobal();
+
+    global = updateTabState(global, {
+      shareFolderScreen: {
+        ...selectTabState(global, tabId).shareFolderScreen!,
+        isLoading: false,
+      },
+    }, tabId);
+    setGlobal(global);
+  }
+});
+
+addActionHandler('deleteChatlistInvite', async (global, actions, payload): Promise<void> => {
+  const { folderId, url } = payload;
+
+  const slug = url.split('/').pop();
+
+  if (!slug) return;
+
+  const result = await callApi('deleteChatlistInvite', { folderId, slug });
+
+  if (!result) return;
+
+  global = getGlobal();
+  global = {
+    ...global,
+    chatFolders: {
+      ...global.chatFolders,
+      invites: {
+        ...global.chatFolders.invites,
+        [folderId]: global.chatFolders.invites[folderId]?.filter((invite) => invite.url !== url),
+      },
+    },
+  };
+  setGlobal(global);
+});
+
+addActionHandler('openDeleteChatFolderModal', async (global, actions, payload): Promise<void> => {
+  const { folderId, isConfirmedForChatlist, tabId = getCurrentTabId() } = payload;
+  const folder = selectChatFolder(global, folderId);
+  if (!folder) return;
+
+  if (folder.isChatList && (!folder.hasMyInvites || isConfirmedForChatlist)) {
+    const suggestions = await callApi('fetchLeaveChatlistSuggestions', { folderId });
+    global = getGlobal();
+    global = updateTabState(global, {
+      chatlistModal: {
+        removal: {
+          folderId,
+          suggestedPeerIds: suggestions,
+        },
+      },
+    }, tabId);
+    setGlobal(global);
+    return;
+  }
+
+  global = updateTabState(global, {
+    deleteFolderDialogModal: folderId,
+  }, tabId);
+
+  setGlobal(global);
+});
+
+addActionHandler('updateChatDetectedLanguage', (global, actions, payload): ActionReturnType => {
+  const { chatId, detectedLanguage } = payload;
+
+  global = getGlobal();
+  global = updateChat(global, chatId, {
+    detectedLanguage,
+  });
+
+  return global;
+});
+
+addActionHandler('togglePeerTranslations', async (global, actions, payload): Promise<void> => {
+  const { chatId, isEnabled } = payload;
+  const chat = selectChat(global, chatId);
+  if (!chat) return;
+
+  const result = await callApi('togglePeerTranslations', { chat, isEnabled });
+
+  if (result === undefined) return;
+
+  global = getGlobal();
+  if (isUserId(chatId)) {
+    global = updateUserFullInfo(global, chatId, {
+      isTranslationDisabled: isEnabled ? undefined : true,
+    });
+  } else {
+    global = updateChatFullInfo(global, chatId, {
+      isTranslationDisabled: isEnabled ? undefined : true,
+    });
+  }
+  setGlobal(global);
+});
+
+async function loadChats(
   listType: 'active' | 'archived',
   offsetId?: string,
   offsetDate?: number,
   shouldReplace = false,
   isFullDraftSync?: boolean,
 ) {
-  global = getGlobal();
+  // eslint-disable-next-line eslint-multitab-tt/no-immediate-global
+  let global = getGlobal();
   let lastLocalServiceMessage = selectLastServiceNotification(global)?.message;
   const result = await callApi('fetchChats', {
     limit: CHAT_LIST_LOAD_SLICE,
@@ -1981,21 +2412,21 @@ export async function loadFullChat<T extends GlobalState>(
     global = updateGroupCall(
       global,
       groupCall.id!,
-      omit(groupCall, ['connectionState']),
+      omit(groupCall, ['connectionState', 'isLoaded']),
       undefined,
       existingGroupCall ? undefined : groupCall.participantsCount,
     );
   }
 
-  global = updateChat(global, chat.id, {
-    fullInfo,
-    ...(membersCount && { membersCount }),
-  });
-
+  if (membersCount !== undefined) {
+    global = updateChat(global, chat.id, { membersCount });
+  }
+  global = replaceChatFullInfo(global, chat.id, fullInfo);
   setGlobal(global);
 
   const stickerSet = fullInfo.stickerSet;
-  if (stickerSet) {
+  const localSet = stickerSet && selectStickerSet(global, stickerSet);
+  if (stickerSet && !localSet) {
     actions.loadStickers({
       stickerSetInfo: {
         id: stickerSet.id,
@@ -2067,12 +2498,11 @@ export async function fetchChatByPhoneNumber<T extends GlobalState>(global: T, p
 
   global = getGlobal();
   global = updateChat(global, chat.id, chat);
-  setGlobal(global);
 
   if (user) {
     global = updateUser(global, user.id, user);
-    setGlobal(global);
   }
+  setGlobal(global);
 
   return chat;
 }
@@ -2211,6 +2641,7 @@ export async function ensureIsSuperGroup<T extends GlobalState>(
     return undefined;
   }
 
+  actions.loadFullChat({ chatId: newChat.id, tabId });
   actions.openChat({ id: newChat.id, tabId });
 
   return newChat;

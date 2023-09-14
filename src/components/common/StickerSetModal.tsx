@@ -1,36 +1,41 @@
+import type { FC } from '../../lib/teact/teact';
 import React, {
   memo, useCallback, useEffect, useMemo, useRef,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { FC } from '../../lib/teact/teact';
 import type { ApiSticker, ApiStickerSet } from '../../api/types';
+import type { MessageList } from '../../global/types';
 
 import { EMOJI_SIZE_MODAL, STICKER_SIZE_MODAL, TME_LINK_PREFIX } from '../../config';
+import { getAllowedAttachmentOptions, getCanPostInChat } from '../../global/helpers';
 import {
   selectCanScheduleUntilOnline,
   selectChat,
   selectCurrentMessageList,
-  selectIsChatWithSelf, selectIsCurrentUserPremium,
+  selectIsChatWithSelf,
+  selectIsCurrentUserPremium,
   selectShouldSchedule,
-  selectStickerSet, selectThreadInfo,
+  selectStickerSet,
+  selectThreadInfo,
 } from '../../global/selectors';
-import renderText from './helpers/renderText';
+import buildClassName from '../../util/buildClassName';
 import { copyTextToClipboard } from '../../util/clipboard';
-import { getAllowedAttachmentOptions, getCanPostInChat } from '../../global/helpers';
+import renderText from './helpers/renderText';
 
+import useAppLayout from '../../hooks/useAppLayout';
 import { useIntersectionObserver } from '../../hooks/useIntersectionObserver';
 import useLang from '../../hooks/useLang';
-import useAppLayout from '../../hooks/useAppLayout';
-import useSchedule from '../../hooks/useSchedule';
 import usePrevious from '../../hooks/usePrevious';
+import useSchedule from '../../hooks/useSchedule';
+import useScrolledState from '../../hooks/useScrolledState';
 
-import Modal from '../ui/Modal';
 import Button from '../ui/Button';
-import Loading from '../ui/Loading';
-import StickerButton from './StickerButton';
 import DropdownMenu from '../ui/DropdownMenu';
+import Loading from '../ui/Loading';
 import MenuItem from '../ui/MenuItem';
+import Modal from '../ui/Modal';
+import StickerButton from './StickerButton';
 
 import './StickerSetModal.scss';
 
@@ -42,12 +47,14 @@ export type OwnProps = {
 };
 
 type StateProps = {
+  currentMessageList?: MessageList;
   canSendStickers?: boolean;
   stickerSet?: ApiStickerSet;
   canScheduleUntilOnline?: boolean;
   shouldSchedule?: boolean;
   isSavedMessages?: boolean;
   isCurrentUserPremium?: boolean;
+  shouldUpdateStickerSetOrder?: boolean;
 };
 
 const INTERSECTION_THROTTLE = 200;
@@ -62,6 +69,8 @@ const StickerSetModal: FC<OwnProps & StateProps> = ({
   shouldSchedule,
   isSavedMessages,
   isCurrentUserPremium,
+  shouldUpdateStickerSetOrder,
+  currentMessageList,
   onClose,
 }) => {
   const {
@@ -87,6 +96,10 @@ const StickerSetModal: FC<OwnProps & StateProps> = ({
   const isEmoji = renderingStickerSet?.isEmoji;
 
   const [requestCalendar, calendar] = useSchedule(canScheduleUntilOnline);
+  const {
+    handleScroll: handleContentScroll,
+    isAtBeginning: shouldHideTopBorder,
+  } = useScrolledState();
 
   const {
     observe: observeIntersection,
@@ -101,6 +114,9 @@ const StickerSetModal: FC<OwnProps & StateProps> = ({
   }, [isOpen, fromSticker, loadStickers, stickerSetShortName, renderingStickerSet]);
 
   const handleSelect = useCallback((sticker: ApiSticker, isSilent?: boolean, isScheduleRequested?: boolean) => {
+    if (!currentMessageList) {
+      return;
+    }
     sticker = {
       ...sticker,
       isPreloadedGlobally: true,
@@ -109,15 +125,20 @@ const StickerSetModal: FC<OwnProps & StateProps> = ({
     if (shouldSchedule || isScheduleRequested) {
       requestCalendar((scheduledAt) => {
         sendMessage({
-          sticker, isSilent, scheduledAt,
+          messageList: currentMessageList, sticker, isSilent, scheduledAt,
         });
         onClose();
       });
     } else {
-      sendMessage({ sticker, isSilent, shouldUpdateStickerSetsOrder: isAdded });
+      sendMessage({
+        messageList: currentMessageList,
+        sticker,
+        isSilent,
+        shouldUpdateStickerSetOrder: shouldUpdateStickerSetOrder && isAdded,
+      });
       onClose();
     }
-  }, [onClose, requestCalendar, sendMessage, shouldSchedule, isAdded]);
+  }, [currentMessageList, shouldSchedule, requestCalendar, onClose, shouldUpdateStickerSetOrder, isAdded]);
 
   const handleButtonClick = useCallback(() => {
     if (renderingStickerSet) {
@@ -160,16 +181,18 @@ const StickerSetModal: FC<OwnProps & StateProps> = ({
         onClick={onTrigger}
         ariaLabel="More actions"
       >
-        <i className="icon-more" />
+        <i className="icon icon-more" />
       </Button>
     );
   }, [isMobile]);
 
   function renderHeader() {
+    const fullClassName = buildClassName('modal-header', !shouldHideTopBorder && 'with-top-border');
+
     return (
-      <div className="modal-header" dir={lang.isRtl ? 'rtl' : undefined}>
+      <div className={fullClassName} dir={lang.isRtl ? 'rtl' : undefined}>
         <Button round color="translucent" size="smaller" ariaLabel={lang('Close')} onClick={onClose}>
-          <i className="icon-close" />
+          <i className="icon icon-close" />
         </Button>
         <div className="modal-title">
           {renderingStickerSet ? renderText(renderingStickerSet.title, ['emoji', 'links']) : lang('AccDescrStickerSet')}
@@ -187,15 +210,15 @@ const StickerSetModal: FC<OwnProps & StateProps> = ({
 
   return (
     <Modal
-      className="StickerSetModal"
+      className={buildClassName('StickerSetModal', isEmoji && 'custom-emoji')}
       isOpen={isOpen}
       onClose={onClose}
       header={renderHeader()}
     >
       {renderingStickerSet?.stickers ? (
         <>
-          <div ref={containerRef} className="stickers custom-scroll">
-            <div className="shared-canvas-container">
+          <div ref={containerRef} className="stickers custom-scroll" onScroll={handleContentScroll}>
+            <div className="shared-canvas-container stickers-grid">
               <canvas ref={sharedCanvasRef} className="shared-canvas" />
               {renderingStickerSet.stickers.map((sticker) => (
                 <StickerButton
@@ -255,6 +278,8 @@ export default memo(withGlobal<OwnProps>(
       shouldSchedule: selectShouldSchedule(global),
       stickerSet,
       isCurrentUserPremium: selectIsCurrentUserPremium(global),
+      shouldUpdateStickerSetOrder: global.settings.byKey.shouldUpdateStickerSetOrder,
+      currentMessageList,
     };
   },
 )(StickerSetModal));

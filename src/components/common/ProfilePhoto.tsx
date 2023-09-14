@@ -1,30 +1,32 @@
+import type { FC, TeactNode } from '../../lib/teact/teact';
 import React, { memo, useEffect, useRef } from '../../lib/teact/teact';
 
-import type { FC, TeactNode } from '../../lib/teact/teact';
 import type { ApiChat, ApiPhoto, ApiUser } from '../../api/types';
 
-import { IS_CANVAS_FILTER_SUPPORTED } from '../../util/environment';
 import {
   getChatAvatarHash,
   getChatTitle,
   getUserColorKey,
   getUserFullName,
-  isUserId,
+  getVideoAvatarMediaHash,
   isChatWithRepliesBot,
-  isDeletedUser, getVideoAvatarMediaHash,
+  isDeletedUser,
+  isUserId,
 } from '../../global/helpers';
-import renderText from './helpers/renderText';
 import buildClassName from '../../util/buildClassName';
 import { getFirstLetters } from '../../util/textFormat';
-import useMedia from '../../hooks/useMedia';
-import useLang from '../../hooks/useLang';
-import useFlag from '../../hooks/useFlag';
-import useMediaTransition from '../../hooks/useMediaTransition';
-import useCanvasBlur from '../../hooks/useCanvasBlur';
-import useAppLayout from '../../hooks/useAppLayout';
+import { IS_CANVAS_FILTER_SUPPORTED } from '../../util/windowEnvironment';
+import renderText from './helpers/renderText';
 
-import Spinner from '../ui/Spinner';
+import useAppLayout from '../../hooks/useAppLayout';
+import useCanvasBlur from '../../hooks/useCanvasBlur';
+import useFlag from '../../hooks/useFlag';
+import useLang from '../../hooks/useLang';
+import useMedia from '../../hooks/useMedia';
+import useMediaTransition from '../../hooks/useMediaTransition';
+
 import OptimizedVideo from '../ui/OptimizedVideo';
+import Spinner from '../ui/Spinner';
 
 import './ProfilePhoto.scss';
 
@@ -33,7 +35,6 @@ type OwnProps = {
   user?: ApiUser;
   isSavedMessages?: boolean;
   photo?: ApiPhoto;
-  lastSyncTime?: number;
   canPlayVideo: boolean;
   onClick: NoneToVoidFunction;
 };
@@ -44,7 +45,6 @@ const ProfilePhoto: FC<OwnProps> = ({
   photo,
   isSavedMessages,
   canPlayVideo,
-  lastSyncTime,
   onClick,
 }) => {
   // eslint-disable-next-line no-null/no-null
@@ -56,31 +56,27 @@ const ProfilePhoto: FC<OwnProps> = ({
   const isDeleted = user && isDeletedUser(user);
   const isRepliesChat = chat && isChatWithRepliesBot(chat.id);
   const userOrChat = user || chat;
-  const currentPhoto = photo
-    || user?.fullInfo?.personalPhoto
-    || userOrChat?.fullInfo?.profilePhoto
-    || user?.fullInfo?.fallbackPhoto;
   const canHaveMedia = userOrChat && !isSavedMessages && !isDeleted && !isRepliesChat;
-  const { isVideo } = currentPhoto || {};
+  const { isVideo } = photo || {};
 
-  const avatarHash = canHaveMedia && getChatAvatarHash(userOrChat, 'normal', 'photo');
-  const avatarBlobUrl = useMedia(avatarHash, undefined, undefined, lastSyncTime);
+  const avatarHash = canHaveMedia && getChatAvatarHash(userOrChat, 'normal');
+  const avatarBlobUrl = useMedia(avatarHash);
 
-  const photoHash = canHaveMedia && currentPhoto && !isVideo && `photo${currentPhoto.id}?size=c`;
-  const photoBlobUrl = useMedia(photoHash, undefined, undefined, lastSyncTime);
+  const photoHash = canHaveMedia && photo && !isVideo && `photo${photo.id}?size=c`;
+  const photoBlobUrl = useMedia(photoHash);
 
-  const videoHash = canHaveMedia && currentPhoto && isVideo && getVideoAvatarMediaHash(currentPhoto);
-  const videoBlobUrl = useMedia(videoHash, undefined, undefined, lastSyncTime);
+  const videoHash = canHaveMedia && photo && isVideo && getVideoAvatarMediaHash(photo);
+  const videoBlobUrl = useMedia(videoHash);
 
   const fullMediaData = videoBlobUrl || photoBlobUrl;
   const [isVideoReady, markVideoReady] = useFlag();
   const isFullMediaReady = Boolean(fullMediaData && (!isVideo || isVideoReady));
   const transitionClassNames = useMediaTransition(isFullMediaReady);
-  const isBlurredThumb = canHaveMedia && !isFullMediaReady && !avatarBlobUrl && currentPhoto?.thumbnail?.dataUri;
+  const isBlurredThumb = canHaveMedia && !isFullMediaReady && !avatarBlobUrl && photo?.thumbnail?.dataUri;
   const blurredThumbCanvasRef = useCanvasBlur(
-    currentPhoto?.thumbnail?.dataUri, !isBlurredThumb, isMobile && !IS_CANVAS_FILTER_SUPPORTED,
+    photo?.thumbnail?.dataUri, !isBlurredThumb, isMobile && !IS_CANVAS_FILTER_SUPPORTED,
   );
-  const hasMedia = currentPhoto || avatarBlobUrl || isBlurredThumb;
+  const hasMedia = photo || avatarBlobUrl || isBlurredThumb;
 
   useEffect(() => {
     if (videoRef.current && !canPlayVideo) {
@@ -91,11 +87,11 @@ const ProfilePhoto: FC<OwnProps> = ({
   let content: TeactNode | undefined;
 
   if (isSavedMessages) {
-    content = <i className="icon-avatar-saved-messages" />;
+    content = <i className="icon icon-avatar-saved-messages" />;
   } else if (isDeleted) {
-    content = <i className="icon-avatar-deleted-account" />;
+    content = <i className="icon icon-avatar-deleted-account" />;
   } else if (isRepliesChat) {
-    content = <i className="icon-reply-filled" />;
+    content = <i className="icon icon-reply-filled" />;
   } else if (hasMedia) {
     content = (
       <>
@@ -104,7 +100,7 @@ const ProfilePhoto: FC<OwnProps> = ({
         ) : (
           <img src={avatarBlobUrl} className="thumb" alt="" />
         )}
-        {currentPhoto && (
+        {photo && (
           isVideo ? (
             <OptimizedVideo
               canPlay={canPlayVideo}

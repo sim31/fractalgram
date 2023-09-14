@@ -1,6 +1,8 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo } from '../../../lib/teact/teact';
+import React from '../../../lib/teact/teact';
+
 import type { OwnProps } from './BotCommandMenu';
+
 import { Bundles } from '../../../util/moduleLoader';
 
 import useModuleLoader from '../../../hooks/useModuleLoader';
@@ -13,4 +15,4 @@ const BotCommandMenuAsync: FC<OwnProps> = (props) => {
   return BotCommandMenu ? <BotCommandMenu {...props} /> : undefined;
 };
 
-export default memo(BotCommandMenuAsync);
+export default BotCommandMenuAsync;

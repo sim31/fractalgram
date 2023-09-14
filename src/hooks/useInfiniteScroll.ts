@@ -1,8 +1,10 @@
-import { useCallback, useRef } from '../lib/teact/teact';
+import { useRef } from '../lib/teact/teact';
+
 import { LoadMoreDirection } from '../types';
 
 import { areSortedArraysEqual } from '../util/iteratees';
 import useForceUpdate from './useForceUpdate';
+import useLastCallback from './useLastCallback';
 import usePrevious from './usePrevious';
 
 type GetMore = (args: { direction: LoadMoreDirection }) => void;
@@ -16,45 +18,49 @@ const useInfiniteScroll = <ListId extends string | number>(
   isDisabled = false,
   listSlice = DEFAULT_LIST_SLICE,
 ): [ListId[]?, GetMore?] => {
-  const lastParamsRef = useRef<{
+  const requestParamsRef = useRef<{
     direction?: LoadMoreDirection;
     offsetId?: ListId;
   }>();
 
-  const viewportIdsRef = useRef<ListId[] | undefined>((() => {
-    // Only run once to initialize
-    if (!listIds || lastParamsRef.current) {
-      return undefined;
-    }
-
-    const { newViewportIds } = getViewportSlice(listIds, LoadMoreDirection.Forwards, listSlice, listIds[0]);
-    return newViewportIds;
-  })());
+  const currentStateRef = useRef<{ viewportIds: ListId[]; isOnTop: boolean } | undefined>();
+  if (!currentStateRef.current && listIds && !isDisabled) {
+    const {
+      newViewportIds,
+      newIsOnTop,
+    } = getViewportSlice(listIds, LoadMoreDirection.Forwards, listSlice, listIds[0]);
+    currentStateRef.current = { viewportIds: newViewportIds, isOnTop: newIsOnTop };
+  }
 
   const forceUpdate = useForceUpdate();
 
   if (isDisabled) {
-    lastParamsRef.current = {};
+    requestParamsRef.current = {};
   }
 
   const prevListIds = usePrevious(listIds);
   const prevIsDisabled = usePrevious(isDisabled);
   if (listIds && !isDisabled && (listIds !== prevListIds || isDisabled !== prevIsDisabled)) {
-    const { offsetId = listIds[0], direction = LoadMoreDirection.Forwards } = lastParamsRef.current || {};
-    const { newViewportIds } = getViewportSlice(listIds, direction, listSlice, offsetId);
+    const { viewportIds, isOnTop } = currentStateRef.current || {};
+    const currentMiddleId = viewportIds && !isOnTop ? viewportIds[Math.round(viewportIds.length / 2)] : undefined;
+    const defaultOffsetId = currentMiddleId && listIds.includes(currentMiddleId) ? currentMiddleId : listIds[0];
+    const { offsetId = defaultOffsetId, direction = LoadMoreDirection.Forwards } = requestParamsRef.current || {};
+    const { newViewportIds, newIsOnTop } = getViewportSlice(listIds, direction, listSlice, offsetId);
 
-    if (!viewportIdsRef.current || !areSortedArraysEqual(viewportIdsRef.current, newViewportIds)) {
-      viewportIdsRef.current = newViewportIds;
+    requestParamsRef.current = {};
+
+    if (!viewportIds || !areSortedArraysEqual(viewportIds, newViewportIds)) {
+      currentStateRef.current = { viewportIds: newViewportIds, isOnTop: newIsOnTop };
     }
   } else if (!listIds) {
-    viewportIdsRef.current = undefined;
+    currentStateRef.current = undefined;
   }
 
-  const getMore: GetMore = useCallback(({
+  const getMore: GetMore = useLastCallback(({
     direction,
     noScroll,
   }: { direction: LoadMoreDirection; noScroll?: boolean }) => {
-    const viewportIds = viewportIdsRef.current;
+    const { viewportIds } = currentStateRef.current || {};
 
     const offsetId = viewportIds
       ? direction === LoadMoreDirection.Backwards ? viewportIds[viewportIds.length - 1] : viewportIds[0]
@@ -68,25 +74,25 @@ const useInfiniteScroll = <ListId extends string | number>(
       return;
     }
 
-    if (!noScroll) {
-      lastParamsRef.current = { ...lastParamsRef.current, direction, offsetId };
-    }
-
     const {
-      newViewportIds, areSomeLocal, areAllLocal,
+      newViewportIds, areSomeLocal, areAllLocal, newIsOnTop,
     } = getViewportSlice(listIds, direction, listSlice, offsetId);
 
     if (areSomeLocal && !(viewportIds && areSortedArraysEqual(viewportIds, newViewportIds))) {
-      viewportIdsRef.current = newViewportIds;
+      currentStateRef.current = { viewportIds: newViewportIds, isOnTop: newIsOnTop };
       forceUpdate();
     }
 
     if (!areAllLocal && loadMoreBackwards) {
+      if (!noScroll) {
+        requestParamsRef.current = { ...requestParamsRef.current, direction, offsetId };
+      }
+
       loadMoreBackwards({ offsetId });
     }
-  }, [listIds, listSlice, loadMoreBackwards, forceUpdate]);
+  });
 
-  return isDisabled ? [listIds] : [viewportIdsRef.current, getMore];
+  return isDisabled ? [listIds] : [currentStateRef.current?.viewportIds, getMore];
 };
 
 function getViewportSlice<ListId extends string | number>(
@@ -107,7 +113,7 @@ function getViewportSlice<ListId extends string | number>(
   let areAllLocal;
   switch (direction) {
     case LoadMoreDirection.Forwards:
-      areSomeLocal = indexForDirection > 0;
+      areSomeLocal = indexForDirection >= 0;
       areAllLocal = from >= 0;
       break;
     case LoadMoreDirection.Backwards:
@@ -116,7 +122,12 @@ function getViewportSlice<ListId extends string | number>(
       break;
   }
 
-  return { newViewportIds, areSomeLocal, areAllLocal };
+  return {
+    newViewportIds,
+    areSomeLocal,
+    areAllLocal,
+    newIsOnTop: newViewportIds[0] === sourceIds[0],
+  };
 }
 
 export default useInfiniteScroll;

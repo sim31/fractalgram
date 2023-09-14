@@ -1,22 +1,74 @@
-import type { ChatConsensusMessages, TabState, GlobalState } from './types';
+import type { PerformanceType } from '../types';
+import type { ChatConsensusMessages, GlobalState, TabState } from './types';
 import { NewChatMembersProgress } from '../types';
 
 import {
-  ANIMATION_LEVEL_DEFAULT, DARK_THEME_PATTERN_COLOR,
-  DEFAULT_PLATFORM, DEFAULT_MESSAGE_TEXT_SIZE_PX, DEFAULT_PATTERN_COLOR,
+  ANIMATION_LEVEL_DEFAULT,
+  DARK_THEME_PATTERN_COLOR,
+  DEFAULT_MESSAGE_TEXT_SIZE_PX,
+  DEFAULT_PATTERN_COLOR,
+  DEFAULT_PLATFORM,
   DEFAULT_PLAYBACK_RATE,
   DEFAULT_VOLUME,
-  IOS_DEFAULT_MESSAGE_TEXT_SIZE_PX, MACOS_DEFAULT_MESSAGE_TEXT_SIZE_PX,
+  IOS_DEFAULT_MESSAGE_TEXT_SIZE_PX,
+  MACOS_DEFAULT_MESSAGE_TEXT_SIZE_PX,
 } from '../config';
-import { IS_IOS, IS_MAC_OS } from '../util/environment';
+import { IS_IOS, IS_MAC_OS } from '../util/windowEnvironment';
+
+export const INITIAL_PERFORMANCE_STATE_MAX: PerformanceType = {
+  animatedEmoji: true,
+  autoplayGifs: true,
+  autoplayVideos: true,
+  contextMenuAnimations: true,
+  contextMenuBlur: true,
+  loopAnimatedStickers: true,
+  mediaViewerAnimations: true,
+  messageComposerAnimations: true,
+  messageSendingAnimations: true,
+  pageTransitions: true,
+  reactionEffects: true,
+  rightColumnAnimations: true,
+  stickerEffects: true,
+};
+
+export const INITIAL_PERFORMANCE_STATE_MID: PerformanceType = {
+  animatedEmoji: true,
+  autoplayGifs: true,
+  autoplayVideos: true,
+  contextMenuAnimations: true,
+  contextMenuBlur: true,
+  loopAnimatedStickers: true,
+  mediaViewerAnimations: true,
+  messageComposerAnimations: true,
+  messageSendingAnimations: true,
+  pageTransitions: true,
+  reactionEffects: true,
+  rightColumnAnimations: false,
+  stickerEffects: false,
+};
+
+export const INITIAL_PERFORMANCE_STATE_MIN: PerformanceType = {
+  animatedEmoji: false,
+  autoplayGifs: false,
+  autoplayVideos: false,
+  contextMenuAnimations: false,
+  contextMenuBlur: false,
+  loopAnimatedStickers: false,
+  mediaViewerAnimations: false,
+  messageComposerAnimations: false,
+  messageSendingAnimations: false,
+  pageTransitions: false,
+  reactionEffects: false,
+  rightColumnAnimations: false,
+  stickerEffects: false,
+};
 
 export const INITIAL_GLOBAL_STATE: GlobalState = {
   attachMenu: { bots: {} },
-  blurredTabTokens: [],
   passcode: {},
   twoFaSettings: {},
-  serverTimeOffset: 0,
   isUpdateAvailable: false,
+  shouldShowContextMenuHint: true,
 
   audioPlayer: {
     lastPlaybackRate: DEFAULT_PLAYBACK_RATE,
@@ -40,6 +92,7 @@ export const INITIAL_GLOBAL_STATE: GlobalState = {
   users: {
     byId: {},
     statusesById: {},
+    fullInfoById: {},
   },
 
   chats: {
@@ -48,11 +101,23 @@ export const INITIAL_GLOBAL_STATE: GlobalState = {
     orderedPinnedIds: {},
     totalCount: {},
     byId: {},
+    fullInfoById: {},
   },
 
   messages: {
     byChatId: {},
     sponsoredByChatId: {},
+  },
+
+  stories: {
+    byUserId: {},
+    orderedUserIds: {
+      archived: [],
+      active: [],
+    },
+    hasNext: true,
+    hasNextInArchive: true,
+    stealthMode: {},
   },
 
   groupCalls: {
@@ -70,6 +135,7 @@ export const INITIAL_GLOBAL_STATE: GlobalState = {
 
   chatFolders: {
     byId: {},
+    invites: {},
   },
 
   fileUploads: {
@@ -78,6 +144,8 @@ export const INITIAL_GLOBAL_STATE: GlobalState = {
 
   recentEmojis: ['grinning', 'kissing_heart', 'christmas_tree', 'brain', 'trophy', 'duck', 'cherries'],
   recentCustomEmojis: ['5377305978079288312'],
+  topReactions: [],
+  recentReactions: [],
 
   stickers: {
     setsById: {},
@@ -156,11 +224,9 @@ export const INITIAL_GLOBAL_STATE: GlobalState = {
       hasWebNotifications: true,
       hasPushNotifications: true,
       notificationSoundVolume: 5,
-      canAutoPlayGifs: true,
-      canAutoPlayVideos: true,
       shouldSuggestStickers: true,
       shouldSuggestCustomEmoji: true,
-      shouldLoopStickers: true,
+      shouldUpdateStickerSetOrder: true,
       language: 'en',
       timeFormat: '24h',
       wasTimeFormatSetManually: false,
@@ -170,6 +236,7 @@ export const INITIAL_GLOBAL_STATE: GlobalState = {
       canTranslateChats: true,
       doNotTranslate: [],
       canDisplayChatInTitle: true,
+      shouldAllowHttpTransport: true,
     },
     themes: {
       light: {
@@ -181,6 +248,7 @@ export const INITIAL_GLOBAL_STATE: GlobalState = {
         patternColor: DARK_THEME_PATTERN_COLOR,
       },
     },
+    performance: INITIAL_PERFORMANCE_STATE_MAX,
     privacy: {},
     notifyExceptions: {},
   },
@@ -238,6 +306,11 @@ export const INITIAL_TAB_STATE: TabState = {
     byChatId: {},
   },
 
+  storyViewer: {
+    isMuted: true,
+    isRibbonShown: false,
+  },
+
   mediaViewer: {
     volume: DEFAULT_VOLUME,
     playbackRate: DEFAULT_PLAYBACK_RATE,
@@ -261,8 +334,6 @@ export const INITIAL_TAB_STATE: TabState = {
   dialogs: [],
 
   activeReactions: {},
-
-  shouldShowContextMenuHint: true,
 
   activeDownloads: {
     byChatId: {},

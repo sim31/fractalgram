@@ -1,20 +1,23 @@
+import '../../global/actions/initial';
+
 import type { FC } from '../../lib/teact/teact';
-import React, { memo } from '../../lib/teact/teact';
+import React, { memo, useRef } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type { GlobalState } from '../../global/types';
 
-import '../../global/actions/initial';
-import { PLATFORM_ENV } from '../../util/environment';
-import useHistoryBack from '../../hooks/useHistoryBack';
+import { PLATFORM_ENV } from '../../util/windowEnvironment';
+
 import useCurrentOrPrev from '../../hooks/useCurrentOrPrev';
+import useElectronDrag from '../../hooks/useElectronDrag';
+import useHistoryBack from '../../hooks/useHistoryBack';
 
 import Transition from '../ui/Transition';
-import AuthPhoneNumber from './AuthPhoneNumber';
 import AuthCode from './AuthCode.async';
 import AuthPassword from './AuthPassword.async';
-import AuthRegister from './AuthRegister.async';
+import AuthPhoneNumber from './AuthPhoneNumber';
 import AuthQrCode from './AuthQrCode';
+import AuthRegister from './AuthRegister.async';
 
 import './Auth.scss';
 
@@ -42,6 +45,10 @@ const Auth: FC<StateProps> = ({
       || (isMobile && authState === 'authorizationStateWaitQrCode'),
     onBack: handleChangeAuthorizationMethod,
   });
+
+  // eslint-disable-next-line no-null/no-null
+  const containerRef = useRef<HTMLDivElement>(null);
+  useElectronDrag(containerRef);
 
   // For animation purposes
   const renderingAuthState = useCurrentOrPrev(
@@ -84,7 +91,7 @@ const Auth: FC<StateProps> = ({
   }
 
   return (
-    <Transition activeKey={getActiveKey()} name="fade" className="Auth">
+    <Transition activeKey={getActiveKey()} name="fade" className="Auth" ref={containerRef}>
       {getScreen()}
     </Transition>
   );

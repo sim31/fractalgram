@@ -1,12 +1,12 @@
 import type { ApiChat, ApiUser, ApiUserStatus } from '../../api/types';
+import type { LangFn } from '../../hooks/useLang';
 
 import { SERVICE_NOTIFICATIONS_USER_ID } from '../../config';
 import { formatFullDate, formatTime } from '../../util/dateFormat';
 import { orderBy } from '../../util/iteratees';
-import type { LangFn } from '../../hooks/useLang';
-import { getServerTime, getServerTimeOffset } from '../../util/serverTime';
-import { prepareSearchWordsForNeedle } from '../../util/searchWords';
 import { formatPhoneNumber } from '../../util/phoneNumber';
+import { prepareSearchWordsForNeedle } from '../../util/searchWords';
+import { getServerTime, getServerTimeOffset } from '../../util/serverTime';
 
 const USER_COLOR_KEYS = [1, 8, 5, 2, 7, 4, 6];
 
@@ -73,6 +73,10 @@ export function getUserStatus(
     return lang('ServiceNotifications').toLowerCase();
   }
 
+  if (user.isSupport) {
+    return lang('SupportStatus');
+  }
+
   if (user.type && user.type === 'userTypeBot') {
     return lang('Bot');
   }
@@ -100,7 +104,7 @@ export function getUserStatus(
       if (!wasOnline) return lang('LastSeen.Offline');
 
       const serverTimeOffset = getServerTimeOffset();
-      const now = new Date(new Date().getTime() + serverTimeOffset * 1000);
+      const now = new Date(Date.now() + serverTimeOffset * 1000);
       const wasOnlineDate = new Date(wasOnline * 1000);
 
       if (wasOnlineDate >= now) {
@@ -171,6 +175,10 @@ export function isUserOnline(user: ApiUser, userStatus?: ApiUserStatus) {
     return false;
   }
 
+  if (user.isSelf) {
+    return false;
+  }
+
   return userStatus.type === 'userStatusOnline' && type !== 'userTypeBot';
 }
 
@@ -184,7 +192,7 @@ export function isUserBot(user: ApiUser) {
 }
 
 export function getCanAddContact(user: ApiUser) {
-  return !user.isContact && !isUserBot(user);
+  return !user.isSelf && !user.isContact && !isUserBot(user);
 }
 
 export function sortUserIds(
@@ -253,13 +261,8 @@ export function filterUsersByName(
   });
 }
 
-export function getUserIdDividend(userId: string) {
-  // Workaround for old-fashioned IDs stored locally
-  if (typeof userId === 'number') {
-    return Math.abs(userId);
-  }
-
-  return Math.abs(Number(userId));
+export function getUserIdDividend(peerId: string) {
+  return Math.abs(Number(peerId));
 }
 
 // https://github.com/telegramdesktop/tdesktop/blob/371510cfe23b0bd226de8c076bc49248fbe40c26/Telegram/SourceFiles/data/data_peer.cpp#L53
@@ -271,4 +274,8 @@ export function getUserColorKey(peer: ApiUser | ApiChat | undefined) {
 
 export function getMainUsername(userOrChat: ApiUser | ApiChat) {
   return userOrChat.usernames?.find((u) => u.isActive)?.username;
+}
+
+export function getUserStoryHtmlId(userId: string) {
+  return `user-story${userId}`;
 }

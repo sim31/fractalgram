@@ -7,24 +7,26 @@ import { getActions, getGlobal, withGlobal } from '../../../global';
 import type { ApiChatMember, ApiUserStatus } from '../../../api/types';
 import { ManagementScreens } from '../../../types';
 
-import { unique } from '../../../util/iteratees';
-import { selectChat, selectTabState } from '../../../global/selectors';
 import {
-  sortUserIds, isChatChannel, filterUsersByName, sortChatIds, isUserBot, getHasAdminRight, isChatBasicGroup,
+  filterUsersByName, getHasAdminRight, isChatBasicGroup,
+  isChatChannel, isUserBot, sortChatIds, sortUserIds,
 } from '../../../global/helpers';
-import useLang from '../../../hooks/useLang';
+import { selectChat, selectChatFullInfo, selectTabState } from '../../../global/selectors';
+import { unique } from '../../../util/iteratees';
+
 import useHistoryBack from '../../../hooks/useHistoryBack';
 import useInfiniteScroll from '../../../hooks/useInfiniteScroll';
 import useKeyboardListNavigation from '../../../hooks/useKeyboardListNavigation';
+import useLang from '../../../hooks/useLang';
 
-import PrivateChatInfo from '../../common/PrivateChatInfo';
 import NothingFound from '../../common/NothingFound';
-import ListItem from '../../ui/ListItem';
-import InputText from '../../ui/InputText';
+import PrivateChatInfo from '../../common/PrivateChatInfo';
 import InfiniteScroll from '../../ui/InfiniteScroll';
+import InputText from '../../ui/InputText';
+import ListItem, { type MenuItemContextAction } from '../../ui/ListItem';
 import Loading from '../../ui/Loading';
-import DeleteMemberModal from '../DeleteMemberModal';
 import Switcher from '../../ui/Switcher';
+import DeleteMemberModal from '../DeleteMemberModal';
 
 type OwnProps = {
   chatId: string;
@@ -165,7 +167,7 @@ const ManageGroupMembers: FC<OwnProps & StateProps> = ({
     onBack: onClose,
   });
 
-  function getMemberContextAction(memberId: string) {
+  function getMemberContextAction(memberId: string): MenuItemContextAction[] | undefined {
     return memberId === currentUserId || !canDeleteMembers ? undefined : [{
       title: lang('lng_context_remove_from_group'),
       icon: 'stop',
@@ -251,8 +253,7 @@ export default memo(withGlobal<OwnProps>(
   (global, { chatId }): StateProps => {
     const chat = selectChat(global, chatId);
     const { statusesById: userStatusesById } = global.users;
-    const members = chat?.fullInfo?.members;
-    const adminMembersById = chat?.fullInfo?.adminMembersById;
+    const { members, adminMembersById, areParticipantsHidden } = selectChatFullInfo(global, chatId) || {};
     const isChannel = chat && isChatChannel(chat);
     const { userIds: localContactIds } = global.contactList || {};
     const hiddenMembersMinCount = global.appConfig?.hiddenMembersMinCount;
@@ -270,7 +271,7 @@ export default memo(withGlobal<OwnProps>(
     } = selectTabState(global).userSearch;
 
     return {
-      areParticipantsHidden: Boolean(chat && chat.fullInfo?.areParticipantsHidden),
+      areParticipantsHidden: Boolean(chat && areParticipantsHidden),
       members,
       adminMembersById,
       userStatusesById,

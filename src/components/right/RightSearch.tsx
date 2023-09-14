@@ -1,34 +1,32 @@
+import type { FC } from '../../lib/teact/teact';
 import React, {
-  useMemo, memo, useRef, useEffect, useCallback,
+  memo, useCallback,
+  useEffect, useMemo, useRef,
 } from '../../lib/teact/teact';
 import { getActions, getGlobal, withGlobal } from '../../global';
 
-import type { FC } from '../../lib/teact/teact';
-import type { ApiMessage, ApiUser, ApiChat } from '../../api/types';
-import type { AnimationLevel } from '../../types';
+import type { ApiChat, ApiMessage, ApiUser } from '../../api/types';
 
-import { MEMO_EMPTY_ARRAY } from '../../util/memo';
 import {
-  selectUser,
-  selectChatMessages,
   selectChat,
+  selectChatMessages,
   selectCurrentTextSearch,
+  selectUser,
 } from '../../global/selectors';
-import {
-  isChatChannel,
-} from '../../global/helpers';
 import { disableDirectTextInput, enableDirectTextInput } from '../../util/directInputManager';
+import { MEMO_EMPTY_ARRAY } from '../../util/memo';
 import { renderMessageSummary } from '../common/helpers/renderMessageText';
-import useLang from '../../hooks/useLang';
-import useKeyboardListNavigation from '../../hooks/useKeyboardListNavigation';
+
 import useHistoryBack from '../../hooks/useHistoryBack';
 import useInfiniteScroll from '../../hooks/useInfiniteScroll';
+import useKeyboardListNavigation from '../../hooks/useKeyboardListNavigation';
+import useLang from '../../hooks/useLang';
 
-import InfiniteScroll from '../ui/InfiniteScroll';
-import ListItem from '../ui/ListItem';
-import LastMessageMeta from '../common/LastMessageMeta';
 import Avatar from '../common/Avatar';
 import FullNameTitle from '../common/FullNameTitle';
+import LastMessageMeta from '../common/LastMessageMeta';
+import InfiniteScroll from '../ui/InfiniteScroll';
+import ListItem from '../ui/ListItem';
 
 import './RightSearch.scss';
 
@@ -40,24 +38,20 @@ export type OwnProps = {
 };
 
 type StateProps = {
-  chat?: ApiChat;
   messagesById?: Record<number, ApiMessage>;
   query?: string;
   totalCount?: number;
   foundIds?: number[];
-  animationLevel?: AnimationLevel;
 };
 
 const RightSearch: FC<OwnProps & StateProps> = ({
   chatId,
   threadId,
   isActive,
-  chat,
   messagesById,
   query,
   totalCount,
   foundIds,
-  animationLevel,
   onClose,
 }) => {
   const {
@@ -101,26 +95,29 @@ const RightSearch: FC<OwnProps & StateProps> = ({
         return undefined;
       }
 
-      const senderUser = message.senderId ? selectUser(getGlobal(), message.senderId) : undefined;
+      const global = getGlobal();
 
-      let senderChat;
-      if (chat && isChatChannel(chat)) {
-        senderChat = chat;
-      } else if (message.forwardInfo) {
+      let senderPeer = message.senderId
+        ? selectUser(global, message.senderId) || selectChat(global, message.senderId)
+        : undefined;
+
+      if (!senderPeer && message.forwardInfo) {
         const { isChannelPost, fromChatId } = message.forwardInfo;
-        senderChat = isChannelPost && fromChatId ? selectChat(getGlobal(), fromChatId) : undefined;
-      } else {
-        senderChat = message.senderId ? selectChat(getGlobal(), message.senderId) : undefined;
+        const originalSender = isChannelPost && fromChatId ? selectChat(global, fromChatId) : undefined;
+        if (originalSender) senderPeer = originalSender;
+      }
+
+      if (!senderPeer) {
+        return undefined;
       }
 
       return {
         message,
-        senderUser,
-        senderChat,
+        senderPeer: senderPeer!,
         onClick: () => focusMessage({ chatId, threadId, messageId: id }),
       };
     }).filter(Boolean);
-  }, [query, viewportIds, messagesById, chat, focusMessage, chatId, threadId]);
+  }, [query, viewportIds, messagesById, focusMessage, chatId, threadId]);
 
   const handleKeyDown = useKeyboardListNavigation(containerRef, true, (index) => {
     const foundResult = viewportResults?.[index === -1 ? 0 : index];
@@ -130,11 +127,10 @@ const RightSearch: FC<OwnProps & StateProps> = ({
   }, '.ListItem-button', true);
 
   const renderSearchResult = ({
-    message, senderUser, senderChat, onClick,
+    message, senderPeer, onClick,
   }: {
     message: ApiMessage;
-    senderUser?: ApiUser;
-    senderChat?: ApiChat;
+    senderPeer: ApiUser | ApiChat;
     onClick: NoneToVoidFunction;
   }) => {
     const text = renderMessageSummary(lang, message, undefined, query);
@@ -146,10 +142,12 @@ const RightSearch: FC<OwnProps & StateProps> = ({
         className="chat-item-clickable search-result-message m-0"
         onClick={onClick}
       >
-        <Avatar chat={senderChat} user={senderUser} animationLevel={animationLevel} withVideo />
+        <Avatar
+          peer={senderPeer}
+        />
         <div className="info">
           <div className="search-result-message-top">
-            <FullNameTitle peer={(senderUser || senderChat)!} />
+            <FullNameTitle peer={senderPeer} withEmojiStatus />
             <LastMessageMeta message={message} />
           </div>
           <div className="subtitle" dir="auto">
@@ -191,9 +189,8 @@ const RightSearch: FC<OwnProps & StateProps> = ({
 
 export default memo(withGlobal<OwnProps>(
   (global, { chatId }): StateProps => {
-    const chat = selectChat(global, chatId);
-    const messagesById = chat && selectChatMessages(global, chat.id);
-    if (!chat || !messagesById) {
+    const messagesById = selectChatMessages(global, chatId);
+    if (!messagesById) {
       return {};
     }
 
@@ -201,12 +198,10 @@ export default memo(withGlobal<OwnProps>(
     const { totalCount, foundIds } = results || {};
 
     return {
-      chat,
       messagesById,
       query,
       totalCount,
       foundIds,
-      animationLevel: global.settings.byKey.animationLevel,
     };
   },
 )(RightSearch));

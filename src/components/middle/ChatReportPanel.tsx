@@ -1,20 +1,22 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useCallback, useState } from '../../lib/teact/teact';
-import { withGlobal, getActions } from '../../global';
+import React, { memo, useState } from '../../lib/teact/teact';
+import { getActions, withGlobal } from '../../global';
 
 import type { ApiChat, ApiChatSettings, ApiUser } from '../../api/types';
 
-import { selectChat, selectUser } from '../../global/selectors';
 import {
   getChatTitle, getUserFirstOrLastName, getUserFullName, isChatBasicGroup, isUserId,
 } from '../../global/helpers';
+import { selectChat, selectUser } from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
-import useLang from '../../hooks/useLang';
+
 import useFlag from '../../hooks/useFlag';
+import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
 
 import Button from '../ui/Button';
-import ConfirmDialog from '../ui/ConfirmDialog';
 import Checkbox from '../ui/Checkbox';
+import ConfirmDialog from '../ui/ConfirmDialog';
 
 import './ChatReportPanel.scss';
 
@@ -35,7 +37,7 @@ const ChatReportPanel: FC<OwnProps & StateProps> = ({
 }) => {
   const {
     openAddContactDialog,
-    blockContact,
+    blockUser,
     reportSpam,
     deleteChat,
     leaveChannel,
@@ -49,38 +51,34 @@ const ChatReportPanel: FC<OwnProps & StateProps> = ({
   const [isBlockUserModalOpen, openBlockUserModal, closeBlockUserModal] = useFlag();
   const [shouldReportSpam, setShouldReportSpam] = useState<boolean>(true);
   const [shouldDeleteChat, setShouldDeleteChat] = useState<boolean>(true);
-  const { accessHash } = chat || {};
   const {
     isAutoArchived, canReportSpam, canAddContact, canBlockContact,
   } = settings || {};
   const isBasicGroup = chat && isChatBasicGroup(chat);
 
-  const handleAddContact = useCallback(() => {
+  const handleAddContact = useLastCallback(() => {
     openAddContactDialog({ userId: chatId });
     if (isAutoArchived) {
       toggleChatArchived({ id: chatId });
     }
-  }, [openAddContactDialog, isAutoArchived, toggleChatArchived, chatId]);
+  });
 
-  const handleConfirmBlock = useCallback(() => {
+  const handleConfirmBlock = useLastCallback(() => {
     closeBlockUserModal();
-    blockContact({ contactId: chatId, accessHash: accessHash! });
+    blockUser({ userId: chatId });
     if (canReportSpam && shouldReportSpam) {
       reportSpam({ chatId });
     }
     if (shouldDeleteChat) {
       deleteChat({ chatId });
     }
-  }, [
-    accessHash, blockContact, closeBlockUserModal, deleteChat, reportSpam, canReportSpam, shouldDeleteChat,
-    shouldReportSpam, chatId,
-  ]);
+  });
 
-  const handleCloseReportPanel = useCallback(() => {
+  const handleCloseReportPanel = useLastCallback(() => {
     hideChatReportPanel({ chatId });
-  }, [chatId, hideChatReportPanel]);
+  });
 
-  const handleChatReportSpam = useCallback(() => {
+  const handleChatReportSpam = useLastCallback(() => {
     closeBlockUserModal();
     reportSpam({ chatId });
     if (isBasicGroup) {
@@ -89,11 +87,9 @@ const ChatReportPanel: FC<OwnProps & StateProps> = ({
     } else {
       leaveChannel({ chatId });
     }
-  }, [
-    chatId, closeBlockUserModal, currentUserId, deleteChatUser, deleteHistory, isBasicGroup, leaveChannel, reportSpam,
-  ]);
+  });
 
-  if (!settings) {
+  if (!settings || (!chat && !user)) {
     return undefined;
   }
 
@@ -142,7 +138,7 @@ const ChatReportPanel: FC<OwnProps & StateProps> = ({
         onClick={handleCloseReportPanel}
         ariaLabel={lang('Close')}
       >
-        <i className="icon-close" />
+        <i className="icon icon-close" />
       </Button>
       <ConfirmDialog
         isOpen={isBlockUserModalOpen}

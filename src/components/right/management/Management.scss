@@ -1,7 +1,6 @@
 .Management {
   position: relative;
   height: 100%;
-  background-color: var(--color-background-secondary);
 
   & > .custom-scroll {
     height: 100%;
@@ -18,7 +17,12 @@
     padding: 1rem 1.5rem;
     background-color: var(--color-background);
     box-shadow: inset 0 -0.0625rem 0 0 var(--color-background-secondary-accent);
-    margin-bottom: 0.625rem;
+    border-bottom: 0.625rem solid var(--color-background-secondary);
+
+    &:last-child {
+      border-bottom: none;
+      box-shadow: none;
+    }
 
     &.wide {
       padding: 1.5rem;
@@ -200,24 +204,6 @@
 }
 
 .ManageInvites {
-  .primary-link {
-    position: relative;
-  }
-
-  .primary-link-input {
-    cursor: pointer;
-    margin-bottom: 1rem;
-    padding-right: 3rem;
-  }
-
-  .primary-link-more-menu {
-    position: absolute;
-    right: 0.5rem;
-    top: 50%;
-    transform: translate(0, -50%);
-    z-index: 1;
-  }
-
   .create-link {
     margin-bottom: 0.5rem;
   }

@@ -1,20 +1,21 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, { memo, useCallback, useMemo } from '../../../lib/teact/teact';
 import { getActions, getGlobal } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
 import type { GlobalState } from '../../../global/types';
 
 import { ARCHIVED_FOLDER_ID } from '../../../config';
+import { getChatTitle } from '../../../global/helpers';
 import buildClassName from '../../../util/buildClassName';
 import { compact } from '../../../util/iteratees';
 import { formatIntegerCompact } from '../../../util/textFormat';
 import renderText from '../../common/helpers/renderText';
 
-import useLang from '../../../hooks/useLang';
 import { useFolderManagerForOrderedIds, useFolderManagerForUnreadCounters } from '../../../hooks/useFolderManager';
+import useLang from '../../../hooks/useLang';
 
-import ListItem from '../../ui/ListItem';
-import AnimatedCounter from '../../common/AnimatedCounter';
+import Badge from '../../ui/Badge';
+import ListItem, { type MenuItemContextAction } from '../../ui/ListItem';
 
 import styles from './Archive.module.scss';
 
@@ -50,10 +51,12 @@ const Archive: FC<OwnProps> = ({
         return undefined;
       }
 
+      const title = getChatTitle(lang, chat);
+
       return (
         <>
           <span className={buildClassName(styles.chat, archiveUnreadCount && chat.unreadCount && styles.unread)}>
-            {renderText(chat.title)}
+            {renderText(title)}
           </span>
           {isLast ? '' : ', '}
         </>
@@ -68,7 +71,7 @@ const Archive: FC<OwnProps> = ({
       handler: () => {
         updateArchiveSettings({ isMinimized: true });
       },
-    };
+    } satisfies MenuItemContextAction;
 
     const actionExpand = archiveSettings.isMinimized && {
       title: lang('lng_context_archive_expand'),
@@ -76,7 +79,7 @@ const Archive: FC<OwnProps> = ({
       handler: () => {
         updateArchiveSettings({ isMinimized: false });
       },
-    };
+    } satisfies MenuItemContextAction;
 
     const actionHide = {
       title: lang('lng_context_archive_to_menu'),
@@ -84,7 +87,7 @@ const Archive: FC<OwnProps> = ({
       handler: () => {
         updateArchiveSettings({ isHidden: true });
       },
-    };
+    } satisfies MenuItemContextAction;
 
     return compact([actionMinimize, actionExpand, actionHide]);
   }, [archiveSettings.isMinimized, lang, updateArchiveSettings]);
@@ -100,15 +103,14 @@ const Archive: FC<OwnProps> = ({
         <div className="info-row">
           <div className={buildClassName('title', styles.title)}>
             <h3 dir="auto" className={buildClassName(styles.name, 'fullName')}>
-              <i className={buildClassName(styles.icon, 'icon-archive-filled')} />
+              <i className={buildClassName(styles.icon, 'icon', 'icon-archive-filled')} />
               {lang('ArchivedChats')}
             </h3>
           </div>
-          {Boolean(archiveUnreadCount) && (
-            <div className={styles.unreadCount}>
-              <AnimatedCounter text={formatIntegerCompact(archiveUnreadCount)} />
-            </div>
-          )}
+          <Badge
+            className={styles.unreadCount}
+            text={archiveUnreadCount ? formatIntegerCompact(archiveUnreadCount) : undefined}
+          />
         </div>
       </div>
     );
@@ -119,7 +121,7 @@ const Archive: FC<OwnProps> = ({
       <>
         <div className={buildClassName('status', styles.avatarWrapper)}>
           <div className={buildClassName('Avatar', styles.avatar)}>
-            <i className="icon-archive-filled" />
+            <i className="icon icon-archive-filled" />
           </div>
         </div>
         <div className={buildClassName(styles.info, 'info')}>
@@ -132,11 +134,10 @@ const Archive: FC<OwnProps> = ({
             <div className={buildClassName('status', styles.chatsPreview)}>
               {previewItems}
             </div>
-            {Boolean(archiveUnreadCount) && (
-              <div className="Badge">
-                <AnimatedCounter text={formatIntegerCompact(archiveUnreadCount)} />
-              </div>
-            )}
+            <Badge
+              className={styles.unreadCount}
+              text={archiveUnreadCount ? formatIntegerCompact(archiveUnreadCount) : undefined}
+            />
           </div>
         </div>
       </>

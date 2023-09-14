@@ -5,27 +5,26 @@ import { getActions, withGlobal } from '../../global';
 import type {
   ApiContact, ApiError, ApiInviteInfo, ApiPhoto,
 } from '../../api/types';
-import type { AnimationLevel } from '../../types';
+import type { MessageList } from '../../global/types';
 
-import { selectTabState } from '../../global/selectors';
+import { selectCurrentMessageList, selectTabState } from '../../global/selectors';
 import getReadableErrorText from '../../util/getReadableErrorText';
 import { pick } from '../../util/iteratees';
 import renderText from '../common/helpers/renderText';
-import useLang from '../../hooks/useLang';
+
 import useFlag from '../../hooks/useFlag';
+import useLang from '../../hooks/useLang';
 
-import Modal from '../ui/Modal';
-import Button from '../ui/Button';
 import Avatar from '../common/Avatar';
-
-import './Dialogs.scss';
+import Button from '../ui/Button';
+import Modal from '../ui/Modal';
 
 type StateProps = {
+  currentMessageList?: MessageList;
   dialogs: (ApiError | ApiInviteInfo | ApiContact)[];
-  animationLevel: AnimationLevel;
 };
 
-const Dialogs: FC<StateProps> = ({ dialogs, animationLevel }) => {
+const Dialogs: FC<StateProps> = ({ dialogs, currentMessageList }) => {
   const {
     dismissDialog,
     acceptInviteConfirmation,
@@ -49,12 +48,12 @@ const Dialogs: FC<StateProps> = ({ dialogs, animationLevel }) => {
   function renderInviteHeader(title: string, photo?: ApiPhoto) {
     return (
       <div className="modal-header">
-        {photo && <Avatar size="small" photo={photo} animationLevel={animationLevel} withVideo />}
+        {photo && <Avatar size="small" photo={photo} withVideo />}
         <div className="modal-title">
           {renderText(title)}
         </div>
         <Button round color="translucent" size="smaller" ariaLabel={lang('Close')} onClick={closeModal}>
-          <i className="icon-close" />
+          <i className="icon icon-close" />
         </Button>
       </div>
     );
@@ -119,8 +118,13 @@ const Dialogs: FC<StateProps> = ({ dialogs, animationLevel }) => {
 
   const renderContactRequest = (contactRequest: ApiContact) => {
     const handleConfirm = () => {
+      if (!currentMessageList) {
+        return;
+      }
+
       sendMessage({
         contact: pick(contactRequest, ['firstName', 'lastName', 'phoneNumber']),
+        messageList: currentMessageList,
       });
       closeModal();
     };
@@ -179,11 +183,7 @@ const Dialogs: FC<StateProps> = ({ dialogs, animationLevel }) => {
     return renderError(dialog);
   };
 
-  return (
-    <div id="Dialogs">
-      {Boolean(dialogs.length) && renderDialog(dialogs[dialogs.length - 1])}
-    </div>
-  );
+  return Boolean(dialogs.length) && renderDialog(dialogs[dialogs.length - 1]);
 };
 
 function getErrorHeader(error: ApiError) {
@@ -202,7 +202,7 @@ export default memo(withGlobal(
   (global): StateProps => {
     return {
       dialogs: selectTabState(global).dialogs,
-      animationLevel: global.settings.byKey.animationLevel,
+      currentMessageList: selectCurrentMessageList(global),
     };
   },
 )(Dialogs));

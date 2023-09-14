@@ -1,31 +1,49 @@
-import { addActionHandler, getGlobal, setGlobal } from '../../index';
-
-import { ANIMATION_LEVEL_MAX } from '../../../config';
-import {
-  IS_ANDROID, IS_IOS, IS_MAC_OS, IS_SAFARI, IS_TOUCH_ENV,
-} from '../../../util/environment';
-import { setLanguage } from '../../../util/langProvider';
-import switchTheme from '../../../util/switchTheme';
-import { selectTabState, selectNotifySettings, selectTheme } from '../../selectors';
-import { startWebsync, stopWebsync } from '../../../util/websync';
-import { subscribe, unsubscribe } from '../../../util/notifications';
-import { clearCaching, setupCaching } from '../../cache';
-import { decryptSessionByCurrentHash } from '../../../util/passcode';
-import { storeSession } from '../../../util/sessions';
-import { callApi } from '../../../api/gramjs';
-import type { ActionReturnType, GlobalState } from '../../types';
-import { updateTabState } from '../../reducers/tabs';
-import { getCurrentTabId } from '../../../util/establishMultitabRole';
 import { addCallback } from '../../../lib/teact/teactn';
+
+import type { ActionReturnType, GlobalState } from '../../types';
+
+import { IS_ELECTRON } from '../../../config';
+import { requestMutation } from '../../../lib/fasterdom/fasterdom';
+import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import { setLanguage } from '../../../util/langProvider';
+import { subscribe, unsubscribe } from '../../../util/notifications';
+import { decryptSessionByCurrentHash } from '../../../util/passcode';
+import { applyPerformanceSettings } from '../../../util/perfomanceSettings';
+import { hasStoredSession, storeSession } from '../../../util/sessions';
+import switchTheme from '../../../util/switchTheme';
+import { getSystemTheme, setSystemThemeChangeCallback } from '../../../util/systemTheme';
+import { startWebsync, stopWebsync } from '../../../util/websync';
+import {
+  IS_ANDROID, IS_IOS, IS_LINUX,
+  IS_MAC_OS, IS_SAFARI, IS_TOUCH_ENV, IS_WINDOWS,
+} from '../../../util/windowEnvironment';
+import { callApi } from '../../../api/gramjs';
+import { clearCaching, setupCaching } from '../../cache';
+import { addActionHandler, getGlobal, setGlobal } from '../../index';
+import { replaceSettings } from '../../reducers';
+import { updateTabState } from '../../reducers/tabs';
+import {
+  selectCanAnimateInterface,
+  selectNotifySettings, selectPerformanceSettings, selectTabState, selectTheme,
+} from '../../selectors';
 
 const HISTORY_ANIMATION_DURATION = 450;
 
-subscribeToSystemThemeChange();
+setSystemThemeChangeCallback((theme) => {
+  // eslint-disable-next-line eslint-multitab-tt/no-immediate-global
+  let global = getGlobal();
+
+  if (!global.settings.byKey.shouldUseSystemTheme) return;
+
+  global = replaceSettings(global, { theme });
+  setGlobal(global);
+});
 
 addActionHandler('switchMultitabRole', async (global, actions, payload): Promise<void> => {
   const { isMasterTab, tabId = getCurrentTabId() } = payload;
 
   if (isMasterTab === selectTabState(global, tabId).isMasterTab) {
+    callApi('broadcastLocalDbUpdateFull');
     return;
   }
 
@@ -47,7 +65,9 @@ addActionHandler('switchMultitabRole', async (global, actions, payload): Promise
       storeSession(session, session.userId);
     }
 
-    setupCaching();
+    if (hasStoredSession(true)) {
+      setupCaching();
+    }
 
     global = getGlobal();
     if (!global.passcode.hasPasscode || !global.passcode.isScreenLocked) {
@@ -59,14 +79,7 @@ addActionHandler('switchMultitabRole', async (global, actions, payload): Promise
         setGlobal(global);
       }
       actions.initApi();
-
-      const { hasWebNotifications, hasPushNotifications } = selectNotifySettings(global);
-      if (hasWebNotifications && hasPushNotifications) {
-        void subscribe();
-      }
     }
-
-    setGlobal(global);
 
     startWebsync();
   }
@@ -86,6 +99,23 @@ addActionHandler('initShared', (): ActionReturnType => {
   startWebsync();
 });
 
+addActionHandler('initMain', (global): ActionReturnType => {
+  const { hasWebNotifications, hasPushNotifications } = selectNotifySettings(global);
+  if (hasWebNotifications && hasPushNotifications) {
+    // Most of the browsers only show the notifications permission prompt after the first user gesture.
+    const events = ['click', 'keypress'];
+    const subscribeAfterUserGesture = () => {
+      void subscribe();
+      events.forEach((event) => {
+        document.removeEventListener(event, subscribeAfterUserGesture);
+      });
+    };
+    events.forEach((event) => {
+      document.addEventListener(event, subscribeAfterUserGesture, { once: true });
+    });
+  }
+});
+
 addCallback((global: GlobalState) => {
   let isUpdated = false;
   const tabState = selectTabState(global, getCurrentTabId());
@@ -97,35 +127,53 @@ addCallback((global: GlobalState) => {
     shouldInit: false,
   }, tabState.id);
 
-  const { animationLevel, messageTextSize, language } = global.settings.byKey;
-  const theme = selectTheme(global);
+  const { messageTextSize, language } = global.settings.byKey;
+
+  const globalTheme = selectTheme(global);
+  const systemTheme = getSystemTheme();
+  const theme = global.settings.byKey.shouldUseSystemTheme ? systemTheme : globalTheme;
+
+  const performanceType = selectPerformanceSettings(global);
 
   void setLanguage(language, undefined, true);
 
-  document.documentElement.style.setProperty(
-    '--composer-text-size', `${Math.max(messageTextSize, IS_IOS ? 16 : 15)}px`,
-  );
-  document.documentElement.style.setProperty('--message-meta-height', `${Math.floor(messageTextSize * 1.3125)}px`);
-  document.documentElement.style.setProperty('--message-text-size', `${messageTextSize}px`);
-  document.documentElement.setAttribute('data-message-text-size', messageTextSize.toString());
-  document.body.classList.add('initial');
-  document.body.classList.add(`animation-level-${animationLevel}`);
-  document.body.classList.add(IS_TOUCH_ENV ? 'is-touch-env' : 'is-pointer-env');
+  requestMutation(() => {
+    document.documentElement.style.setProperty(
+      '--composer-text-size', `${Math.max(messageTextSize, IS_IOS ? 16 : 15)}px`,
+    );
+    document.documentElement.style.setProperty('--message-meta-height', `${Math.floor(messageTextSize * 1.3125)}px`);
+    document.documentElement.style.setProperty('--message-text-size', `${messageTextSize}px`);
+    document.documentElement.setAttribute('data-message-text-size', messageTextSize.toString());
+    document.body.classList.add('initial');
+    document.body.classList.add(IS_TOUCH_ENV ? 'is-touch-env' : 'is-pointer-env');
+    applyPerformanceSettings(performanceType);
 
-  switchTheme(theme, animationLevel === ANIMATION_LEVEL_MAX);
+    if (IS_IOS) {
+      document.body.classList.add('is-ios');
+    } else if (IS_ANDROID) {
+      document.body.classList.add('is-android');
+    } else if (IS_MAC_OS) {
+      document.body.classList.add('is-macos');
+    } else if (IS_WINDOWS) {
+      document.body.classList.add('is-windows');
+    } else if (IS_LINUX) {
+      document.body.classList.add('is-linux');
+    }
+    if (IS_SAFARI) {
+      document.body.classList.add('is-safari');
+    }
+    if (IS_ELECTRON) {
+      document.body.classList.add('is-electron');
+    }
+  });
+
+  const canAnimate = selectCanAnimateInterface(global);
+
+  switchTheme(theme, canAnimate);
+  // Make sure global has the latest theme. Will cause `switchTheme` on change
+  global = replaceSettings(global, { theme });
 
   startWebsync();
-
-  if (IS_IOS) {
-    document.body.classList.add('is-ios');
-  } else if (IS_ANDROID) {
-    document.body.classList.add('is-android');
-  } else if (IS_MAC_OS) {
-    document.body.classList.add('is-macos');
-  }
-  if (IS_SAFARI) {
-    document.body.classList.add('is-safari');
-  }
 
   isUpdated = true;
 
@@ -143,7 +191,9 @@ addActionHandler('setIsUiReady', (global, actions, payload): ActionReturnType =>
   const { uiReadyState, tabId = getCurrentTabId() } = payload!;
 
   if (uiReadyState === 2) {
-    document.body.classList.remove('initial');
+    requestMutation(() => {
+      document.body.classList.remove('initial');
+    });
   }
 
   return updateTabState(global, {
@@ -183,7 +233,10 @@ addActionHandler('disableHistoryAnimations', (global, actions, payload): ActionR
       shouldSkipHistoryAnimations: false,
     }, tabId);
     setGlobal(global);
-    document.body.classList.remove('no-animate');
+
+    requestMutation(() => {
+      document.body.classList.remove('no-animate');
+    });
   }, HISTORY_ANIMATION_DURATION);
 
   global = updateTabState(global, {
@@ -191,28 +244,3 @@ addActionHandler('disableHistoryAnimations', (global, actions, payload): ActionR
   }, tabId);
   setGlobal(global, { forceSyncOnIOs: true });
 });
-
-function subscribeToSystemThemeChange() {
-  function handleSystemThemeChange() {
-    const currentThemeMatch = document.documentElement.className.match(/theme-(\w+)/);
-    const currentTheme = currentThemeMatch ? currentThemeMatch[1] : 'light';
-    // eslint-disable-next-line eslint-multitab-tt/no-immediate-global
-    let global = getGlobal();
-    const nextTheme = selectTheme(global);
-    const { animationLevel } = global.settings.byKey;
-
-    if (nextTheme !== currentTheme) {
-      switchTheme(nextTheme, animationLevel === ANIMATION_LEVEL_MAX);
-      // Force-update component containers
-      global = { ...global };
-      setGlobal(global);
-    }
-  }
-
-  const mql = window.matchMedia('(prefers-color-scheme: dark)');
-  if (typeof mql.addEventListener === 'function') {
-    mql.addEventListener('change', handleSystemThemeChange);
-  } else if (typeof mql.addListener === 'function') {
-    mql.addListener(handleSystemThemeChange);
-  }
-}

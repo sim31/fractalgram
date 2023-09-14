@@ -1,22 +1,30 @@
-import type { GroupCallConnectionState } from '../../../lib/secret-sauce';
 import type { FC } from '../../../lib/teact/teact';
 import React, {
-  memo, useEffect, useMemo, useRef, useState,
+  memo, useCallback, useEffect, useMemo, useRef, useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import { LOCAL_TGS_URLS } from '../../common/helpers/animatedAssets';
+import type { GroupCallConnectionState } from '../../../lib/secret-sauce';
+
+import { selectActiveGroupCall, selectGroupCallParticipant } from '../../../global/selectors/calls';
 import buildClassName from '../../../util/buildClassName';
 import { vibrateShort } from '../../../util/vibrate';
-import usePrevious from '../../../hooks/usePrevious';
-import { selectActiveGroupCall, selectGroupCallParticipant } from '../../../global/selectors/calls';
+import { LOCAL_TGS_URLS } from '../../common/helpers/animatedAssets';
+
 import useLang from '../../../hooks/useLang';
+import usePrevious from '../../../hooks/usePrevious';
 
 import AnimatedIcon from '../../common/AnimatedIcon';
+import Button from '../../ui/Button';
+import Spinner from '../../ui/Spinner';
 
-import './MicrophoneButton.scss';
+import styles from './MicrophoneButton.module.scss';
 
 const CONNECTION_STATE_DEFAULT = 'discarded';
+
+type OwnProps = {
+  className?: string;
+};
 
 type StateProps = {
   connectionState?: GroupCallConnectionState;
@@ -28,13 +36,13 @@ type StateProps = {
 
 const REQUEST_TO_SPEAK_THROTTLE = 3000;
 const HOLD_TO_SPEAK_TIME = 200;
-const ICON_SIZE = 48;
+const ICON_SIZE = 36;
 
-const MicrophoneButton: FC<StateProps> = ({
+const MicrophoneButton: FC<OwnProps & StateProps> = ({
+  className,
   noAudioStream,
   canSelfUnmute,
   isMuted,
-  hasRequestedToSpeak,
   connectionState,
 }) => {
   const {
@@ -89,12 +97,12 @@ const MicrophoneButton: FC<StateProps> = ({
 
   const animatedIconName = isRequestingToSpeak ? 'HandFilled' : 'VoiceMini';
 
-  const toggleMute = () => {
+  const toggleMute = useCallback(() => {
     vibrateShort();
     toggleGroupCallMute();
-  };
+  }, [toggleGroupCallMute]);
 
-  const handleMouseDownMute = () => {
+  const handleMouseDownMute = useCallback(() => {
     if (shouldRaiseHand) {
       if (isRequestingToSpeak) return;
       vibrateShort();
@@ -114,47 +122,41 @@ const MicrophoneButton: FC<StateProps> = ({
         }
       }, HOLD_TO_SPEAK_TIME);
     }
-  };
+  }, [isRequestingToSpeak, noAudioStream, requestToSpeak, shouldRaiseHand, toggleMute]);
 
-  const handleMouseUpMute = () => {
+  const handleMouseUpMute = useCallback(() => {
     if (shouldRaiseHand) {
       return;
     }
     toggleMute();
     muteMouseDownState.current = 'up';
-  };
-
-  const buttonText = lang(
-    hasRequestedToSpeak ? 'VoipMutedTapedForSpeak' : (
-      shouldRaiseHand ? 'VoipMutedByAdmin' : (
-        noAudioStream ? 'VoipUnmute' : 'VoipTapToMute'
-      )
-    ),
-  );
+  }, [shouldRaiseHand, toggleMute]);
 
   return (
-    <div className="button-wrapper microphone-wrapper">
-      <button
-        className={buildClassName(
-          'MicrophoneButton',
-          noAudioStream && 'crossed',
-          canSelfUnmute && 'can-self-unmute',
-          isConnecting && 'is-connecting',
-          shouldRaiseHand && 'muted-by-admin',
-        )}
-        onMouseDown={handleMouseDownMute}
-        onMouseUp={handleMouseUpMute}
-      >
-        <AnimatedIcon
-          tgsUrl={LOCAL_TGS_URLS[animatedIconName]}
-          size={ICON_SIZE}
-          playSegment={playSegment}
-        />
-      </button>
-      <div className="button-text">
-        {buttonText}
-      </div>
-    </div>
+    <Button
+      round
+      size="default"
+      className={buildClassName(
+        styles.root,
+        !isConnecting && noAudioStream && styles.canUnmute,
+        !isConnecting && shouldRaiseHand && styles.mutedByAdmin,
+        className,
+      )}
+      onMouseDown={handleMouseDownMute}
+      onMouseUp={handleMouseUpMute}
+      ariaLabel={lang(isMuted ? 'VoipUnmute' : 'VoipMute')}
+      disabled={isConnecting}
+    >
+      <AnimatedIcon
+        tgsUrl={LOCAL_TGS_URLS[animatedIconName]}
+        size={ICON_SIZE}
+        play={playSegment.toString()}
+        playSegment={playSegment}
+        className={styles.icon}
+        forceAlways
+      />
+      <Spinner className={buildClassName(styles.spinner, isConnecting && styles.spinnerVisible)} color="white" />
+    </Button>
   );
 };
 

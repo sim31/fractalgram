@@ -1,5 +1,6 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo } from '../../lib/teact/teact';
+import React from '../../lib/teact/teact';
+
 import { Bundles } from '../../util/moduleLoader';
 
 import useModuleLoader from '../../hooks/useModuleLoader';
@@ -11,4 +12,4 @@ const DialogsAsync: FC = ({ isOpen }) => {
   return Dialogs ? <Dialogs /> : undefined;
 };
 
-export default memo(DialogsAsync);
+export default DialogsAsync;

@@ -1,18 +1,15 @@
-@import "../../styles/mixins";
-
 .MessageList {
   flex: 1;
   width: 100%;
   margin-bottom: 0.5rem;
 
-  overflow: scroll;
+  overflow-y: scroll;
   overflow-x: hidden;
-  overflow-y: auto;
-  @include overflow-y-overlay();
 
-  transition: transform var(--layer-transition);
+  /* stylelint-disable-next-line plugin/no-low-performance-animation-properties */
+  transition: bottom 150ms ease-out, transform var(--layer-transition);
 
-  body.animation-level-0 & {
+  body.no-page-transitions & {
     transition: none !important;
   }
 
@@ -30,19 +27,17 @@
     }
   }
 
-  /* stylelint-disable-next-line plugin/no-low-performance-animation-properties */
-  transition: bottom 150ms ease-out, transform var(--layer-transition);
-
   body.keyboard-visible & {
     position: relative;
-    bottom: calc(0px - env(safe-area-inset-bottom));
+    bottom: 0;
 
-    // Target: Old Firefox (Waterfox Classic)
-    @supports not (bottom: calc(0px - env(safe-area-inset-bottom))) {
-      bottom: 0;
+    @media (max-width: 600px) {
+      @supports (bottom: calc(0px - env(safe-area-inset-bottom))) {
+        bottom: calc(0px - env(safe-area-inset-bottom));
+      }
     }
 
-    body.keyboard-visible.animation-level-0 & {
+    body.keyboard-visible.no-page-transitions & {
       transition: none !important;
     }
   }
@@ -105,8 +100,10 @@
       .last-in-list {
         margin-bottom: 4.25rem;
 
-        body:not(.keyboard-visible) & {
-          margin-bottom: calc(4.25rem + env(safe-area-inset-bottom));
+        @supports (margin-bottom: calc(4.25rem + env(safe-area-inset-bottom))) {
+          body:not(.keyboard-visible) & {
+            margin-bottom: calc(4.25rem + env(safe-area-inset-bottom));
+          }
         }
       }
     }
@@ -123,6 +120,16 @@
     &:not(.open) {
       transform: scale(0.8);
       opacity: 0;
+    }
+
+    body.no-message-sending-animations & {
+      opacity: 1;
+      transform: none;
+      transition: none !important;
+    }
+
+    &.is-just-added:not(.own) {
+      transform: none;
     }
 
     // Restore stacking context
@@ -144,7 +151,7 @@
       opacity: 0;
       transition: opacity var(--select-transition);
 
-      body.animation-level-0 & {
+      body.no-page-transitions & {
         transition: none !important;
       }
     }
@@ -198,7 +205,7 @@
     }
   }
 
-  > .empty {
+  .empty {
     width: 100%;
     height: 100%;
     display: flex;
@@ -210,37 +217,9 @@
       text-align: left;
     }
 
-    & > .bot-info {
-      max-width: 80%;
-      display: flex;
-      flex-direction: column;
-
-      background: var(--pattern-color);
-      color: white;
-      font-size: calc(var(--message-text-size, 1rem) - 0.0625rem);
-      line-height: 1.75;
-      border-radius: var(--border-radius-messages);
-      overflow: hidden;
-      text-align: initial;
-
-      & > .bot-info-description {
-        padding: 0.5rem 1rem;
-      }
-
-      .bot-info-title {
-        font-weight: 500;
-        margin-bottom: 0.25rem;
-      }
-    }
-
     .text-entity-link {
       color: inherit !important;
-      text-decoration: underline;
-
-      &:hover,
-      &:focus {
-        text-decoration: none;
-      }
+      text-decoration: underline !important;
     }
   }
 
@@ -300,7 +279,7 @@
     line-height: 1rem !important;
     padding-bottom: 0.75rem !important;
     margin-top: 0.5rem;
-    cursor: pointer;
+    cursor: var(--custom-cursor, pointer);
     outline: none;
   }
 
@@ -312,7 +291,7 @@
     line-height: 1rem !important;
     padding-bottom: 0.75rem !important;
     margin-top: 0.5rem;
-    cursor: pointer;
+    cursor: var(--custom-cursor, pointer);
     outline: none;
 
     .Avatar {
@@ -351,12 +330,12 @@
       }
     }
 
-    body.animation-level-0 & {
+    body.no-page-transitions & {
       transition: none;
     }
 
     &.interactive {
-      cursor: pointer;
+      cursor: var(--custom-cursor, pointer);
     }
 
     span {
@@ -367,10 +346,6 @@
   &.scrolled:not(.is-animating) .sticky-date {
     position: sticky;
     top: 0.625rem;
-  }
-
-  &.is-animating {
-    overflow: hidden;
   }
 
   &.is-animating .message-select-control {
@@ -394,7 +369,7 @@
 
   .ActionMessage {
     .action-link {
-      cursor: pointer;
+      cursor: var(--custom-cursor, pointer);
 
       &:hover {
         text-decoration: underline;
@@ -423,7 +398,7 @@
       width: calc(100% - var(--right-column-width));
     }
 
-    body.animation-level-0 & {
+    body.no-right-column-animations & {
       transition: none;
     }
 
@@ -448,19 +423,16 @@
     }
 
     body.is-symbol-menu-open & {
-      transform: translate3d(0, calc(-1 * (var(--symbol-menu-height) + var(--symbol-menu-footer-height))), 0);
+      transform: translate3d(0, calc(-1 * (var(--symbol-menu-height))), 0);
     }
   }
 
-  .animating > div > & {
-    &::-webkit-scrollbar {
-      width: 0;
-    }
+  .Transition_slide-from > &,
+  .Transition_slide-to > & {
+    scrollbar-color: transparent !important;
 
-    /* Styles for Firefox */
-    @supports (scrollbar-width: none) {
-      padding-right: 0.6875rem;
-      scrollbar-width: none;
+    &::-webkit-scrollbar-thumb {
+      background-color: transparent !important;
     }
   }
 }

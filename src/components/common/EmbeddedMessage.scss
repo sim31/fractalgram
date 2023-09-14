@@ -8,7 +8,7 @@
   border-radius: var(--border-radius-messages-small);
   position: relative;
   overflow: hidden;
-  cursor: pointer;
+  cursor: var(--custom-cursor, pointer);
   direction: ltr;
 
   @for $i from 1 through 8 {
@@ -17,7 +17,7 @@
     }
   }
 
-  body.animation-level-1 & {
+  body.no-page-transitions & {
     .ripple-container {
       display: none;
     }
@@ -69,6 +69,13 @@
     font-size: calc(var(--message-text-size, 1rem) - 0.125rem);
   }
 
+  .icon {
+    font-size: 1.125rem;
+    margin-inline-end: 0.125rem;
+    line-height: 0.9375rem;
+    vertical-align: -0.1875rem;
+  }
+
   .message-text {
     overflow: hidden;
     margin-inline-start: 0.5rem;
@@ -101,7 +108,7 @@
     .emoji {
       width: calc(1.125 * var(--message-text-size, 1rem)) !important;
       height: calc(1.125 * var(--message-text-size, 1rem)) !important;
-      vertical-align: text-bottom !important;
+      vertical-align: bottom !important;
     }
 
     .custom-emoji {
@@ -112,6 +119,10 @@
       & > img {
         border-radius: 0;
       }
+    }
+
+    &.with-message-color {
+      color: var(--accent-color);
     }
   }
 

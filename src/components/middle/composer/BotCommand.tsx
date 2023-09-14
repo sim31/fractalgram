@@ -3,11 +3,11 @@ import React, { memo } from '../../../lib/teact/teact';
 
 import type { ApiBotCommand, ApiUser } from '../../../api/types';
 
-import renderText from '../../common/helpers/renderText';
 import buildClassName from '../../../util/buildClassName';
+import renderText from '../../common/helpers/renderText';
 
-import ListItem from '../../ui/ListItem';
 import Avatar from '../../common/Avatar';
+import ListItem from '../../ui/ListItem';
 
 import './BotCommand.scss';
 
@@ -36,7 +36,7 @@ const BotCommand: FC<OwnProps> = ({
       focus={focus}
     >
       {withAvatar && (
-        <Avatar size="small" user={bot} />
+        <Avatar size="small" peer={bot} />
       )}
       <div className="content-inner">
         <span className="title">/{botCommand.command}</span>

@@ -1,30 +1,31 @@
 import type { FC } from '../../../../lib/teact/teact';
 import React, {
-  memo, useMemo, useCallback, useEffect, useState,
+  memo, useCallback, useEffect, useMemo, useState,
 } from '../../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../../global';
 
 import type { ApiChatFolder } from '../../../../api/types';
 
 import { ALL_FOLDER_ID, STICKER_SIZE_FOLDER_SETTINGS } from '../../../../config';
-import { LOCAL_TGS_URLS } from '../../../common/helpers/animatedAssets';
+import { getFolderDescriptionText } from '../../../../global/helpers';
+import { selectIsCurrentUserPremium } from '../../../../global/selectors';
+import { selectCurrentLimit } from '../../../../global/selectors/limits';
+import { isBetween } from '../../../../util/math';
 import { MEMO_EMPTY_ARRAY } from '../../../../util/memo';
 import { throttle } from '../../../../util/schedulers';
-import { isBetween } from '../../../../util/math';
-import { getFolderDescriptionText } from '../../../../global/helpers';
-import { selectCurrentLimit } from '../../../../global/selectors/limits';
-import { selectIsCurrentUserPremium } from '../../../../global/selectors';
+import { LOCAL_TGS_URLS } from '../../../common/helpers/animatedAssets';
 import renderText from '../../../common/helpers/renderText';
-import useLang from '../../../../hooks/useLang';
-import useHistoryBack from '../../../../hooks/useHistoryBack';
+
 import { useFolderManagerForChatsCount } from '../../../../hooks/useFolderManager';
+import useHistoryBack from '../../../../hooks/useHistoryBack';
+import useLang from '../../../../hooks/useLang';
 import usePrevious from '../../../../hooks/usePrevious';
 
-import ListItem from '../../../ui/ListItem';
-import Button from '../../../ui/Button';
-import Loading from '../../../ui/Loading';
 import AnimatedIcon from '../../../common/AnimatedIcon';
+import Button from '../../../ui/Button';
 import Draggable from '../../../ui/Draggable';
+import ListItem from '../../../ui/ListItem';
+import Loading from '../../../ui/Loading';
 
 type OwnProps = {
   isActive?: boolean;
@@ -139,6 +140,7 @@ const SettingsFoldersMain: FC<OwnProps & StateProps> = ({
         id: folder.id,
         title: folder.title,
         subtitle: getFolderDescriptionText(lang, folder, chatsCountByFolderId[folder.id]),
+        isChatList: folder.isChatList,
       };
     });
   }, [folderIds, foldersById, lang, chatsCountByFolderId]);
@@ -212,7 +214,7 @@ const SettingsFoldersMain: FC<OwnProps & StateProps> = ({
             onClick={handleCreateFolder}
             isRtl={lang.isRtl}
           >
-            <i className="icon-add" />
+            <i className="icon icon-add" />
             {lang('CreateNewFilter')}
           </Button>
         )}
@@ -241,7 +243,7 @@ const SettingsFoldersMain: FC<OwnProps & StateProps> = ({
                 >
                   <ListItem
                     key={folder.id}
-                    className="mb-2 no-icon settings-sortable-item"
+                    className="drag-item mb-2 no-icon settings-sortable-item"
                     narrow
                     inactive
                     multiline
@@ -267,7 +269,7 @@ const SettingsFoldersMain: FC<OwnProps & StateProps> = ({
                 isDisabled={isBlocked || !isActive}
               >
                 <ListItem
-                  className="mb-2 no-icon settings-sortable-item"
+                  className="drag-item mb-2 no-icon settings-sortable-item"
                   narrow
                   secondaryIcon="more"
                   multiline
@@ -294,9 +296,12 @@ const SettingsFoldersMain: FC<OwnProps & StateProps> = ({
                 >
                   <span className="title">
                     {renderText(folder.title, ['emoji'])}
-                    {isBlocked && <i className="icon-lock-badge settings-folders-blocked-icon" />}
+                    {isBlocked && <i className="icon icon-lock-badge settings-folders-blocked-icon" />}
                   </span>
-                  <span className="subtitle">{folder.subtitle}</span>
+                  <span className="subtitle">
+                    {folder.isChatList && <i className="icon icon-link mr-1" />}
+                    {folder.subtitle}
+                  </span>
                 </ListItem>
               </Draggable>
             );

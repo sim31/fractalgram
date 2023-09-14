@@ -1,43 +1,42 @@
 import type { MouseEvent as ReactMouseEvent } from 'react';
-import React, {
-  memo, useCallback, useEffect, useRef,
-} from '../../lib/teact/teact';
+import type { FC, TeactNode } from '../../lib/teact/teact';
+import React, { memo, useRef } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
-import type { FC, TeactNode } from '../../lib/teact/teact';
-import type {
-  ApiChat, ApiPhoto, ApiUser, ApiUserStatus,
-} from '../../api/types';
+import type { ApiChat, ApiPhoto, ApiUser } from '../../api/types';
 import type { ObserveFn } from '../../hooks/useIntersectionObserver';
-import type { AnimationLevel } from '../../types';
+import type { StoryViewerOrigin } from '../../types';
 import { ApiMediaFormat } from '../../api/types';
 
-import { ANIMATION_LEVEL_MAX, IS_TEST } from '../../config';
-import { VIDEO_AVATARS_DISABLED } from '../../util/environment';
+import { IS_TEST } from '../../config';
 import {
   getChatAvatarHash,
   getChatTitle,
   getUserColorKey,
   getUserFullName,
-  isUserId,
+  getUserStoryHtmlId,
   isChatWithRepliesBot,
   isDeletedUser,
-  isUserOnline,
+  isUserId,
 } from '../../global/helpers';
-import { getFirstLetters } from '../../util/textFormat';
 import buildClassName, { createClassNameBuilder } from '../../util/buildClassName';
+import { getFirstLetters } from '../../util/textFormat';
 import renderText from './helpers/renderText';
 
-import useMedia from '../../hooks/useMedia';
-import useShowTransition from '../../hooks/useShowTransition';
+import { useFastClick } from '../../hooks/useFastClick';
 import useLang from '../../hooks/useLang';
-import { useIsIntersecting } from '../../hooks/useIntersectionObserver';
+import useLastCallback from '../../hooks/useLastCallback';
+import useMedia from '../../hooks/useMedia';
+import useMediaTransition from '../../hooks/useMediaTransition';
 
 import OptimizedVideo from '../ui/OptimizedVideo';
+import AvatarStoryCircle from './AvatarStoryCircle';
 
 import './Avatar.scss';
 
 const LOOP_COUNT = 3;
+
+export type AvatarSize = 'micro' | 'tiny' | 'mini' | 'small' | 'small-mobile' | 'medium' | 'large' | 'giant' | 'jumbo';
 
 const cn = createClassNameBuilder('Avatar');
 cn.media = cn('media');
@@ -45,20 +44,20 @@ cn.icon = cn('icon');
 
 type OwnProps = {
   className?: string;
-  size?: 'micro' | 'tiny' | 'mini' | 'small' | 'small-mobile' | 'medium' | 'large' | 'jumbo';
-  chat?: ApiChat;
-  user?: ApiUser;
+  size?: AvatarSize;
+  peer?: ApiChat | ApiUser;
   photo?: ApiPhoto;
-  userStatus?: ApiUserStatus;
   text?: string;
   isSavedMessages?: boolean;
   withVideo?: boolean;
-  noLoop?: boolean;
+  withStory?: boolean;
+  forPremiumPromo?: boolean;
+  withStoryGap?: boolean;
+  withStorySolid?: boolean;
+  storyViewerOrigin?: StoryViewerOrigin;
+  storyViewerMode?: 'full' | 'single-user' | 'disabled';
   loopIndefinitely?: boolean;
-  animationLevel?: AnimationLevel;
   noPersonalPhoto?: boolean;
-  lastSyncTime?: number;
-  showVideoOverwrite?: boolean;
   observeIntersection?: ObserveFn;
   onClick?: (e: ReactMouseEvent<HTMLDivElement, MouseEvent>, hasMedia: boolean) => void;
 };
@@ -66,87 +65,68 @@ type OwnProps = {
 const Avatar: FC<OwnProps> = ({
   className,
   size = 'large',
-  chat,
-  user,
+  peer,
   photo,
-  userStatus,
   text,
   isSavedMessages,
   withVideo,
-  noLoop,
+  withStory,
+  forPremiumPromo,
+  withStoryGap,
+  withStorySolid,
+  storyViewerOrigin,
+  storyViewerMode = 'single-user',
   loopIndefinitely,
-  lastSyncTime,
-  showVideoOverwrite,
-  animationLevel,
   noPersonalPhoto,
-  observeIntersection,
   onClick,
 }) => {
-  const { loadFullUser } = getActions();
+  const { openStoryViewer } = getActions();
+
   // eslint-disable-next-line no-null/no-null
   const ref = useRef<HTMLDivElement>(null);
   const videoLoopCountRef = useRef(0);
-  const isIntersecting = useIsIntersecting(ref, observeIntersection);
+  const isPeerChat = peer && 'title' in peer;
+  const user = peer && !isPeerChat ? peer as ApiUser : undefined;
+  const chat = peer && isPeerChat ? peer as ApiChat : undefined;
   const isDeleted = user && isDeletedUser(user);
-  const isReplies = user && isChatWithRepliesBot(user.id);
+  const isReplies = peer && isChatWithRepliesBot(peer.id);
   const isForum = chat?.isForum;
   let imageHash: string | undefined;
   let videoHash: string | undefined;
 
-  const shouldShowUserVideo = !VIDEO_AVATARS_DISABLED && animationLevel === ANIMATION_LEVEL_MAX
-    && user?.isPremium && user?.hasVideoAvatar;
-  const shouldShowPhotoVideo = showVideoOverwrite && photo?.isVideo;
-  const shouldShowVideo = (
-    isIntersecting && withVideo && (shouldShowPhotoVideo || shouldShowUserVideo)
-  );
-  const profilePhoto = user?.fullInfo?.personalPhoto || user?.fullInfo?.profilePhoto || user?.fullInfo?.fallbackPhoto;
-  const hasProfileVideo = profilePhoto?.isVideo;
-  const shouldLoadVideo = shouldShowVideo && (hasProfileVideo || shouldShowPhotoVideo);
+  const shouldLoadVideo = withVideo && photo?.isVideo;
 
   const shouldFetchBig = size === 'jumbo';
   if (!isSavedMessages && !isDeleted) {
-    if (user && !noPersonalPhoto) {
-      imageHash = getChatAvatarHash(user, shouldFetchBig ? 'big' : undefined);
-    } else if (chat) {
-      imageHash = getChatAvatarHash(chat, shouldFetchBig ? 'big' : undefined);
+    if ((user && !noPersonalPhoto) || chat) {
+      imageHash = getChatAvatarHash(peer!, shouldFetchBig ? 'big' : undefined);
     } else if (photo) {
       imageHash = `photo${photo.id}?size=m`;
       if (photo.isVideo && withVideo) {
         videoHash = `videoAvatar${photo.id}?size=u`;
       }
     }
-
-    if (hasProfileVideo) {
-      videoHash = getChatAvatarHash(user!, undefined, 'video');
-    }
   }
 
-  const imgBlobUrl = useMedia(imageHash, false, ApiMediaFormat.BlobUrl, lastSyncTime);
-  const videoBlobUrl = useMedia(videoHash, !shouldLoadVideo, ApiMediaFormat.BlobUrl, lastSyncTime);
+  const imgBlobUrl = useMedia(imageHash, false, ApiMediaFormat.BlobUrl);
+  const videoBlobUrl = useMedia(videoHash, !shouldLoadVideo, ApiMediaFormat.BlobUrl);
   const hasBlobUrl = Boolean(imgBlobUrl || videoBlobUrl);
   // `videoBlobUrl` can be taken from memory cache, so we need to check `shouldLoadVideo` again
-  const shouldPlayVideo = Boolean(isIntersecting && videoBlobUrl && shouldLoadVideo);
+  const shouldPlayVideo = Boolean(videoBlobUrl && shouldLoadVideo);
 
-  const { transitionClassNames } = useShowTransition(hasBlobUrl, undefined, hasBlobUrl, 'slow');
+  const transitionClassNames = useMediaTransition(hasBlobUrl);
 
-  const handleVideoEnded = useCallback((e) => {
+  const handleVideoEnded = useLastCallback((e) => {
     const video = e.currentTarget;
     if (!videoBlobUrl) return;
 
     if (loopIndefinitely) return;
 
     videoLoopCountRef.current += 1;
-    if (videoLoopCountRef.current >= LOOP_COUNT || noLoop) {
+    if (videoLoopCountRef.current >= LOOP_COUNT) {
       video.style.display = 'none';
     }
-  }, [loopIndefinitely, noLoop, videoBlobUrl]);
-
-  const userId = user?.id;
-  useEffect(() => {
-    if (userId && shouldShowVideo && !profilePhoto) {
-      loadFullUser({ userId });
-    }
-  }, [loadFullUser, profilePhoto, userId, shouldShowVideo]);
+  });
 
   const lang = useLang();
 
@@ -154,11 +134,41 @@ const Avatar: FC<OwnProps> = ({
   const author = user ? getUserFullName(user) : (chat ? getChatTitle(lang, chat) : text);
 
   if (isSavedMessages) {
-    content = <i className={buildClassName(cn.icon, 'icon-avatar-saved-messages')} role="img" aria-label={author} />;
+    content = (
+      <i
+        className={buildClassName(
+          cn.icon,
+          'icon',
+          'icon-avatar-saved-messages',
+        )}
+        role="img"
+        aria-label={author}
+      />
+    );
   } else if (isDeleted) {
-    content = <i className={buildClassName(cn.icon, 'icon-avatar-deleted-account')} role="img" aria-label={author} />;
+    content = (
+      <i
+        className={buildClassName(
+          cn.icon,
+          'icon',
+          'icon-avatar-deleted-account',
+        )}
+        role="img"
+        aria-label={author}
+      />
+    );
   } else if (isReplies) {
-    content = <i className={buildClassName(cn.icon, 'icon-reply-filled')} role="img" aria-label={author} />;
+    content = (
+      <i
+        className={buildClassName(
+          cn.icon,
+          'icon',
+          'icon-reply-filled',
+        )}
+        role="img"
+        aria-label={author}
+      />
+    );
   } else if (hasBlobUrl) {
     content = (
       <>
@@ -167,6 +177,7 @@ const Avatar: FC<OwnProps> = ({
           className={buildClassName(cn.media, 'avatar-media', transitionClassNames, videoBlobUrl && 'poster')}
           alt={author}
           decoding="async"
+          draggable={false}
         />
         {shouldPlayVideo && (
           <OptimizedVideo
@@ -178,6 +189,7 @@ const Avatar: FC<OwnProps> = ({
             autoPlay
             disablePictureInPicture
             playsInline
+            draggable={false}
             onEnded={handleVideoEnded}
           />
         )}
@@ -193,38 +205,56 @@ const Avatar: FC<OwnProps> = ({
     content = getFirstLetters(text, 2);
   }
 
-  const isOnline = !isSavedMessages && user && userStatus && isUserOnline(user, userStatus);
   const fullClassName = buildClassName(
     `Avatar size-${size}`,
     className,
-    `color-bg-${getUserColorKey(user || chat)}`,
+    `color-bg-${getUserColorKey(peer)}`,
     isSavedMessages && 'saved-messages',
     isDeleted && 'deleted-account',
     isReplies && 'replies-bot-account',
     isForum && 'forum',
-    isOnline && 'online',
+    ((withStory && user?.hasStories) || forPremiumPromo) && 'with-story-circle',
+    withStorySolid && user?.hasStories && 'with-story-solid',
+    withStorySolid && user?.hasUnreadStories && 'has-unread-story',
     onClick && 'interactive',
     (!isSavedMessages && !imgBlobUrl) && 'no-photo',
   );
 
   const hasMedia = Boolean(isSavedMessages || imgBlobUrl);
-  const handleClick = useCallback((e: ReactMouseEvent<HTMLDivElement, MouseEvent>) => {
+
+  const { handleClick, handleMouseDown } = useFastClick((e: ReactMouseEvent<HTMLDivElement, MouseEvent>) => {
+    if (withStory && storyViewerMode !== 'disabled' && user?.hasStories) {
+      e.stopPropagation();
+
+      openStoryViewer({
+        userId: user.id,
+        isSingleUser: storyViewerMode === 'single-user',
+        origin: storyViewerOrigin,
+      });
+      return;
+    }
+
     if (onClick) {
       onClick(e, hasMedia);
     }
-  }, [onClick, hasMedia]);
-
-  const senderId = (user || chat) && (user || chat)!.id;
+  });
 
   return (
     <div
       ref={ref}
       className={fullClassName}
-      onClick={handleClick}
-      data-test-sender-id={IS_TEST ? senderId : undefined}
+      id={peer?.id && withStory ? getUserStoryHtmlId(peer.id) : undefined}
+      data-test-sender-id={IS_TEST ? peer?.id : undefined}
       aria-label={typeof content === 'string' ? author : undefined}
+      onClick={handleClick}
+      onMouseDown={handleMouseDown}
     >
-      {typeof content === 'string' ? renderText(content, [size === 'jumbo' ? 'hq_emoji' : 'emoji']) : content}
+      <div className="inner">
+        {typeof content === 'string' ? renderText(content, [size === 'jumbo' ? 'hq_emoji' : 'emoji']) : content}
+      </div>
+      {withStory && user?.hasStories && (
+        <AvatarStoryCircle userId={user.id} size={size} withExtraGap={withStoryGap} />
+      )}
     </div>
   );
 };

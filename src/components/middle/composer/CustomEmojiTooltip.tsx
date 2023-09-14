@@ -1,24 +1,23 @@
-import React, {
-  memo, useCallback, useEffect, useRef,
-} from '../../../lib/teact/teact';
+import type { FC } from '../../../lib/teact/teact';
+import React, { memo, useEffect, useRef } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
 import type { ApiSticker } from '../../../api/types';
-import type { GlobalActions } from '../../../global/types';
+import type { GlobalActions } from '../../../global';
 
 import { COMPOSER_EMOJI_SIZE_PICKER } from '../../../config';
 import { selectIsChatWithSelf, selectIsCurrentUserPremium } from '../../../global/selectors';
 import buildClassName from '../../../util/buildClassName';
 import captureEscKeyListener from '../../../util/captureEscKeyListener';
 
-import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
-import useShowTransition from '../../../hooks/useShowTransition';
-import usePrevious from '../../../hooks/usePrevious';
 import useHorizontalScroll from '../../../hooks/useHorizontalScroll';
+import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
+import useLastCallback from '../../../hooks/useLastCallback';
+import usePrevious from '../../../hooks/usePrevious';
+import useShowTransition from '../../../hooks/useShowTransition';
 
-import Loading from '../../ui/Loading';
 import StickerButton from '../../common/StickerButton';
+import Loading from '../../ui/Loading';
 
 import styles from './CustomEmojiTooltip.module.scss';
 
@@ -28,6 +27,7 @@ export type OwnProps = {
   addRecentCustomEmoji: GlobalActions['addRecentCustomEmoji'];
   onCustomEmojiSelect: (customEmoji: ApiSticker) => void;
   onClose: NoneToVoidFunction;
+  noPlay?: boolean;
 };
 
 type StateProps = {
@@ -46,6 +46,7 @@ const CustomEmojiTooltip: FC<OwnProps & StateProps> = ({
   customEmoji,
   isSavedMessages,
   isCurrentUserPremium,
+  noPlay,
 }) => {
   const { clearCustomEmojiForEmoji } = getActions();
 
@@ -63,14 +64,14 @@ const CustomEmojiTooltip: FC<OwnProps & StateProps> = ({
 
   useEffect(() => (isOpen ? captureEscKeyListener(onClose) : undefined), [isOpen, onClose]);
 
-  const handleCustomEmojiSelect = useCallback((ce: ApiSticker) => {
+  const handleCustomEmojiSelect = useLastCallback((ce: ApiSticker) => {
     if (!isOpen) return;
     onCustomEmojiSelect(ce);
     addRecentCustomEmoji({
       documentId: ce.id,
     });
     clearCustomEmojiForEmoji();
-  }, [addRecentCustomEmoji, clearCustomEmojiForEmoji, isOpen, onCustomEmojiSelect]);
+  });
 
   const className = buildClassName(
     styles.root,
@@ -97,6 +98,7 @@ const CustomEmojiTooltip: FC<OwnProps & StateProps> = ({
             isSavedMessages={isSavedMessages}
             canViewSet
             isCurrentUserPremium={isCurrentUserPremium}
+            noPlay={noPlay}
           />
         ))
       ) : shouldRender ? (

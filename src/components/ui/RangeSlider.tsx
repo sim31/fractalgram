@@ -1,8 +1,9 @@
 import type { ChangeEvent } from 'react';
 import type { FC } from '../../lib/teact/teact';
-import React, { useCallback, useMemo, memo } from '../../lib/teact/teact';
+import React, { memo, useCallback, useMemo } from '../../lib/teact/teact';
 
 import buildClassName from '../../util/buildClassName';
+
 import useLang from '../../hooks/useLang';
 
 import './RangeSlider.scss';
@@ -83,7 +84,7 @@ const RangeSlider: FC<OwnProps> = ({
           <div className="slider-options">
             {options.map((option, index) => (
               <div
-                className={buildClassName('slider-option no-selection', index === value && 'active')}
+                className={buildClassName('slider-option', index === value && 'active')}
                 onClick={() => onChange(index)}
               >
                 {option}

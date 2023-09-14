@@ -5,11 +5,11 @@ import React, {
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import { ManagementProgress, ManagementScreens } from '../../../types';
 import type {
-  ApiAvailableReaction, ApiChat, ApiChatBannedRights, ApiExportedInvite,
+  ApiAvailableReaction, ApiChat, ApiChatBannedRights, ApiChatFullInfo, ApiExportedInvite,
 } from '../../../api/types';
 import { ApiMediaFormat } from '../../../api/types';
+import { ManagementProgress, ManagementScreens } from '../../../types';
 
 import {
   getChatAvatarHash,
@@ -17,24 +17,25 @@ import {
   isChatBasicGroup,
   isChatPublic,
 } from '../../../global/helpers';
+import { selectChat, selectChatFullInfo, selectTabState } from '../../../global/selectors';
 import { debounce } from '../../../util/schedulers';
-import { selectChat, selectTabState } from '../../../global/selectors';
 import { formatInteger } from '../../../util/textFormat';
 import renderText from '../../common/helpers/renderText';
-import useMedia from '../../../hooks/useMedia';
-import useLang from '../../../hooks/useLang';
+
 import useFlag from '../../../hooks/useFlag';
 import useHistoryBack from '../../../hooks/useHistoryBack';
+import useLang from '../../../hooks/useLang';
+import useMedia from '../../../hooks/useMedia';
 
 import AvatarEditable from '../../ui/AvatarEditable';
+import Checkbox from '../../ui/Checkbox';
+import ConfirmDialog from '../../ui/ConfirmDialog';
+import FloatingActionButton from '../../ui/FloatingActionButton';
 import InputText from '../../ui/InputText';
 import ListItem from '../../ui/ListItem';
-import Checkbox from '../../ui/Checkbox';
 import Spinner from '../../ui/Spinner';
-import FloatingActionButton from '../../ui/FloatingActionButton';
-import ConfirmDialog from '../../ui/ConfirmDialog';
-import TextArea from '../../ui/TextArea';
 import Switcher from '../../ui/Switcher';
+import TextArea from '../../ui/TextArea';
 
 import './Management.scss';
 
@@ -47,6 +48,7 @@ type OwnProps = {
 
 type StateProps = {
   chat: ApiChat;
+  chatFullInfo?: ApiChatFullInfo;
   progress?: ManagementProgress;
   isBasicGroup: boolean;
   hasLinkedChannel: boolean;
@@ -55,7 +57,6 @@ type StateProps = {
   canInvite?: boolean;
   canEditForum?: boolean;
   exportedInvites?: ApiExportedInvite[];
-  lastSyncTime?: number;
   isChannelsPremiumLimitReached: boolean;
   availableReactions?: ApiAvailableReaction[];
 };
@@ -87,6 +88,7 @@ const runDebounced = debounce((cb) => cb(), 500, false);
 const ManageGroup: FC<OwnProps & StateProps> = ({
   chatId,
   chat,
+  chatFullInfo,
   progress,
   isBasicGroup,
   hasLinkedChannel,
@@ -96,7 +98,6 @@ const ManageGroup: FC<OwnProps & StateProps> = ({
   canEditForum,
   isActive,
   exportedInvites,
-  lastSyncTime,
   isChannelsPremiumLimitReached,
   availableReactions,
   onScreenSelect,
@@ -117,7 +118,7 @@ const ManageGroup: FC<OwnProps & StateProps> = ({
 
   const [isDeleteDialogOpen, openDeleteDialog, closeDeleteDialog] = useFlag();
   const currentTitle = chat.title;
-  const currentAbout = chat.fullInfo ? (chat.fullInfo.about || '') : '';
+  const currentAbout = chatFullInfo?.about || '';
 
   const [isProfileFieldsTouched, setIsProfileFieldsTouched] = useState(false);
   const [title, setTitle] = useState(currentTitle);
@@ -127,7 +128,7 @@ const ManageGroup: FC<OwnProps & StateProps> = ({
   const [isForumEnabled, setIsForumEnabled] = useState(chat.isForum);
   const imageHash = getChatAvatarHash(chat);
   const currentAvatarBlobUrl = useMedia(imageHash, false, ApiMediaFormat.BlobUrl);
-  const isPublicGroup = useMemo(() => hasLinkedChannel || isChatPublic(chat), [chat, hasLinkedChannel]);
+  const isPublicGroup = useMemo(() => isChatPublic(chat), [chat]);
   const lang = useLang();
   // eslint-disable-next-line no-null/no-null
   const isPreHistoryHiddenCheckboxRef = useRef<HTMLDivElement>(null);
@@ -138,12 +139,12 @@ const ManageGroup: FC<OwnProps & StateProps> = ({
   });
 
   useEffect(() => {
-    if (lastSyncTime && canInvite) {
+    if (canInvite) {
       loadExportedChatInvites({ chatId });
       loadExportedChatInvites({ chatId, isRevoked: true });
       loadChatJoinRequests({ chatId });
     }
-  }, [chatId, loadExportedChatInvites, lastSyncTime, canInvite, loadChatJoinRequests]);
+  }, [chatId, canInvite]);
 
   // Resetting `isForum` switch on flood wait error
   useEffect(() => {
@@ -222,14 +223,14 @@ const ManageGroup: FC<OwnProps & StateProps> = ({
   }, [onScreenSelect]);
 
   const handleTogglePreHistory = useCallback(() => {
-    if (!chat.fullInfo) {
+    if (!chatFullInfo) {
       return;
     }
 
-    const { isPreHistoryHidden } = chat.fullInfo;
+    const { isPreHistoryHidden } = chatFullInfo;
 
     togglePreHistoryHidden({ chatId: chat.id, isEnabled: !isPreHistoryHidden });
-  }, [chat, togglePreHistoryHidden]);
+  }, [chat.id, chatFullInfo]);
 
   const handleForumToggle = useCallback(() => {
     setIsForumEnabled((current) => {
@@ -251,25 +252,25 @@ const ManageGroup: FC<OwnProps & StateProps> = ({
     // Teact does not have full support of controlled form components, we need to "disable" input value change manually
     // TODO Teact support added, this can now be removed
     const checkbox = isPreHistoryHiddenCheckboxRef.current?.querySelector('input') as HTMLInputElement;
-    checkbox.checked = !chat.fullInfo?.isPreHistoryHidden;
-  }, [isChannelsPremiumLimitReached, chat.fullInfo?.isPreHistoryHidden]);
+    checkbox.checked = !chatFullInfo?.isPreHistoryHidden;
+  }, [isChannelsPremiumLimitReached, chatFullInfo?.isPreHistoryHidden]);
 
   const chatReactionsDescription = useMemo(() => {
-    if (!chat.fullInfo?.enabledReactions) {
+    if (!chatFullInfo?.enabledReactions) {
       return lang('ReactionsOff');
     }
 
-    if (chat.fullInfo.enabledReactions.type === 'all') {
+    if (chatFullInfo.enabledReactions.type === 'all') {
       return lang('ReactionsAll');
     }
 
-    const enabledLength = chat.fullInfo.enabledReactions.allowed.length;
+    const enabledLength = chatFullInfo.enabledReactions.allowed.length;
     const totalLength = availableReactions?.filter((reaction) => !reaction.isInactive).length || 0;
 
     return totalLength
       ? `${enabledLength} / ${totalLength}`
       : `${enabledLength}`;
-  }, [availableReactions, chat, lang]);
+  }, [availableReactions, chatFullInfo?.enabledReactions, lang]);
 
   const enabledPermissionsCount = useMemo(() => {
     if (!chat.defaultBannedRights) {
@@ -277,7 +278,10 @@ const ManageGroup: FC<OwnProps & StateProps> = ({
     }
 
     let totalCount = ALL_PERMISSIONS.filter(
-      (key) => !chat.defaultBannedRights![key as keyof ApiChatBannedRights],
+      (key) => {
+        if (key === 'manageTopics' && !isForumEnabled) return false;
+        return !chat.defaultBannedRights![key as keyof ApiChatBannedRights];
+      },
     ).length;
 
     const { sendStickers, sendGifs } = chat.defaultBannedRights;
@@ -288,11 +292,11 @@ const ManageGroup: FC<OwnProps & StateProps> = ({
     }
 
     return totalCount;
-  }, [chat]);
+  }, [chat.defaultBannedRights, isForumEnabled]);
 
   const adminsCount = useMemo(() => {
-    return Object.keys(chat.fullInfo?.adminMembersById || {}).length;
-  }, [chat.fullInfo?.adminMembersById]);
+    return Object.keys(chatFullInfo?.adminMembersById || {}).length;
+  }, [chatFullInfo?.adminMembersById]);
 
   const handleDeleteGroup = useCallback(() => {
     if (isBasicGroup) {
@@ -437,10 +441,10 @@ const ManageGroup: FC<OwnProps & StateProps> = ({
             <span className="subtitle">{formatInteger(chat.membersCount ?? 0)}</span>
           </ListItem>
 
-          {!isPublicGroup && chat.fullInfo && (
-            <div className="ListItem narrow no-selection" ref={isPreHistoryHiddenCheckboxRef}>
+          {!isPublicGroup && !hasLinkedChannel && Boolean(chatFullInfo) && (
+            <div className="ListItem narrow" ref={isPreHistoryHiddenCheckboxRef}>
               <Checkbox
-                checked={!chat.fullInfo.isPreHistoryHidden}
+                checked={!chatFullInfo.isPreHistoryHidden}
                 label={lang('ChatHistory')}
                 onChange={handleTogglePreHistory}
                 disabled={!canBanUsers}
@@ -463,7 +467,7 @@ const ManageGroup: FC<OwnProps & StateProps> = ({
         {isLoading ? (
           <Spinner color="white" />
         ) : (
-          <i className="icon-check" />
+          <i className="icon icon-check" />
         )}
       </FloatingActionButton>
       <ConfirmDialog
@@ -486,15 +490,17 @@ const ManageGroup: FC<OwnProps & StateProps> = ({
 export default memo(withGlobal<OwnProps>(
   (global, { chatId }): StateProps => {
     const chat = selectChat(global, chatId)!;
+    const chatFullInfo = selectChatFullInfo(global, chatId);
     const { management, limitReachedModal } = selectTabState(global);
     const { progress } = management;
-    const hasLinkedChannel = Boolean(chat.fullInfo?.linkedChatId);
+    const hasLinkedChannel = Boolean(chatFullInfo?.linkedChatId);
     const isBasicGroup = isChatBasicGroup(chat);
     const { invites } = management.byChatId[chatId] || {};
     const canEditForum = !hasLinkedChannel && (getHasAdminRight(chat, 'changeInfo') || chat.isCreator);
 
     return {
       chat,
+      chatFullInfo,
       progress,
       isBasicGroup,
       hasLinkedChannel,
@@ -502,7 +508,6 @@ export default memo(withGlobal<OwnProps>(
       canBanUsers: isBasicGroup ? chat.isCreator : getHasAdminRight(chat, 'banUsers'),
       canInvite: isBasicGroup ? chat.isCreator : getHasAdminRight(chat, 'inviteUsers'),
       exportedInvites: invites,
-      lastSyncTime: global.lastSyncTime,
       isChannelsPremiumLimitReached: limitReachedModal?.limit === 'channels',
       availableReactions: global.availableReactions,
       canEditForum,

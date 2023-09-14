@@ -5,25 +5,28 @@ import React, {
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import { ManagementScreens, ManagementProgress } from '../../../types';
-import type { ApiAvailableReaction, ApiChat, ApiExportedInvite } from '../../../api/types';
+import type {
+  ApiAvailableReaction, ApiChat, ApiChatFullInfo, ApiExportedInvite,
+} from '../../../api/types';
 import { ApiMediaFormat } from '../../../api/types';
+import { ManagementProgress, ManagementScreens } from '../../../types';
 
 import { getChatAvatarHash, getHasAdminRight, isChatPublic } from '../../../global/helpers';
-import useMedia from '../../../hooks/useMedia';
-import useLang from '../../../hooks/useLang';
-import { selectChat, selectTabState } from '../../../global/selectors';
-import useFlag from '../../../hooks/useFlag';
-import useHistoryBack from '../../../hooks/useHistoryBack';
+import { selectChat, selectChatFullInfo, selectTabState } from '../../../global/selectors';
 import { formatInteger } from '../../../util/textFormat';
 
+import useFlag from '../../../hooks/useFlag';
+import useHistoryBack from '../../../hooks/useHistoryBack';
+import useLang from '../../../hooks/useLang';
+import useMedia from '../../../hooks/useMedia';
+
 import AvatarEditable from '../../ui/AvatarEditable';
+import Checkbox from '../../ui/Checkbox';
+import ConfirmDialog from '../../ui/ConfirmDialog';
+import FloatingActionButton from '../../ui/FloatingActionButton';
 import InputText from '../../ui/InputText';
 import ListItem from '../../ui/ListItem';
-import Checkbox from '../../ui/Checkbox';
 import Spinner from '../../ui/Spinner';
-import FloatingActionButton from '../../ui/FloatingActionButton';
-import ConfirmDialog from '../../ui/ConfirmDialog';
 import TextArea from '../../ui/TextArea';
 
 import './Management.scss';
@@ -37,12 +40,12 @@ type OwnProps = {
 
 type StateProps = {
   chat: ApiChat;
+  chatFullInfo?: ApiChatFullInfo;
   progress?: ManagementProgress;
   isSignaturesShown: boolean;
   canChangeInfo?: boolean;
   canInvite?: boolean;
   exportedInvites?: ApiExportedInvite[];
-  lastSyncTime?: number;
   availableReactions?: ApiAvailableReaction[];
 };
 
@@ -52,12 +55,12 @@ const CHANNEL_MAX_DESCRIPTION = 255;
 const ManageChannel: FC<OwnProps & StateProps> = ({
   chatId,
   chat,
+  chatFullInfo,
   progress,
   isSignaturesShown,
   canChangeInfo,
   canInvite,
   exportedInvites,
-  lastSyncTime,
   isActive,
   availableReactions,
   onScreenSelect,
@@ -75,8 +78,8 @@ const ManageChannel: FC<OwnProps & StateProps> = ({
   } = getActions();
 
   const currentTitle = chat?.title || '';
-  const currentAbout = chat?.fullInfo ? (chat.fullInfo.about || '') : '';
-  const hasLinkedChat = chat?.fullInfo?.linkedChatId;
+  const currentAbout = chatFullInfo?.about || '';
+  const hasLinkedChat = Boolean(chatFullInfo?.linkedChatId);
 
   const [isDeleteDialogOpen, openDeleteDialog, closeDeleteDialog] = useFlag();
   const [isProfileFieldsTouched, setIsProfileFieldsTouched] = useState(false);
@@ -94,12 +97,10 @@ const ManageChannel: FC<OwnProps & StateProps> = ({
   });
 
   useEffect(() => {
-    if (lastSyncTime) {
-      loadExportedChatInvites({ chatId });
-      loadExportedChatInvites({ chatId, isRevoked: true });
-      loadChatJoinRequests({ chatId });
-    }
-  }, [chatId, loadExportedChatInvites, lastSyncTime, loadChatJoinRequests]);
+    loadExportedChatInvites({ chatId });
+    loadExportedChatInvites({ chatId, isRevoked: true });
+    loadChatJoinRequests({ chatId });
+  }, [chatId]);
 
   useEffect(() => {
     if (progress === ManagementProgress.Complete) {
@@ -108,8 +109,10 @@ const ManageChannel: FC<OwnProps & StateProps> = ({
     }
   }, [progress]);
 
-  const adminsCount = Object.keys(chat.fullInfo?.adminMembersById || {}).length;
-  const removedUsersCount = (chat?.fullInfo?.kickedMembers?.length) || 0;
+  const adminsCount = useMemo(() => {
+    return Object.keys(chatFullInfo?.adminMembersById || {}).length;
+  }, [chatFullInfo?.adminMembersById]);
+  const removedUsersCount = chatFullInfo?.kickedMembers?.length || 0;
 
   const handleClickEditType = useCallback(() => {
     onScreenSelect(ManagementScreens.ChatPrivacyType);
@@ -192,20 +195,19 @@ const ManageChannel: FC<OwnProps & StateProps> = ({
   }, [chat.isCreator, chat.id, closeDeleteDialog, closeManagement, leaveChannel, deleteChannel, openChat]);
 
   const chatReactionsDescription = useMemo(() => {
-    if (!chat.fullInfo?.enabledReactions) {
+    if (!chatFullInfo?.enabledReactions) {
       return lang('ReactionsOff');
     }
 
-    if (chat.fullInfo.enabledReactions.type === 'all') {
+    if (chatFullInfo.enabledReactions.type === 'all') {
       return lang('ReactionsAll');
     }
 
-    const enabledLength = chat.fullInfo.enabledReactions.allowed.length;
+    const enabledLength = chatFullInfo.enabledReactions.allowed.length;
     const totalLength = availableReactions?.filter((reaction) => !reaction.isInactive).length || 0;
 
-    const text = totalLength ? `${enabledLength} / ${totalLength}` : `${enabledLength}`;
-    return text;
-  }, [availableReactions, chat, lang]);
+    return totalLength ? `${enabledLength} / ${totalLength}` : `${enabledLength}`;
+  }, [availableReactions, chatFullInfo?.enabledReactions, lang]);
   const isChannelPublic = useMemo(() => isChatPublic(chat), [chat]);
 
   if (chat.isRestricted || chat.isForbidden) {
@@ -293,7 +295,7 @@ const ManageChannel: FC<OwnProps & StateProps> = ({
               {chatReactionsDescription}
             </span>
           </ListItem>
-          <div className="ListItem no-selection narrow">
+          <div className="ListItem narrow">
             <Checkbox
               checked={isSignaturesShown}
               label={lang('ChannelSignMessages')}
@@ -343,7 +345,7 @@ const ManageChannel: FC<OwnProps & StateProps> = ({
         {isLoading ? (
           <Spinner color="white" />
         ) : (
-          <i className="icon-check" />
+          <i className="icon icon-check" />
         )}
       </FloatingActionButton>
       <ConfirmDialog
@@ -368,11 +370,11 @@ export default memo(withGlobal<OwnProps>(
 
     return {
       chat,
+      chatFullInfo: selectChatFullInfo(global, chatId),
       progress,
       isSignaturesShown,
       canChangeInfo: getHasAdminRight(chat, 'changeInfo'),
       canInvite: getHasAdminRight(chat, 'inviteUsers'),
-      lastSyncTime: global.lastSyncTime,
       exportedInvites: invites,
       availableReactions: global.availableReactions,
     };

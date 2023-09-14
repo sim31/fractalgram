@@ -1,10 +1,11 @@
+import type { ApiGroupCall } from '../../api/types';
 import type { GroupCallParticipant } from '../../lib/secret-sauce';
 import type { GlobalState } from '../types';
-import type { ApiGroupCall } from '../../api/types';
-import { selectGroupCall } from '../selectors/calls';
+
 import { omit } from '../../util/iteratees';
-import { updateChat } from './chats';
 import { selectChat } from '../selectors';
+import { selectGroupCall } from '../selectors/calls';
+import { updateChatFullInfo } from './chats';
 
 export function updateGroupCall<T extends GlobalState>(
   global: T,
@@ -53,11 +54,8 @@ export function removeGroupCall<T extends GlobalState>(
   if (groupCall && groupCall.chatId) {
     const chat = selectChat(global, groupCall.chatId);
     if (chat) {
-      global = updateChat(global, groupCall.chatId, {
-        fullInfo: {
-          ...chat.fullInfo,
-          groupCallId: undefined,
-        },
+      global = updateChatFullInfo(global, groupCall.chatId, {
+        groupCallId: undefined,
       });
     }
   }

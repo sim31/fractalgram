@@ -1,11 +1,11 @@
+import type { FC } from '../../lib/teact/teact';
 import React, { memo } from '../../lib/teact/teact';
 
 import type { ApiTopic } from '../../api/types';
-import type { FC } from '../../lib/teact/teact';
 
+import buildClassName from '../../util/buildClassName';
 import { getTopicColorCssVariable } from '../../util/forumColors';
 import { REM } from './helpers/mediaDimensions';
-import buildClassName from '../../util/buildClassName';
 import renderText from './helpers/renderText';
 
 import useLang from '../../hooks/useLang';
@@ -13,6 +13,7 @@ import useLang from '../../hooks/useLang';
 import TopicIcon from './TopicIcon';
 
 import styles from './TopicChip.module.scss';
+
 import blankSrc from '../../assets/blank.png';
 
 type OwnProps = {
@@ -39,8 +40,8 @@ const TopicChip: FC<OwnProps> = ({
         ? <TopicIcon topic={topic} size={TOPIC_ICON_SIZE} />
         : <img src={blankSrc} alt="" />}
       {topic?.title ? renderText(topic.title) : lang('Loading')}
-      {topic?.isClosed && <i className="icon-lock" />}
-      <i className="icon-next" />
+      {topic?.isClosed && <i className="icon icon-lock" />}
+      <i className="icon icon-next" />
     </div>
   );
 };

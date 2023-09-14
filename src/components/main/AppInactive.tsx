@@ -1,15 +1,24 @@
 import type { FC } from '../../lib/teact/teact';
 import React, { useCallback } from '../../lib/teact/teact';
 
+import useHistoryBack from '../../hooks/useHistoryBack';
+
 import Button from '../ui/Button';
 
-import appInactivePath from '../../assets/app-inactive.png';
 import './AppInactive.scss';
+
+import appInactivePath from '../../assets/app-inactive.png';
 
 const AppInactive: FC = () => {
   const handleReload = useCallback(() => {
     window.location.reload();
   }, []);
+
+  useHistoryBack({
+    isActive: true,
+    onBack: handleReload,
+    shouldResetUrlHash: true,
+  });
 
   return (
     <div id="AppInactive">

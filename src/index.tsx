@@ -1,31 +1,41 @@
 import './util/handleError';
 import './util/setupServiceWorker';
+import './global/init';
 
 import React from './lib/teact/teact';
 import TeactDOM from './lib/teact/teact-dom';
-
 import {
   getActions, getGlobal,
 } from './global';
-import updateWebmanifest from './util/updateWebmanifest';
-import { IS_MULTITAB_SUPPORTED } from './util/environment';
-import './global/init';
 
-import { APP_VERSION, DEBUG, MULTITAB_LOCALSTORAGE_KEY } from './config';
+import {
+  DEBUG, MULTITAB_LOCALSTORAGE_KEY, STRICTERDOM_ENABLED,
+} from './config';
+import { enableStrict, requestMutation } from './lib/fasterdom/fasterdom';
+import { selectTabState } from './global/selectors';
 import { establishMultitabRole, subscribeToMasterChange } from './util/establishMultitabRole';
 import { requestGlobal, subscribeToMultitabBroadcastChannel } from './util/multitab';
 import { onBeforeUnload } from './util/schedulers';
-import { selectTabState } from './global/selectors';
+import updateWebmanifest from './util/updateWebmanifest';
+import { IS_MULTITAB_SUPPORTED } from './util/windowEnvironment';
 
-import App from './App';
+import App from './components/App';
 
 import './styles/index.scss';
+
+if (STRICTERDOM_ENABLED) {
+  enableStrict();
+}
+
+init();
 
 async function init() {
   if (DEBUG) {
     // eslint-disable-next-line no-console
     console.log('>>> INIT');
   }
+
+  if (!(window as any).isCompatTestPassed) return;
 
   if (IS_MULTITAB_SUPPORTED) {
     subscribeToMultitabBroadcastChannel();
@@ -43,6 +53,9 @@ async function init() {
   getActions().initShared();
   getActions().init();
 
+  getActions().updateShouldEnableDebugLog();
+  getActions().updateShouldDebugExportedSenders();
+
   if (IS_MULTITAB_SUPPORTED) {
     establishMultitabRole();
     subscribeToMasterChange((isMasterTab) => {
@@ -56,12 +69,14 @@ async function init() {
     console.log('>>> START INITIAL RENDER');
   }
 
-  updateWebmanifest();
+  requestMutation(() => {
+    updateWebmanifest();
 
-  TeactDOM.render(
-    <App />,
-    document.getElementById('root')!,
-  );
+    TeactDOM.render(
+      <App />,
+      document.getElementById('root')!,
+    );
+  });
 
   if (DEBUG) {
     // eslint-disable-next-line no-console
@@ -78,4 +93,8 @@ async function init() {
   }
 }
 
-init();
+onBeforeUnload(() => {
+  const actions = getActions();
+  actions.leaveGroupCall?.({ isPageUnload: true });
+  actions.hangUp?.({ isPageUnload: true });
+});

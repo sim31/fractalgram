@@ -1,26 +1,28 @@
+import type { FC } from '../../lib/teact/teact';
 import React, { memo, useMemo } from '../../lib/teact/teact';
 
-import type { FC } from '../../lib/teact/teact';
 import type { ApiAvailableReaction, ApiReaction } from '../../api/types';
 import type { ObserveFn } from '../../hooks/useIntersectionObserver';
 import { ApiMediaFormat } from '../../api/types';
 
-import buildClassName from '../../util/buildClassName';
 import { isSameReaction } from '../../global/helpers';
+import buildClassName from '../../util/buildClassName';
 
-import useMediaTransition from '../../hooks/useMediaTransition';
 import useMedia from '../../hooks/useMedia';
+import useMediaTransition from '../../hooks/useMediaTransition';
 
 import CustomEmoji from './CustomEmoji';
 
-import blankUrl from '../../assets/blank.png';
 import './ReactionStaticEmoji.scss';
+
+import blankUrl from '../../assets/blank.png';
 
 type OwnProps = {
   reaction: ApiReaction;
   availableReactions?: ApiAvailableReaction[];
   className?: string;
   size?: number;
+  withIconHeart?: boolean;
   observeIntersection?: ObserveFn;
 };
 
@@ -29,6 +31,7 @@ const ReactionStaticEmoji: FC<OwnProps> = ({
   availableReactions,
   className,
   size,
+  withIconHeart,
   observeIntersection,
 }) => {
   const isCustom = 'documentId' in reaction;
@@ -39,6 +42,9 @@ const ReactionStaticEmoji: FC<OwnProps> = ({
   const mediaData = useMedia(`document${staticIconId}`, !staticIconId, ApiMediaFormat.BlobUrl);
 
   const transitionClassNames = useMediaTransition(mediaData);
+
+  const shouldApplySizeFix = 'emoticon' in reaction && reaction.emoticon === '🦄';
+  const shouldReplaceWithHeartIcon = withIconHeart && 'emoticon' in reaction && reaction.emoticon === '❤';
 
   if (isCustom) {
     return (
@@ -51,9 +57,20 @@ const ReactionStaticEmoji: FC<OwnProps> = ({
     );
   }
 
+  if (shouldReplaceWithHeartIcon) {
+    return (
+      <i className="ReactionStaticEmoji icon icon-heart" style={`font-size: ${size}px; width: ${size}px`} />
+    );
+  }
+
   return (
     <img
-      className={buildClassName('ReactionStaticEmoji', transitionClassNames, className)}
+      className={buildClassName(
+        'ReactionStaticEmoji',
+        shouldApplySizeFix && 'with-unicorn-fix',
+        transitionClassNames,
+        className,
+      )}
       style={size ? `width: ${size}px; height: ${size}px` : undefined}
       src={mediaData || blankUrl}
       alt={availableReaction?.title}

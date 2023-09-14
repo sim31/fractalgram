@@ -1,11 +1,12 @@
-import type { StateReducer, Dispatch } from '../useReducer';
 import type { ApiChatFolder } from '../../api/types';
+import type { IconName } from '../../types/icons';
+import type { Dispatch, StateReducer } from '../useReducer';
 
-import { pick, omit } from '../../util/iteratees';
+import { omit, pick } from '../../util/iteratees';
 import useReducer from '../useReducer';
 
 export type FolderChatType = {
-  icon: string;
+  icon: IconName;
   title: string;
   key: keyof Pick<ApiChatFolder, (
     'contacts' | 'nonContacts' | 'groups' | 'channels' | 'bots' |
@@ -122,9 +123,10 @@ export type FoldersState = {
 };
 export type FoldersActions = (
   'setTitle' | 'saveFilters' | 'editFolder' | 'reset' | 'setChatFilter' | 'setIsLoading' | 'setError' |
-  'editIncludeFilters' | 'editExcludeFilters' | 'setIncludeFilters' | 'setExcludeFilters'
+  'editIncludeFilters' | 'editExcludeFilters' | 'setIncludeFilters' | 'setExcludeFilters' | 'setIsTouched' |
+  'setFolderId' | 'setIsChatlist'
 );
-export type FolderEditDispatch = Dispatch<FoldersActions>;
+export type FolderEditDispatch = Dispatch<FoldersState, FoldersActions>;
 
 const INITIAL_STATE: FoldersState = {
   mode: 'create',
@@ -149,6 +151,12 @@ const foldersReducer: StateReducer<FoldersState, FoldersActions> = (
           title: action.payload,
         },
         isTouched: true,
+      };
+    case 'setFolderId':
+      return {
+        ...state,
+        folderId: action.payload,
+        mode: 'edit',
       };
     case 'editIncludeFilters':
       return {
@@ -221,6 +229,12 @@ const foldersReducer: StateReducer<FoldersState, FoldersActions> = (
         chatFilter: action.payload,
       };
     }
+    case 'setIsTouched': {
+      return {
+        ...state,
+        isTouched: action.payload,
+      };
+    }
     case 'setIsLoading': {
       return {
         ...state,
@@ -230,9 +244,18 @@ const foldersReducer: StateReducer<FoldersState, FoldersActions> = (
     case 'setError': {
       return {
         ...state,
+        isLoading: false,
         error: action.payload,
       };
     }
+    case 'setIsChatlist':
+      return {
+        ...state,
+        folder: {
+          ...state.folder,
+          isChatList: action.payload,
+        },
+      };
     case 'reset':
       return INITIAL_STATE;
     default:

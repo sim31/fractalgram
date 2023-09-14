@@ -1,26 +1,30 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useRef, useState,
+  memo, useEffect, useLayoutEffect, useRef, useState,
 } from '../../lib/teact/teact';
 
-import type { AnimationLevel, MediaViewerOrigin } from '../../types';
+import type { MediaViewerOrigin } from '../../types';
 import type { RealTouchEvent } from '../../util/captureEvents';
 
 import { animateNumber, timingFunctions } from '../../util/animation';
 import buildClassName from '../../util/buildClassName';
 import { captureEvents, IOS_SCREEN_EDGE_THRESHOLD } from '../../util/captureEvents';
-import { IS_IOS, IS_TOUCH_ENV } from '../../util/environment';
 import { clamp, isBetween, round } from '../../util/math';
 import { debounce } from '../../util/schedulers';
+import { IS_IOS, IS_TOUCH_ENV } from '../../util/windowEnvironment';
 
 import useDebouncedCallback from '../../hooks/useDebouncedCallback';
-import useForceUpdate from '../../hooks/useForceUpdate';
+import useDerivedState from '../../hooks/useDerivedState';
+import { useFullscreenStatus } from '../../hooks/useFullscreen';
+import useHistoryBack from '../../hooks/useHistoryBack';
 import useLang from '../../hooks/useLang';
-import usePrevious from '../../hooks/usePrevious';
+import useLastCallback from '../../hooks/useLastCallback';
+import useSignal from '../../hooks/useSignal';
+import { useSignalRef } from '../../hooks/useSignalRef';
 import useTimeout from '../../hooks/useTimeout';
 import useWindowSize from '../../hooks/useWindowSize';
-import useHistoryBack from '../../hooks/useHistoryBack';
-import { useFullscreenStatus } from '../../hooks/useFullscreen';
+import useControlsSignal from './hooks/useControlsSignal';
+import useZoomChange from './hooks/useZoomChangeSignal';
 
 import MediaViewerContent from './MediaViewerContent';
 
@@ -40,19 +44,18 @@ type OwnProps = {
   threadId?: number;
   avatarOwnerId?: string;
   origin?: MediaViewerOrigin;
-  animationLevel: AnimationLevel;
+  withAnimation?: boolean;
   onClose: () => void;
   isHidden?: boolean;
   hasFooter?: boolean;
   onFooterClick: () => void;
-  zoomLevelChange: number;
 };
 
 const SWIPE_X_THRESHOLD = 50;
 const SWIPE_Y_THRESHOLD = 50;
 const SLIDES_GAP = IS_TOUCH_ENV ? 40 : 0;
 const ANIMATION_DURATION = 350;
-const DEBOUNCE_MESSAGE = 350;
+const DEBOUNCE_SELECT_MEDIA = 350;
 const DEBOUNCE_SWIPE = 500;
 const DEBOUNCE_ACTIVE = 800;
 const DOUBLE_TAP_ZOOM = 3;
@@ -80,11 +83,8 @@ const MediaViewerSlides: FC<OwnProps> = ({
   selectMedia,
   isVideo,
   isGif,
-  isPhoto,
   isOpen,
-  hasFooter,
-  zoomLevelChange,
-  animationLevel,
+  withAnimation,
   isHidden,
   ...rest
 }) => {
@@ -92,19 +92,27 @@ const MediaViewerSlides: FC<OwnProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line no-null/no-null
   const activeSlideRef = useRef<HTMLDivElement>(null);
-  const transformRef = useRef<Transform>({ x: 0, y: 0, scale: 1 });
+  // eslint-disable-next-line no-null/no-null
+  const leftSlideRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line no-null/no-null
+  const rightSlideRef = useRef<HTMLDivElement>(null);
   const lastTransformRef = useRef<Transform>({ x: 0, y: 0, scale: 1 });
   const swipeDirectionRef = useRef<SwipeDirection | undefined>(undefined);
-  const isActiveRef = useRef(true);
+  const initialContentRectRef = useRef<DOMRect | undefined>(undefined);
   const isReleasedRef = useRef(false);
-  const [activeMediaId, setActiveMediaId] = useState<number | undefined>(mediaId);
-  const prevZoomLevelChange = usePrevious(zoomLevelChange);
-  const hasZoomChanged = prevZoomLevelChange !== undefined && prevZoomLevelChange !== zoomLevelChange;
-  const forceUpdate = useForceUpdate();
-  const [areControlsVisible, setControlsVisible] = useState(false);
+  const [isActive, setIsActive] = useState(true);
+  const [getZoomChange] = useZoomChange();
+  const prevZoomChangeRef = useRef(getZoomChange());
   const isFullscreen = useFullscreenStatus();
   const [isMouseDown, setIsMouseDown] = useState(false);
+  const [getTransform, setTransform] = useSignal<Transform>({ x: 0, y: 0, scale: 1 });
+  const transformRef = useSignalRef(getTransform);
+  const [getActiveMediaId, setActiveMediaId] = useSignal<number | undefined>(mediaId);
+  const activeMediaIdRef = useSignalRef(getActiveMediaId);
+  const isScaled = useDerivedState(() => getTransform().scale !== 1, [getTransform]);
+  const activeMediaId = useDerivedState(getActiveMediaId);
   const { height: windowHeight, width: windowWidth, isResizing } = useWindowSize();
+  const [getControlsVisible, setControlsVisible, lockControls] = useControlsSignal();
   const { onClose } = rest;
 
   const lang = useLang();
@@ -115,39 +123,50 @@ const MediaViewerSlides: FC<OwnProps> = ({
     shouldBeReplaced: true,
   });
 
-  const setTransform = useCallback((value: Transform) => {
-    transformRef.current = value;
-    forceUpdate();
-  }, [forceUpdate]);
-
-  const selectMediaDebounced = useDebouncedCallback(selectMedia, [selectMedia], DEBOUNCE_MESSAGE, true);
+  const selectMediaDebounced = useDebouncedCallback(selectMedia, [selectMedia], DEBOUNCE_SELECT_MEDIA, true);
   const clearSwipeDirectionDebounced = useDebouncedCallback(() => {
     swipeDirectionRef.current = undefined;
   }, [], DEBOUNCE_SWIPE, true);
-  const setIsActiveDebounced = useDebouncedCallback((value: boolean) => {
-    isActiveRef.current = value;
-    forceUpdate();
-  }, [forceUpdate], DEBOUNCE_ACTIVE, true);
 
-  const shouldCloseOnVideo = isGif && !IS_IOS;
+  const setIsActiveDebounced = useDebouncedCallback((value) => setIsActive(value), [], DEBOUNCE_ACTIVE, true);
+
+  const shouldCloseOnVideo = Boolean(isGif && !IS_IOS);
   const clickXThreshold = IS_TOUCH_ENV ? 40 : windowWidth / 10;
 
-  const handleControlsVisibility = useCallback((e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
+  const handleControlsVisibility = useLastCallback((e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
     if (!IS_TOUCH_ENV) return;
     const isFooter = windowHeight - e.pageY < CLICK_Y_THRESHOLD;
     if (!isFooter && e.pageX < clickXThreshold) return;
     if (!isFooter && e.pageX > windowWidth - clickXThreshold) return;
-    setControlsVisible(!areControlsVisible);
-  }, [clickXThreshold, areControlsVisible, windowHeight, windowWidth]);
+    setControlsVisible(!getControlsVisible());
+  });
 
-  useTimeout(() => setControlsVisible(true), ANIMATION_DURATION + 100);
-
-  useEffect(() => {
-    setActiveMediaId(mediaId);
-  }, [mediaId]);
+  useTimeout(() => setControlsVisible(true), ANIMATION_DURATION);
 
   useEffect(() => {
-    if (!containerRef.current || activeMediaId === undefined || isHidden || isFullscreen) {
+    const { scale, x, y } = transformRef.current;
+    // Only update active media if slide is in default position
+    if (x === 0 && y === 0 && scale === 1) {
+      setActiveMediaId(mediaId);
+    }
+  }, [mediaId, setActiveMediaId, transformRef]);
+
+  useLayoutEffect(() => {
+    const { x, y, scale } = getTransform();
+    lockControls(scale !== 1);
+    if (leftSlideRef.current) {
+      leftSlideRef.current.style.transform = getTransformStyle(-windowWidth + x - SLIDES_GAP);
+    }
+    if (activeSlideRef.current) {
+      activeSlideRef.current.style.transform = getTransformStyle(x, y, scale);
+    }
+    if (rightSlideRef.current) {
+      rightSlideRef.current.style.transform = getTransformStyle(windowWidth + x + SLIDES_GAP);
+    }
+  }, [getTransform, lockControls, windowWidth]);
+
+  useEffect(() => {
+    if (!containerRef.current || activeMediaIdRef.current === undefined || isHidden || isFullscreen) {
       return undefined;
     }
     let lastTransform = lastTransformRef.current;
@@ -164,28 +183,28 @@ const MediaViewerSlides: FC<OwnProps> = ({
       y: 0,
     };
     let lastGestureTime = Date.now();
-    let initialContentRect: DOMRect;
     let content: HTMLElement | null;
     const setLastGestureTime = debounce(() => {
       lastGestureTime = Date.now();
     }, 500, false, true);
 
     const changeSlide = (direction: number) => {
-      const mId = getMediaId(activeMediaId, direction);
+      const mId = getMediaId(activeMediaIdRef.current, direction);
       if (mId !== undefined) {
         const offset = (windowWidth + SLIDES_GAP) * direction;
-        transformRef.current.x += offset;
-        isActiveRef.current = false;
+        const transform = transformRef.current;
+        const x = transform.x + offset;
+        setIsActive(false);
         setActiveMediaId(mId);
         selectMediaDebounced(mId);
         setIsActiveDebounced(true);
         lastTransform = { x: 0, y: 0, scale: 1 };
-        if (animationLevel === 0) {
+        if (!withAnimation) {
           setTransform(lastTransform);
           return true;
         }
         cancelAnimation = animateNumber({
-          from: transformRef.current.x,
+          from: x,
           to: 0,
           duration: ANIMATION_DURATION,
           timing: easeOutCubic,
@@ -201,7 +220,8 @@ const MediaViewerSlides: FC<OwnProps> = ({
     };
 
     const changeSlideOnClick = (e: MouseEvent): [boolean, boolean] => {
-      if (transformRef.current.scale !== 1) return [false, false];
+      const { scale } = transformRef.current;
+      if (scale !== 1) return [false, false];
       if ((e.target as HTMLElement).closest('div.VideoPlayerControls')) {
         return [false, false];
       }
@@ -220,7 +240,8 @@ const MediaViewerSlides: FC<OwnProps> = ({
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (transformRef.current.scale !== 1) return;
+      const { scale } = transformRef.current;
+      if (scale !== 1) return;
       switch (e.key) {
         case 'Left': // IE/Edge specific value
         case 'ArrowLeft':
@@ -237,7 +258,8 @@ const MediaViewerSlides: FC<OwnProps> = ({
     const calculateOffsetBoundaries = (
       { x, y, scale }: Transform,
       offsetTop = 0,
-    ):[Transform, boolean, boolean] => {
+    ): [Transform, boolean, boolean] => {
+      const initialContentRect = initialContentRectRef.current;
       if (!initialContentRect) return [{ x, y, scale }, true, true];
       // Get current content boundaries
       let inBoundsX = true;
@@ -271,13 +293,11 @@ const MediaViewerSlides: FC<OwnProps> = ({
       if (e.type === 'mouseup') {
         setIsMouseDown(false);
       }
-      const absX = Math.abs(transformRef.current.x);
-      const absY = Math.abs(transformRef.current.y);
-      const {
-        scale,
-        x,
-        y,
-      } = transformRef.current;
+      const transform = transformRef.current;
+      const { y, scale } = transform;
+      let x = transform.x;
+      const absX = Math.abs(x);
+      const absY = Math.abs(y);
 
       clearSwipeDirectionDebounced();
       setIsActiveDebounced(true);
@@ -362,7 +382,7 @@ const MediaViewerSlides: FC<OwnProps> = ({
       }
       // Get horizontal swipe direction
       const direction = x < 0 ? 1 : -1;
-      const mId = getMediaId(activeMediaId, x < 0 ? 1 : -1);
+      const mId = getMediaId(activeMediaIdRef.current, x < 0 ? 1 : -1);
       // Get the direction of the last pan gesture.
       // Could be different from the total horizontal swipe direction
       // if user starts a swipe in one direction and then changes the direction
@@ -372,20 +392,20 @@ const MediaViewerSlides: FC<OwnProps> = ({
         const offset = (windowWidth + SLIDES_GAP) * direction;
         // If image is shifted by more than SWIPE_X_THRESHOLD,
         // We shift everything by one screen width and then set new active message id
-        transformRef.current.x += offset;
+        x += offset;
         setActiveMediaId(mId);
         selectMediaDebounced(mId);
       }
       // Then we always return to the original position
       cancelAnimation = animateNumber({
-        from: transformRef.current.x,
+        from: x,
         to: 0,
         duration: ANIMATION_DURATION,
         timing: easeOutCubic,
         onUpdate: (value) => setTransform({
           y: 0,
           x: value,
-          scale: transformRef.current?.scale ?? 1,
+          scale: scale ?? 1,
         }),
       });
     };
@@ -393,27 +413,27 @@ const MediaViewerSlides: FC<OwnProps> = ({
     const cleanup = captureEvents(containerRef.current, {
       isNotPassive: true,
       withNativeDrag: true,
-      excludedClosestSelector: '.MediaViewerFooter, .ZoomControls',
+      excludedClosestSelector: '.MediaViewerFooter, .ZoomControls, .VideoPlayerControls',
       minZoom: MIN_ZOOM,
       maxZoom: MAX_ZOOM,
       doubleTapZoom: DOUBLE_TAP_ZOOM,
       onCapture: (e) => {
         if (checkIfControlTarget(e)) return;
+        const { x, y, scale } = transformRef.current;
         if (e.type === 'mousedown') {
           setIsMouseDown(true);
-          if (transformRef.current.scale !== 1) {
+          if (scale !== 1) {
             e.preventDefault();
             return;
           }
         }
         lastGestureTime = Date.now();
-        const { x, y, scale } = transformRef.current;
         if (x === 0 && y === 0 && scale === 1) {
           if (!activeSlideRef.current) return;
           content = activeSlideRef.current.querySelector('img, video');
           if (!content) return;
           // Store initial content rect, without transformations
-          initialContentRect = content.getBoundingClientRect();
+          initialContentRectRef.current = content.getBoundingClientRect();
         }
       },
       onDrag: (event, captureEvent, {
@@ -438,11 +458,7 @@ const MediaViewerSlides: FC<OwnProps> = ({
         lastDragOffset.y = dragOffsetY;
         const absOffsetX = Math.abs(dragOffsetX);
         const absOffsetY = Math.abs(dragOffsetY);
-        const {
-          scale,
-          x,
-          y,
-        } = transformRef.current;
+        const { x, y, scale } = transformRef.current;
         const threshold = 10;
         const tolerance = 1.5;
 
@@ -476,7 +492,7 @@ const MediaViewerSlides: FC<OwnProps> = ({
           if (swipeDirectionRef.current === SwipeDirection.Horizontal
             || Math.abs(x) > threshold || absOffsetX / absOffsetY > tolerance) {
             swipeDirectionRef.current = SwipeDirection.Horizontal;
-            isActiveRef.current = false;
+            setIsActive(false);
             const limit = windowWidth + SLIDES_GAP;
             const x1 = clamp(dragOffsetX, -limit, limit);
             setTransform({
@@ -619,11 +635,11 @@ const MediaViewerSlides: FC<OwnProps> = ({
       cleanup();
       document.removeEventListener('keydown', handleKeyDown, false);
     };
-  }, [
+  },
+  [
     onClose,
     setTransform,
     getMediaId,
-    activeMediaId,
     windowWidth,
     windowHeight,
     clickXThreshold,
@@ -631,16 +647,24 @@ const MediaViewerSlides: FC<OwnProps> = ({
     selectMediaDebounced,
     setIsActiveDebounced,
     clearSwipeDirectionDebounced,
-    animationLevel,
+    withAnimation,
     setIsMouseDown,
+    setIsActive,
     isHidden,
     isFullscreen,
+    transformRef,
+    setActiveMediaId,
+    activeMediaIdRef,
   ]);
 
   useEffect(() => {
+    const zoomChange = getZoomChange();
+    const hasZoomChanged = prevZoomChangeRef.current !== undefined
+      && prevZoomChangeRef.current !== zoomChange;
     if (!containerRef.current || !hasZoomChanged || isHidden || isFullscreen) return;
+    prevZoomChangeRef.current = zoomChange;
     const { scale } = transformRef.current;
-    const dir = zoomLevelChange > 0 ? -1 : +1;
+    const dir = zoomChange > 0 ? -1 : +1;
     const minZoom = MIN_ZOOM * 0.6;
     const maxZoom = MAX_ZOOM * 3;
     let steps = 100;
@@ -666,7 +690,7 @@ const MediaViewerSlides: FC<OwnProps> = ({
         containerRef.current.dispatchEvent(wheelEvent);
       },
     });
-  }, [zoomLevelChange, hasZoomChanged, isHidden, isFullscreen]);
+  }, [getZoomChange, isHidden, isFullscreen, transformRef]);
 
   if (activeMediaId === undefined) return undefined;
 
@@ -674,25 +698,21 @@ const MediaViewerSlides: FC<OwnProps> = ({
   const prevMediaId = getMediaId(activeMediaId, -1);
   const hasPrev = prevMediaId !== undefined;
   const hasNext = nextMediaId !== undefined;
-  const offsetX = transformRef.current.x;
-  const offsetY = transformRef.current.y;
-  const { scale } = transformRef.current;
-  const isMoving = isMouseDown && scale > 1;
+  const isMoving = isMouseDown && isScaled;
 
   return (
     <div className="MediaViewerSlides" ref={containerRef}>
-      {hasPrev && scale === 1 && !isResizing && (
-        <div className="MediaViewerSlide" style={getAnimationStyle(-windowWidth + offsetX - SLIDES_GAP)}>
+      <div className="MediaViewerSlide" ref={leftSlideRef}>
+        {hasPrev && !isScaled && !isResizing && (
           <MediaViewerContent
             /* eslint-disable-next-line react/jsx-props-no-spreading */
             {...rest}
-            animationLevel={animationLevel}
+            withAnimation={withAnimation}
             isMoving={isMoving}
-            areControlsVisible={areControlsVisible}
             mediaId={prevMediaId}
           />
-        </div>
-      )}
+        )}
+      </div>
       <div
         className={buildClassName(
           'MediaViewerSlide',
@@ -701,32 +721,28 @@ const MediaViewerSlides: FC<OwnProps> = ({
         )}
         onClick={handleControlsVisibility}
         ref={activeSlideRef}
-        style={getAnimationStyle(offsetX, offsetY, scale)}
       >
         <MediaViewerContent
           /* eslint-disable-next-line react/jsx-props-no-spreading */
           {...rest}
           mediaId={activeMediaId}
-          animationLevel={animationLevel}
-          isActive={isActiveRef.current}
-          setControlsVisible={setControlsVisible}
+          withAnimation={withAnimation}
+          isActive={isActive}
           isMoving={isMoving}
-          areControlsVisible={areControlsVisible && scale === 1}
         />
       </div>
-      {hasNext && scale === 1 && !isResizing && (
-        <div className="MediaViewerSlide" style={getAnimationStyle(windowWidth + offsetX + SLIDES_GAP)}>
+      <div className="MediaViewerSlide" ref={rightSlideRef}>
+        {hasNext && !isScaled && !isResizing && (
           <MediaViewerContent
             /* eslint-disable-next-line react/jsx-props-no-spreading */
             {...rest}
-            animationLevel={animationLevel}
+            withAnimation={withAnimation}
             isMoving={isMoving}
-            areControlsVisible={areControlsVisible}
             mediaId={nextMediaId}
           />
-        </div>
-      )}
-      {hasPrev && scale === 1 && !IS_TOUCH_ENV && (
+        )}
+      </div>
+      {hasPrev && !isScaled && !IS_TOUCH_ENV && (
         <button
           type="button"
           className={`navigation prev ${isVideo && !isGif && 'inline'}`}
@@ -734,7 +750,7 @@ const MediaViewerSlides: FC<OwnProps> = ({
           dir={lang.isRtl ? 'rtl' : undefined}
         />
       )}
-      {hasNext && scale === 1 && !IS_TOUCH_ENV && (
+      {hasNext && !isScaled && !IS_TOUCH_ENV && (
         <button
           type="button"
           className={`navigation next ${isVideo && !isGif && 'inline'}`}
@@ -748,8 +764,8 @@ const MediaViewerSlides: FC<OwnProps> = ({
 
 export default memo(MediaViewerSlides);
 
-function getAnimationStyle(x = 0, y = 0, scale = 1) {
-  return `transform: translate3d(${x.toFixed(3)}px, ${y.toFixed(3)}px, 0px) scale(${scale.toFixed(3)});`;
+function getTransformStyle(x = 0, y = 0, scale = 1) {
+  return `translate3d(${x.toFixed(3)}px, ${y.toFixed(3)}px, 0px) scale(${scale.toFixed(3)})`;
 }
 
 function checkIfInsideSelector(element: HTMLElement, selector: string) {
@@ -763,7 +779,7 @@ function checkIfControlTarget(e: TouchEvent | MouseEvent) {
   if (checkIfInsideSelector(target, '.VideoPlayerControls')) {
     if (checkIfInsideSelector(
       target,
-      '.play, .fullscreen, .volume, .volume-slider, .playback-rate, .playback-rate-menu',
+      '.play, .fullscreen, .volume, .volume-slider, .playback-rate, .playback-rate-menu, .SeekLine',
     )) {
       return true;
     }

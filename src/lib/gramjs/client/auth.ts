@@ -49,7 +49,7 @@ export async function authFlow(
     client._log.info('Signed in successfully as', utils.getDisplayName(me));
 }
 
-export async function signInUserWithPreferredMethod(
+export function signInUserWithPreferredMethod(
     client: TelegramClient, apiCredentials: ApiCredentials, authParams: UserAuthParams,
 ): Promise<Api.TypeUser> {
     const { initialMethod = DEFAULT_INITIAL_METHOD } = authParams;
@@ -231,8 +231,8 @@ async function signInUserWithQrCode(
             }
 
             const result = await client.invoke(new Api.auth.ExportLoginToken({
-                apiId: Number(process.env.TELEGRAM_T_API_ID),
-                apiHash: process.env.TELEGRAM_T_API_HASH,
+                apiId: Number(process.env.TELEGRAM_API_ID),
+                apiHash: process.env.TELEGRAM_API_HASH,
                 exceptIds: [],
             }));
             if (!(result instanceof Api.auth.LoginToken)) {
@@ -272,8 +272,8 @@ async function signInUserWithQrCode(
 
     try {
         const result2 = await client.invoke(new Api.auth.ExportLoginToken({
-            apiId: Number(process.env.TELEGRAM_T_API_ID),
-            apiHash: process.env.TELEGRAM_T_API_HASH,
+            apiId: Number(process.env.TELEGRAM_API_ID),
+            apiHash: process.env.TELEGRAM_API_HASH,
             exceptIds: [],
         }));
 

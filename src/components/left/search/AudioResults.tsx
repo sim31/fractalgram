@@ -2,21 +2,23 @@ import type { FC } from '../../../lib/teact/teact';
 import React, { memo, useCallback, useMemo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
+import type { StateProps } from './helpers/createMapStateToProps';
 import { AudioOrigin, LoadMoreDirection } from '../../../types';
 
 import { SLIDE_TRANSITION_DURATION } from '../../../config';
-import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
-import type { StateProps } from './helpers/createMapStateToProps';
-import { createMapStateToProps } from './helpers/createMapStateToProps';
+import buildClassName from '../../../util/buildClassName';
 import { formatMonthAndYear, toYearMonth } from '../../../util/dateFormat';
-import { getSenderName } from './helpers/getSenderName';
+import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
 import { throttle } from '../../../util/schedulers';
-import useAsyncRendering from '../../right/hooks/useAsyncRendering';
-import useLang from '../../../hooks/useLang';
+import { createMapStateToProps } from './helpers/createMapStateToProps';
+import { getSenderName } from './helpers/getSenderName';
 
-import InfiniteScroll from '../../ui/InfiniteScroll';
+import useLang from '../../../hooks/useLang';
+import useAsyncRendering from '../../right/hooks/useAsyncRendering';
+
 import Audio from '../../common/Audio';
 import NothingFound from '../../common/NothingFound';
+import InfiniteScroll from '../../ui/InfiniteScroll';
 import Loading from '../../ui/Loading';
 
 export type OwnProps = {
@@ -35,7 +37,6 @@ const AudioResults: FC<OwnProps & StateProps> = ({
   usersById,
   globalMessagesByChatId,
   foundIds,
-  lastSyncTime,
   activeDownloads,
 }) => {
   const {
@@ -47,7 +48,7 @@ const AudioResults: FC<OwnProps & StateProps> = ({
   const lang = useLang();
   const currentType = isVoice ? 'voice' : 'audio';
   const handleLoadMore = useCallback(({ direction }: { direction: LoadMoreDirection }) => {
-    if (lastSyncTime && direction === LoadMoreDirection.Backwards) {
+    if (direction === LoadMoreDirection.Backwards) {
       runThrottled(() => {
         searchMessagesGlobal({
           type: currentType,
@@ -55,7 +56,7 @@ const AudioResults: FC<OwnProps & StateProps> = ({
       });
     }
   // eslint-disable-next-line react-hooks-static-deps/exhaustive-deps -- `searchQuery` is required to prevent infinite message loading
-  }, [currentType, lastSyncTime, searchMessagesGlobal, searchQuery]);
+  }, [currentType, searchMessagesGlobal, searchQuery]);
 
   const foundMessages = useMemo(() => {
     if (!foundIds || !globalMessagesByChatId) {
@@ -79,7 +80,8 @@ const AudioResults: FC<OwnProps & StateProps> = ({
 
   function renderList() {
     return foundMessages.map((message, index) => {
-      const shouldDrawDateDivider = index === 0
+      const isFirst = index === 0;
+      const shouldDrawDateDivider = isFirst
         || toYearMonth(message.date) !== toYearMonth(foundMessages[index - 1].date);
       return (
         <div
@@ -87,7 +89,14 @@ const AudioResults: FC<OwnProps & StateProps> = ({
           key={message.id}
         >
           {shouldDrawDateDivider && (
-            <p className="section-heading" dir={lang.isRtl ? 'rtl' : undefined}>
+            <p
+              className={buildClassName(
+                'section-heading',
+                isFirst && 'section-heading-first',
+                !isFirst && 'section-heading-with-border',
+              )}
+              dir={lang.isRtl ? 'rtl' : undefined}
+            >
               {formatMonthAndYear(lang, new Date(message.date * 1000))}
             </p>
           )}
@@ -98,12 +107,11 @@ const AudioResults: FC<OwnProps & StateProps> = ({
             origin={AudioOrigin.Search}
             senderTitle={getSenderName(lang, message, chatsById, usersById)}
             date={message.date}
-            lastSyncTime={lastSyncTime}
             className="scroll-item"
             onPlay={handlePlayAudio}
             onDateClick={handleMessageFocus}
             canDownload={!chatsById[message.chatId]?.isProtected && !message.isProtected}
-            isDownloading={activeDownloads[message.chatId]?.includes(message.id)}
+            isDownloading={activeDownloads[message.chatId]?.ids?.includes(message.id)}
           />
         </div>
       );

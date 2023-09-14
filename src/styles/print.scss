@@ -26,13 +26,12 @@
   html,
   body,
   #root,
-  #UiLoader,
   #Main,
   #MiddleColumn,
   .MessageList,
   .messages-layout,
   .Transition,
-  .Transition > * {
+  .Transition > .Transition_slide {
     height: auto !important;
     overflow: visible !important;
     display: block !important;

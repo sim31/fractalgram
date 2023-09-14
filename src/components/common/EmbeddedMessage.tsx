@@ -2,30 +2,35 @@ import type { FC } from '../../lib/teact/teact';
 import React, { useRef } from '../../lib/teact/teact';
 
 import type {
-  ApiUser, ApiMessage, ApiChat,
+  ApiChat,
+  ApiMessage, ApiUser,
 } from '../../api/types';
+import type { ChatTranslatedMessages } from '../../global/types';
+import type { ObserveFn } from '../../hooks/useIntersectionObserver';
 
 import {
-  getMessageMediaHash,
-  isActionMessage,
-  getSenderTitle,
-  getMessageRoundVideo,
-  getUserColorKey,
   getMessageIsSpoiler,
+  getMessageMediaHash,
+  getMessageRoundVideo,
+  getSenderTitle,
+  getUserColorKey,
+  isActionMessage,
+  isMessageTranslatable,
 } from '../../global/helpers';
-import renderText from './helpers/renderText';
-import { getPictogramDimensions } from './helpers/mediaDimensions';
 import buildClassName from '../../util/buildClassName';
+import { getPictogramDimensions } from './helpers/mediaDimensions';
+import renderText from './helpers/renderText';
 
-import type { ObserveFn } from '../../hooks/useIntersectionObserver';
+import { useFastClick } from '../../hooks/useFastClick';
 import { useIsIntersecting } from '../../hooks/useIntersectionObserver';
+import useLang from '../../hooks/useLang';
 import useMedia from '../../hooks/useMedia';
 import useThumbnail from '../../hooks/useThumbnail';
-import useLang from '../../hooks/useLang';
+import useMessageTranslation from '../middle/message/hooks/useMessageTranslation';
 
 import ActionMessage from '../middle/ActionMessage';
-import MessageSummary from './MessageSummary';
 import MediaSpoiler from './MediaSpoiler';
+import MessageSummary from './MessageSummary';
 
 import './EmbeddedMessage.scss';
 
@@ -38,6 +43,8 @@ type OwnProps = {
   noUserColors?: boolean;
   isProtected?: boolean;
   hasContextMenu?: boolean;
+  chatTranslations?: ChatTranslatedMessages;
+  requestedChatTranslationLanguage?: string;
   observeIntersectionForLoading?: ObserveFn;
   observeIntersectionForPlaying?: ObserveFn;
   onClick: NoneToVoidFunction;
@@ -54,6 +61,8 @@ const EmbeddedMessage: FC<OwnProps> = ({
   isProtected,
   noUserColors,
   hasContextMenu,
+  chatTranslations,
+  requestedChatTranslationLanguage,
   observeIntersectionForLoading,
   observeIntersectionForPlaying,
   onClick,
@@ -67,9 +76,16 @@ const EmbeddedMessage: FC<OwnProps> = ({
   const isRoundVideo = Boolean(message && getMessageRoundVideo(message));
   const isSpoiler = Boolean(message && getMessageIsSpoiler(message));
 
+  const shouldTranslate = message && isMessageTranslatable(message);
+  const { translatedText } = useMessageTranslation(
+    chatTranslations, message?.chatId, shouldTranslate ? message?.id : undefined, requestedChatTranslationLanguage,
+  );
+
   const lang = useLang();
 
   const senderTitle = sender ? getSenderTitle(lang, sender) : message?.forwardInfo?.hiddenUserName;
+
+  const { handleClick, handleMouseDown } = useFastClick(onClick);
 
   return (
     <div
@@ -79,7 +95,8 @@ const EmbeddedMessage: FC<OwnProps> = ({
         className,
         sender && !noUserColors && `color-${getUserColorKey(sender)}`,
       )}
-      onClick={message ? onClick : undefined}
+      onClick={message && handleClick}
+      onMouseDown={message && handleMouseDown}
     >
       {mediaThumbnail && renderPictogram(mediaThumbnail, mediaBlobUrl, isRoundVideo, isProtected, isSpoiler)}
       <div className="message-text">
@@ -98,6 +115,7 @@ const EmbeddedMessage: FC<OwnProps> = ({
               lang={lang}
               message={message}
               noEmoji={Boolean(mediaThumbnail)}
+              translatedText={translatedText}
               observeIntersectionForLoading={observeIntersectionForLoading}
               observeIntersectionForPlaying={observeIntersectionForPlaying}
             />
@@ -105,7 +123,7 @@ const EmbeddedMessage: FC<OwnProps> = ({
         </p>
         <div className="message-title" dir="auto">{renderText(senderTitle || title || NBSP)}</div>
       </div>
-      {hasContextMenu && <i className="embedded-more icon-more" />}
+      {hasContextMenu && <i className="embedded-more icon icon-more" />}
     </div>
   );
 };

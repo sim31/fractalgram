@@ -1,8 +1,9 @@
+import type { ChatConsensusMessages, ConsensusResultOption, ConsensusResults } from '../types';
+
 import {
   ACCOUNT_PROMPT_RE, ACCOUNT_PROMPT_REPLACE_RE, ACCOUNT_PROMPT_TEMPLATE, ALLOWED_RANKS,
 } from '../../config';
 import { buildQueryStringNoUndef } from '../../util/requestQuery';
-import type { ChatConsensusMessages, ConsensusResultOption, ConsensusResults } from '../types';
 
 export function composePrompt(platform: string) {
   return ACCOUNT_PROMPT_TEMPLATE.replace(ACCOUNT_PROMPT_REPLACE_RE, platform);

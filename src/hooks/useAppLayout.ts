@@ -1,17 +1,17 @@
+import { useEffect } from '../lib/teact/teact';
+
 import {
   MIN_SCREEN_WIDTH_FOR_STATIC_LEFT_COLUMN,
   MOBILE_SCREEN_LANDSCAPE_MAX_HEIGHT,
   MOBILE_SCREEN_LANDSCAPE_MAX_WIDTH,
   MOBILE_SCREEN_MAX_WIDTH,
 } from '../config';
-import { useEffect } from '../lib/teact/teact';
-
-import { IS_IOS } from '../util/environment';
 import { createCallbackManager } from '../util/callbacks';
+import { IS_IOS } from '../util/windowEnvironment';
 import { updateSizes } from '../util/windowSize';
 import useForceUpdate from './useForceUpdate';
 
-type MediaQueryCacheKey = 'mobile' | 'tablet' | 'landscape';
+type MediaQueryCacheKey = 'mobile' | 'tablet' | 'landscape' | 'touch';
 
 const mediaQueryCache = new Map<MediaQueryCacheKey, MediaQueryList>();
 const callbacks = createCallbackManager();
@@ -19,6 +19,7 @@ const callbacks = createCallbackManager();
 let isMobile: boolean | undefined;
 let isTablet: boolean | undefined;
 let isLandscape: boolean | undefined;
+let isTouchScreen: boolean | undefined;
 
 export function getIsMobile() {
   return isMobile;
@@ -32,6 +33,7 @@ function handleMediaQueryChange() {
   isMobile = mediaQueryCache.get('mobile')?.matches || false;
   isTablet = !isMobile && (mediaQueryCache.get('tablet')?.matches || false);
   isLandscape = mediaQueryCache.get('landscape')?.matches || false;
+  isTouchScreen = mediaQueryCache.get('touch')?.matches || false;
   updateSizes();
   callbacks.runCallbacks();
 }
@@ -56,6 +58,10 @@ function initMediaQueryCache() {
   );
   mediaQueryCache.set('landscape', landscapeQuery);
   landscapeQuery.addEventListener('change', handleMediaQueryChange);
+
+  const isTouchScreenQuery = window.matchMedia('(pointer: coarse)');
+  mediaQueryCache.set('touch', isTouchScreenQuery);
+  isTouchScreenQuery.addEventListener('change', handleMediaQueryChange);
 }
 
 initMediaQueryCache();
@@ -71,5 +77,6 @@ export default function useAppLayout() {
     isTablet,
     isLandscape,
     isDesktop: !isMobile && !isTablet,
+    isTouchScreen,
   };
 }

@@ -1,18 +1,20 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback, useMemo } from '../../../lib/teact/teact';
+import React, { memo, useMemo } from '../../../lib/teact/teact';
 import { getActions, getGlobal } from '../../../global';
 
 import type {
-  ApiChat, ApiThreadInfo, ApiUser,
+  ApiThreadInfo,
 } from '../../../api/types';
 
 import { isUserId } from '../../../global/helpers';
-import { formatIntegerCompact } from '../../../util/textFormat';
 import buildClassName from '../../../util/buildClassName';
-import useLang from '../../../hooks/useLang';
+import { formatIntegerCompact } from '../../../util/textFormat';
 
-import Avatar from '../../common/Avatar';
+import useLang from '../../../hooks/useLang';
+import useLastCallback from '../../../hooks/useLastCallback';
+
 import AnimatedCounter from '../../common/AnimatedCounter';
+import Avatar from '../../common/Avatar';
 
 import './CommentButton.scss';
 
@@ -32,9 +34,9 @@ const CommentButton: FC<OwnProps> = ({
     threadId, chatId, messagesCount, lastMessageId, lastReadInboxMessageId, recentReplierIds, originChannelId,
   } = threadInfo;
 
-  const handleClick = useCallback(() => {
+  const handleClick = useLastCallback(() => {
     openComments({ id: chatId, threadId, originChannelId });
-  }, [openComments, chatId, threadId, originChannelId]);
+  });
 
   const recentRepliers = useMemo(() => {
     if (!recentReplierIds?.length) {
@@ -55,14 +57,13 @@ const CommentButton: FC<OwnProps> = ({
 
   function renderRecentRepliers() {
     return (
-      recentRepliers && recentRepliers.length > 0 && (
+      Boolean(recentRepliers?.length) && (
         <div className="recent-repliers" dir={lang.isRtl ? 'rtl' : 'ltr'}>
-          {recentRepliers.map((user) => (
+          {recentRepliers!.map((peer) => (
             <Avatar
-              key={user.id}
+              key={peer.id}
               size="small"
-              user={isUserId(user.id) ? user as ApiUser : undefined}
-              chat={!isUserId(user.id) ? user as ApiChat : undefined}
+              peer={peer}
             />
           ))}
         </div>
@@ -86,13 +87,13 @@ const CommentButton: FC<OwnProps> = ({
       dir={lang.isRtl ? 'rtl' : 'ltr'}
       onClick={handleClick}
     >
-      <i className="icon-comments-sticker" />
-      {(!recentRepliers || recentRepliers.length === 0) && <i className="icon-comments" />}
+      <i className="icon icon-comments-sticker" />
+      {(!recentRepliers || recentRepliers.length === 0) && <i className="icon icon-comments" />}
       {renderRecentRepliers()}
       <div className="label" dir="auto">
         {messagesCount ? commentsText : lang('LeaveAComment')}
       </div>
-      <i className="icon-next" />
+      <i className="icon icon-next" />
     </div>
   );
 };

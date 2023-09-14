@@ -1,21 +1,25 @@
+import type { IDimensions } from '../global/types';
+
+import { requestMutation } from '../lib/fasterdom/fasterdom';
 import { throttle } from './schedulers';
-import { IS_IOS } from './environment';
+import { IS_IOS } from './windowEnvironment';
 
-type IDimensions = {
-  width: number;
-  height: number;
-};
-
+const WINDOW_ORIENTATION_CHANGE_THROTTLE_MS = 100;
 const WINDOW_RESIZE_THROTTLE_MS = 250;
 
-const initialHeight = window.innerHeight;
+let initialHeight = window.innerHeight;
 let currentWindowSize = updateSizes();
 
 const handleResize = throttle(() => {
   currentWindowSize = updateSizes();
 }, WINDOW_RESIZE_THROTTLE_MS, true);
 
-window.addEventListener('orientationchange', handleResize);
+const handleOrientationChange = throttle(() => {
+  initialHeight = window.innerHeight;
+  handleResize();
+}, WINDOW_ORIENTATION_CHANGE_THROTTLE_MS, false);
+
+window.addEventListener('orientationchange', handleOrientationChange);
 if (IS_IOS) {
   window.visualViewport!.addEventListener('resize', handleResize);
 } else {
@@ -29,9 +33,11 @@ export function updateSizes(): IDimensions {
   } else {
     height = window.innerHeight;
   }
-  const vh = height * 0.01;
 
-  document.documentElement.style.setProperty('--vh', `${vh}px`);
+  requestMutation(() => {
+    const vh = height * 0.01;
+    document.documentElement.style.setProperty('--vh', `${vh}px`);
+  });
 
   return {
     width: window.innerWidth,

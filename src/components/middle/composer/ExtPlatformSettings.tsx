@@ -1,17 +1,21 @@
 import type { ChangeEvent } from 'react';
-import type { ExtPlatformInfo } from '../../../global/types';
-import useLang from '../../../hooks/useLang';
 import type { FC } from '../../../lib/teact/teact';
 import React, {
-  memo, useCallback, useMemo, useEffect, useState,
+  memo, useCallback, useEffect, useMemo, useState,
 } from '../../../lib/teact/teact';
-import RadioGroup from '../../ui/RadioGroup';
+
+import type { ExtPlatformInfo } from '../../../global/types';
 import type { IRadioOption } from '../../ui/RadioGroup';
+
+import { PLATFORM_RE } from '../../../config';
+import assert from '../../../util/assert';
+
+import useLang from '../../../hooks/useLang';
+
+import Button from '../../ui/Button';
 import InputText from '../../ui/InputText';
 import Modal from '../../ui/Modal';
-import Button from '../../ui/Button';
-import assert from '../../../util/assert';
-import { PLATFORM_RE } from '../../../config';
+import RadioGroup from '../../ui/RadioGroup';
 
 export type OwnProps = {
   isOpen: boolean;

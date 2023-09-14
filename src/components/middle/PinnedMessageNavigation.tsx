@@ -1,12 +1,14 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  useRef,
-  useEffect,
-  useMemo,
   memo,
+  useLayoutEffect,
+  useMemo,
+  useRef,
 } from '../../lib/teact/teact';
 
 import buildClassName from '../../util/buildClassName';
+
+import styles from './PinnedMessageNavigation.module.scss';
 
 type OwnProps = {
   count: number;
@@ -25,7 +27,7 @@ const PinnedMessageNavigation: FC<OwnProps> = ({
     return calculateMarkup(count, index);
   }, [count, index]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!containerRef.current) {
       return;
     }
@@ -66,9 +68,9 @@ const PinnedMessageNavigation: FC<OwnProps> = ({
 
   if (count === 1) {
     return (
-      <div className="pinned-message-border">
+      <div className={styles.pinnedMessageBorder}>
         <div
-          className="pinned-message-border-wrapper-1"
+          className={styles.pinnedMessageBorderWrapper1}
           ref={containerRef}
         />
       </div>
@@ -80,9 +82,13 @@ const PinnedMessageNavigation: FC<OwnProps> = ({
   } = markupParams;
 
   return (
-    <div className={buildClassName('pinned-message-border', count > BORDER_MASK_LEVEL && 'pinned-message-border-mask')}>
+    <div className={buildClassName(
+      styles.pinnedMessageBorder,
+      count > BORDER_MASK_LEVEL && styles.pinnedMessageBorderMask,
+    )}
+    >
       <div
-        className="pinned-message-border-wrapper"
+        className={styles.pinnedMessageBorderWrapper}
         ref={containerRef}
         style={
           `clip-path: url("#${clipPathId}"); width: 2px;
@@ -91,8 +97,9 @@ const PinnedMessageNavigation: FC<OwnProps> = ({
       >
         <span />
         <div
-          className="pinned-message-border-mark"
-          style={`height: ${markHeight}px; transform: translateY(${markTranslateY}px);`}
+          className={styles.pinnedMessageBorderMark}
+          style={`--height: ${markHeight}px; --translate-y: ${markTranslateY}px; `
+            + `--translate-track: ${trackTranslateY}px;`}
         />
       </div>
     </div>

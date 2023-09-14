@@ -1,14 +1,16 @@
 import type { FC } from '../../../lib/teact/teact';
 import React, {
-  useMemo, useState, memo, useCallback, useEffect,
+  memo, useCallback, useEffect,
+  useMemo, useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiUser } from '../../../api/types';
 
-import { selectTabState } from '../../../global/selectors';
 import { filterUsersByName, getUserFullName } from '../../../global/helpers';
+import { selectTabState } from '../../../global/selectors';
 import { unique } from '../../../util/iteratees';
+
 import useLang from '../../../hooks/useLang';
 
 import ChatOrUserPicker from '../../common/ChatOrUserPicker';
@@ -37,7 +39,7 @@ const BlockUserModal: FC<OwnProps & StateProps> = ({
 }) => {
   const {
     setUserSearchQuery,
-    blockContact,
+    blockUser,
   } = getActions();
 
   const lang = useLang();
@@ -65,13 +67,9 @@ const BlockUserModal: FC<OwnProps & StateProps> = ({
   }, [blockedIds, contactIds, currentUserId, search, localContactIds, usersById]);
 
   const handleRemoveUser = useCallback((userId: string) => {
-    const { id: contactId, accessHash } = usersById[userId] || {};
-    if (!contactId || !accessHash) {
-      return;
-    }
-    blockContact({ contactId, accessHash });
+    blockUser({ userId });
     onClose();
-  }, [blockContact, onClose, usersById]);
+  }, [onClose]);
 
   return (
     <ChatOrUserPicker

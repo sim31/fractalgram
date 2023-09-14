@@ -11,7 +11,7 @@
 .isDragging {
   z-index: 2;
 
-  > *:not(.knob) {
+  :global(.drag-item) {
     pointer-events: none;
   }
 }

@@ -1,26 +1,28 @@
-import { useCallback, useEffect, useState } from '../../../../lib/teact/teact';
+import { useEffect, useState } from '../../../../lib/teact/teact';
 import { getGlobal } from '../../../../global';
 
 import type { ApiSticker } from '../../../../api/types';
 import type { EmojiData, EmojiModule, EmojiRawData } from '../../../../util/emoji';
-import { uncompressEmoji } from '../../../../util/emoji';
 import type { Signal } from '../../../../util/signals';
 
 import { EDITABLE_INPUT_CSS_SELECTOR, EDITABLE_INPUT_ID } from '../../../../config';
+import { requestNextMutation } from '../../../../lib/fasterdom/fasterdom';
+import { selectCustomEmojiForEmojis } from '../../../../global/selectors';
+import { uncompressEmoji } from '../../../../util/emoji';
+import focusEditableElement from '../../../../util/focusEditableElement';
 import {
   buildCollectionByKey, mapValues, pickTruthy, unique, uniqueByField,
 } from '../../../../util/iteratees';
 import { MEMO_EMPTY_ARRAY } from '../../../../util/memo';
-import { prepareForRegExp } from '../helpers/prepareForRegExp';
-import focusEditableElement from '../../../../util/focusEditableElement';
 import memoized from '../../../../util/memoized';
 import renderText from '../../../common/helpers/renderText';
-import { selectCustomEmojiForEmojis } from '../../../../global/selectors';
 import { buildCustomEmojiHtml } from '../helpers/customEmoji';
+import { prepareForRegExp } from '../helpers/prepareForRegExp';
 
-import useFlag from '../../../../hooks/useFlag';
-import useDerivedSignal from '../../../../hooks/useDerivedSignal';
 import { useThrottledResolver } from '../../../../hooks/useAsyncResolvers';
+import useDerivedSignal from '../../../../hooks/useDerivedSignal';
+import useFlag from '../../../../hooks/useFlag';
+import useLastCallback from '../../../../hooks/useLastCallback';
 
 interface Library {
   keywords: string[];
@@ -93,7 +95,7 @@ export default function useEmojiTooltip(
     detectEmojiCodeThrottled, [detectEmojiCodeThrottled, getHtml], true,
   );
 
-  const updateFiltered = useCallback((emojis: Emoji[]) => {
+  const updateFiltered = useLastCallback((emojis: Emoji[]) => {
     setFilteredEmojis(emojis);
 
     if (emojis === MEMO_EMPTY_ARRAY) {
@@ -107,9 +109,9 @@ export default function useEmojiTooltip(
       'id',
     );
     setFilteredCustomEmojis(customEmojis);
-  }, []);
+  });
 
-  const insertEmoji = useCallback((emoji: string | ApiSticker, isForce = false) => {
+  const insertEmoji = useLastCallback((emoji: string | ApiSticker, isForce = false) => {
     const html = getHtml();
     if (!html) return;
 
@@ -123,13 +125,13 @@ export default function useEmojiTooltip(
         ? document.querySelector<HTMLDivElement>(EDITABLE_INPUT_CSS_SELECTOR)!
         : document.getElementById(inputId) as HTMLDivElement;
 
-      requestAnimationFrame(() => {
+      requestNextMutation(() => {
         focusEditableElement(messageInput, true, true);
       });
     }
 
     updateFiltered(MEMO_EMPTY_ARRAY);
-  }, [getHtml, setHtml, inputId, updateFiltered]);
+  });
 
   useEffect(() => {
     const emojiCode = getEmojiCode();

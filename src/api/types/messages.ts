@@ -1,6 +1,7 @@
 import type { ApiWebDocument } from './bots';
 import type { ApiGroupCall, PhoneCallAction } from './calls';
 import type { ApiChat } from './chats';
+import type { ApiMessageStoryData, ApiWebPageStoryData } from './stories';
 
 export interface ApiDimensions {
   width: number;
@@ -57,6 +58,7 @@ export interface ApiStickerSet {
   accessHash: string;
   title: string;
   hasThumbnail?: boolean;
+  thumbCustomEmojiId?: string;
   count: number;
   stickers?: ApiSticker[];
   packs?: Record<string, ApiSticker[]>;
@@ -94,6 +96,7 @@ export interface ApiVideo {
   blobUrl?: string;
   previewBlobUrl?: string;
   size: number;
+  noSound?: boolean;
 }
 
 export interface ApiAudio {
@@ -209,7 +212,7 @@ export interface ApiPaymentCredentials {
   title: string;
 }
 
-interface ApiGeoPoint {
+export interface ApiGeoPoint {
   long: number;
   lat: number;
   accessHash: string;
@@ -267,6 +270,10 @@ export interface ApiAction {
   photo?: ApiPhoto;
   amount?: number;
   currency?: string;
+  giftCryptoInfo?: {
+    currency: string;
+    amount: string;
+  };
   translationValues: string[];
   call?: Partial<ApiGroupCall>;
   phoneCall?: PhoneCallAction;
@@ -288,6 +295,19 @@ export interface ApiWebPage {
   duration?: number;
   document?: ApiDocument;
   video?: ApiVideo;
+  story?: ApiWebPageStoryData;
+}
+
+export type ApiTypeReplyTo = ApiMessageReplyTo | ApiStoryReplyTo;
+
+export interface ApiMessageReplyTo {
+  replyingTo: number;
+  replyingToTopId?: number;
+}
+
+export interface ApiStoryReplyTo {
+  userId: string;
+  storyId: number;
 }
 
 export interface ApiMessageForwardInfo {
@@ -378,6 +398,7 @@ export interface ApiMessage {
     text?: ApiFormattedText;
     photo?: ApiPhoto;
     video?: ApiVideo;
+    altVideo?: ApiVideo;
     document?: ApiDocument;
     sticker?: ApiSticker;
     contact?: ApiContact;
@@ -389,6 +410,7 @@ export interface ApiMessage {
     invoice?: ApiInvoice;
     location?: ApiLocation;
     game?: ApiGame;
+    storyData?: ApiMessageStoryData;
   };
   date: number;
   isOutgoing: boolean;
@@ -397,6 +419,8 @@ export interface ApiMessage {
   replyToMessageId?: number;
   replyToTopMessageId?: number;
   isTopicReply?: true;
+  replyToStoryUserId?: string;
+  replyToStoryId?: number;
   sendingState?: 'messageSendingStatePending' | 'messageSendingStateFailed';
   forwardInfo?: ApiMessageForwardInfo;
   isDeleting?: boolean;
@@ -423,7 +447,8 @@ export interface ApiMessage {
   isHideKeyboardSelective?: boolean;
   isFromScheduled?: boolean;
   isSilent?: boolean;
-  seenByUserIds?: string[];
+  isPinned?: boolean;
+  seenByDates?: Record<string, number>;
   isProtected?: boolean;
   isForwardingAllowed?: boolean;
   transcriptionId?: string;
@@ -432,7 +457,7 @@ export interface ApiMessage {
   reactors?: {
     nextOffset?: string;
     count: number;
-    reactions: ApiUserReaction[];
+    reactions: ApiPeerReaction[];
   };
   reactions?: ApiReactions;
 }
@@ -440,14 +465,16 @@ export interface ApiMessage {
 export interface ApiReactions {
   canSeeList?: boolean;
   results: ApiReactionCount[];
-  recentReactions?: ApiUserReaction[];
+  recentReactions?: ApiPeerReaction[];
 }
 
-export interface ApiUserReaction {
-  userId: string;
+export interface ApiPeerReaction {
+  peerId: string;
   reaction: ApiReaction;
+  isOwn?: boolean;
   isBig?: boolean;
   isUnread?: boolean;
+  addedDate: number;
 }
 
 export interface ApiReactionCount {
@@ -458,6 +485,7 @@ export interface ApiReactionCount {
 
 export interface ApiAvailableReaction {
   selectAnimation?: ApiDocument;
+  appearAnimation?: ApiDocument;
   activateAnimation?: ApiDocument;
   effectAnimation?: ApiDocument;
   staticIcon?: ApiDocument;
@@ -516,6 +544,8 @@ export type ApiSponsoredMessage = {
   chatInviteTitle?: string;
   text: ApiFormattedText;
   expiresAt: number;
+  sponsorInfo?: string;
+  additionalInfo?: string;
 };
 
 // KeyboardButtons
@@ -627,6 +657,18 @@ export type ApiThemeParameters = {
   button_color: string;
   button_text_color: string;
   secondary_bg_color: string;
+};
+
+export type ApiBotApp = {
+  id: string;
+  accessHash: string;
+  title: string;
+  shortName: string;
+  description: string;
+  photo?: ApiPhoto;
+  document?: ApiDocument;
+  isInactive?: boolean;
+  shouldRequestWriteAccess?: boolean;
 };
 
 export const MAIN_THREAD_ID = -1;

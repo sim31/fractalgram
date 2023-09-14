@@ -1,7 +1,8 @@
-import { IS_IOS } from './environment';
 import { Lethargy } from './lethargy';
 import { clamp, round } from './math';
 import { debounce } from './schedulers';
+import { IS_IOS } from './windowEnvironment';
+import windowSize from './windowSize';
 
 export enum SwipeDirection {
   Up,
@@ -107,9 +108,10 @@ export function captureEvents(element: HTMLElement, options: CaptureOptions) {
     x: false,
     y: false,
   };
+  const currentWindowSize = windowSize.get();
   let initialTouchCenter = {
-    x: window.innerWidth / 2,
-    y: window.innerHeight / 2,
+    x: currentWindowSize.width / 2,
+    y: currentWindowSize.height / 2,
   };
   let initialSwipeAxis: TSwipeAxis | undefined;
   const minZoom = options.minZoom ?? 1;
@@ -217,9 +219,10 @@ export function captureEvents(element: HTMLElement, options: CaptureOptions) {
       x: false,
       y: false,
     };
+    const newWindowSize = windowSize.get();
     initialTouchCenter = {
-      x: window.innerWidth / 2,
-      y: window.innerHeight / 2,
+      x: newWindowSize.width / 2,
+      y: newWindowSize.height / 2,
     };
     captureEvent = undefined;
   }
@@ -289,7 +292,7 @@ export function captureEvents(element: HTMLElement, options: CaptureOptions) {
     // Avoid conflicts with swipe-to-back gestures
     if (IS_IOS) {
       const x = (e as RealTouchEvent).touches[0].pageX;
-      if (x <= IOS_SCREEN_EDGE_THRESHOLD || x >= window.innerWidth - IOS_SCREEN_EDGE_THRESHOLD) {
+      if (x <= IOS_SCREEN_EDGE_THRESHOLD || x >= windowSize.get().width - IOS_SCREEN_EDGE_THRESHOLD) {
         return false;
       }
     }
@@ -344,6 +347,7 @@ export function captureEvents(element: HTMLElement, options: CaptureOptions) {
     const delta = clamp(e.deltaY, -25, 25);
     wheelZoom -= delta * 0.01;
     wheelZoom = clamp(wheelZoom, minZoom * 0.5, maxZoom * 3);
+    isZooming = true;
     options.onZoom(e, {
       zoom: round(wheelZoom, 2),
       initialCenterX: initialTouchCenter.x,
@@ -401,9 +405,7 @@ export function captureEvents(element: HTMLElement, options: CaptureOptions) {
     if (!metaKeyPressed && !isZooming) {
       // Check if this event produced by user scroll and not by inertia
       const isUserEvent = lethargy.check(e);
-      if (wheelZoom !== 1) {
-        onWheelDrag(e);
-      } else if (isUserEvent) {
+      if (wheelZoom !== 1 || isUserEvent) {
         onWheelDrag(e);
       }
     }

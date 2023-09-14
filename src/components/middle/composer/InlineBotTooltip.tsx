@@ -1,28 +1,31 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
-  memo, useCallback, useEffect, useRef,
-} from '../../../lib/teact/teact';
+import React, { memo, useEffect, useRef } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
-import type { ApiBotInlineMediaResult, ApiBotInlineResult, ApiBotInlineSwitchPm } from '../../../api/types';
+import type {
+  ApiBotInlineMediaResult, ApiBotInlineResult, ApiBotInlineSwitchPm, ApiBotInlineSwitchWebview,
+} from '../../../api/types';
 import { LoadMoreDirection } from '../../../types';
 
-import { IS_TOUCH_ENV } from '../../../util/environment';
-import setTooltipItemVisible from '../../../util/setTooltipItemVisible';
 import buildClassName from '../../../util/buildClassName';
-import useShowTransition from '../../../hooks/useShowTransition';
 import { throttle } from '../../../util/schedulers';
-import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
-import usePrevious from '../../../hooks/usePrevious';
+import setTooltipItemVisible from '../../../util/setTooltipItemVisible';
+import { extractCurrentThemeParams } from '../../../util/themeStyle';
+import { IS_TOUCH_ENV } from '../../../util/windowEnvironment';
+
 import useCurrentOrPrev from '../../../hooks/useCurrentOrPrev';
+import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
+import useLastCallback from '../../../hooks/useLastCallback';
+import usePrevious from '../../../hooks/usePrevious';
+import useShowTransition from '../../../hooks/useShowTransition';
 import { useKeyboardNavigation } from './hooks/useKeyboardNavigation';
 
-import MediaResult from './inlineResults/MediaResult';
+import InfiniteScroll from '../../ui/InfiniteScroll';
+import ListItem from '../../ui/ListItem';
 import ArticleResult from './inlineResults/ArticleResult';
 import GifResult from './inlineResults/GifResult';
+import MediaResult from './inlineResults/MediaResult';
 import StickerResult from './inlineResults/StickerResult';
-import ListItem from '../../ui/ListItem';
-import InfiniteScroll from '../../ui/InfiniteScroll';
 
 import './InlineBotTooltip.scss';
 
@@ -35,10 +38,11 @@ export type OwnProps = {
   isGallery?: boolean;
   inlineBotResults?: (ApiBotInlineResult | ApiBotInlineMediaResult)[];
   switchPm?: ApiBotInlineSwitchPm;
+  switchWebview?: ApiBotInlineSwitchWebview;
   isSavedMessages?: boolean;
   canSendGifs?: boolean;
   onSelectResult: (
-    inlineResult: ApiBotInlineMediaResult | ApiBotInlineResult, isSilent?: boolean, shouldSchedule?: boolean
+    inlineResult: ApiBotInlineMediaResult | ApiBotInlineResult, isSilent?: boolean, shouldSchedule?: boolean,
   ) => void;
   loadMore: NoneToVoidFunction;
   onClose: NoneToVoidFunction;
@@ -51,6 +55,7 @@ const InlineBotTooltip: FC<OwnProps> = ({
   isGallery,
   inlineBotResults,
   switchPm,
+  switchWebview,
   isSavedMessages,
   canSendGifs,
   loadMore,
@@ -61,6 +66,7 @@ const InlineBotTooltip: FC<OwnProps> = ({
   const {
     openChat,
     startBot,
+    requestSimpleWebView,
   } = getActions();
 
   // eslint-disable-next-line no-null/no-null
@@ -75,11 +81,11 @@ const InlineBotTooltip: FC<OwnProps> = ({
     isDisabled: !isOpen,
   });
 
-  const handleLoadMore = useCallback(({ direction }: { direction: LoadMoreDirection }) => {
+  const handleLoadMore = useLastCallback(({ direction }: { direction: LoadMoreDirection }) => {
     if (direction === LoadMoreDirection.Backwards) {
       runThrottled(loadMore);
     }
-  }, [loadMore]);
+  });
 
   const selectedIndex = useKeyboardNavigation({
     isActive: isOpen,
@@ -94,10 +100,21 @@ const InlineBotTooltip: FC<OwnProps> = ({
     setTooltipItemVisible('.chat-item-clickable', selectedIndex, containerRef);
   }, [selectedIndex]);
 
-  const handleSendPm = useCallback(() => {
+  const handleSendPm = useLastCallback(() => {
     openChat({ id: botId });
     startBot({ botId: botId!, param: switchPm!.startParam });
-  }, [botId, openChat, startBot, switchPm]);
+  });
+
+  const handleOpenWebview = useLastCallback(() => {
+    const theme = extractCurrentThemeParams();
+
+    requestSimpleWebView({
+      botId: botId!,
+      url: switchWebview!.url,
+      buttonText: switchWebview!.text,
+      theme,
+    });
+  });
 
   const prevInlineBotResults = usePrevious(
     inlineBotResults?.length
@@ -122,6 +139,14 @@ const InlineBotTooltip: FC<OwnProps> = ({
     return (
       <ListItem ripple className="switch-pm scroll-item" onClick={handleSendPm}>
         <span className="title">{switchPm!.text}</span>
+      </ListItem>
+    );
+  }
+
+  function renderSwitchWebview() {
+    return (
+      <ListItem ripple className="switch-pm scroll-item" onClick={handleOpenWebview}>
+        <span className="title">{switchWebview!.text}</span>
       </ListItem>
     );
   }
@@ -176,6 +201,7 @@ const InlineBotTooltip: FC<OwnProps> = ({
           );
         case 'article':
         case 'audio':
+        case 'voice':
           return (
             <ArticleResult
               key={inlineBotResult.id}
@@ -202,6 +228,7 @@ const InlineBotTooltip: FC<OwnProps> = ({
       sensitiveArea={160}
     >
       {switchPm && renderSwitchPm()}
+      {switchWebview && renderSwitchWebview()}
       {Boolean(renderedInlineBotResults?.length) && renderContent()}
     </InfiniteScroll>
   );

@@ -1,28 +1,37 @@
-import {
-  addActionHandler, getGlobal, setGlobal,
-} from '../../index';
+import { addCallback } from '../../../lib/teact/teactn';
 
 import type { ApiError, ApiNotification } from '../../../api/types';
+import type { ActionReturnType, GlobalState } from '../../types';
 import { MAIN_THREAD_ID } from '../../../api/types';
-import type { ActionReturnType } from '../../types';
 
 import {
-  APP_VERSION, DEBUG, GLOBAL_STATE_CACHE_CUSTOM_EMOJI_LIMIT, INACTIVE_MARKER, PAGE_TITLE,
+  DEBUG, GLOBAL_STATE_CACHE_CUSTOM_EMOJI_LIMIT, INACTIVE_MARKER, IS_ELECTRON,
+  PAGE_TITLE,
 } from '../../../config';
-import getReadableErrorText from '../../../util/getReadableErrorText';
-import {
-  selectChatMessage, selectCurrentChat, selectCurrentMessageList, selectTabState, selectIsTrustedBot, selectChat,
-} from '../../selectors';
-import generateIdFor from '../../../util/generateIdFor';
-import { compact, unique } from '../../../util/iteratees';
 import { getAllMultitabTokens, getCurrentTabId, reestablishMasterToSelf } from '../../../util/establishMultitabRole';
 import { getAllNotificationsCount } from '../../../util/folderManager';
+import generateUniqueId from '../../../util/generateUniqueId';
+import getReadableErrorText from '../../../util/getReadableErrorText';
+import { compact, unique } from '../../../util/iteratees';
+import * as langProvider from '../../../util/langProvider';
 import updateIcon from '../../../util/updateIcon';
 import { setPageTitle, setPageTitleInstant } from '../../../util/updatePageTitle';
-import { updateTabState } from '../../reducers/tabs';
-import { getIsMobile, getIsTablet } from '../../../hooks/useAppLayout';
-import * as langProvider from '../../../util/langProvider';
 import { getAllowedAttachmentOptions, getChatTitle } from '../../helpers';
+import {
+  addActionHandler, getActions, getGlobal, setGlobal,
+} from '../../index';
+import { updateTabState } from '../../reducers/tabs';
+import {
+  selectCanAnimateInterface,
+  selectChat,
+  selectChatMessage,
+  selectCurrentChat,
+  selectCurrentMessageList,
+  selectIsTrustedBot,
+  selectTabState,
+} from '../../selectors';
+
+import { getIsMobile, getIsTablet } from '../../../hooks/useAppLayout';
 
 export const APP_VERSION_URL = 'version.txt';
 const MAX_STORED_EMOJIS = 8 * 4; // Represents four rows of recent emojis
@@ -54,7 +63,7 @@ addActionHandler('resetLeftColumnWidth', (global): ActionReturnType => {
 });
 
 addActionHandler('toggleManagement', (global, actions, payload): ActionReturnType => {
-  const { tabId = getCurrentTabId() } = payload || {};
+  const { force, tabId = getCurrentTabId() } = payload || {};
   const { chatId } = selectCurrentMessageList(global, tabId) || {};
 
   if (!chatId) {
@@ -69,7 +78,7 @@ addActionHandler('toggleManagement', (global, actions, payload): ActionReturnTyp
         ...tabState.management.byChatId,
         [chatId]: {
           ...tabState.management.byChatId[chatId],
-          isActive: !(tabState.management.byChatId[chatId] || {}).isActive,
+          isActive: force !== undefined ? force : !(tabState.management.byChatId[chatId] || {}).isActive,
         },
       },
     },
@@ -132,6 +141,17 @@ addActionHandler('openChat', (global, actions, payload): ActionReturnType => {
   return updateTabState(global, {
     isLeftColumnShown: selectTabState(global, tabId).messageLists.length === 0,
   }, tabId);
+});
+
+addActionHandler('resetNextProfileTab', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+  const { chatId } = selectCurrentMessageList(global, tabId) || {};
+
+  if (!chatId) {
+    return undefined;
+  }
+
+  return updateTabState(global, { nextProfileTab: undefined }, tabId);
 });
 
 addActionHandler('toggleStatistics', (global, actions, payload): ActionReturnType => {
@@ -266,7 +286,7 @@ addActionHandler('reorderStickerSets', (global, actions, payload): ActionReturnT
 
 addActionHandler('showNotification', (global, actions, payload): ActionReturnType => {
   const { tabId = getCurrentTabId(), ...notification } = payload;
-  notification.localId = generateIdFor({});
+  notification.localId = generateUniqueId();
 
   const newNotifications = [...selectTabState(global, tabId).notifications];
   const existingNotificationIndex = newNotifications.findIndex((n) => n.message === notification.message);
@@ -435,8 +455,7 @@ addActionHandler('requestConfetti', (global, actions, payload): ActionReturnType
   const {
     top, left, width, height, tabId = getCurrentTabId(),
   } = payload || {};
-  const { animationLevel } = global.settings.byKey;
-  if (animationLevel === 0) return undefined;
+  if (!selectCanAnimateInterface(global)) return undefined;
 
   return updateTabState(global, {
     confetti: {
@@ -573,7 +592,30 @@ addActionHandler('updateArchiveSettings', (global, actions, payload): ActionRetu
   };
 });
 
+addActionHandler('openMapModal', (global, actions, payload): ActionReturnType => {
+  const { geoPoint, zoom, tabId = getCurrentTabId() } = payload;
+
+  return updateTabState(global, {
+    mapModal: {
+      point: geoPoint,
+      zoom,
+    },
+  }, tabId);
+});
+
+addActionHandler('closeMapModal', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+
+  return updateTabState(global, {
+    mapModal: undefined,
+  }, tabId);
+});
+
 addActionHandler('checkAppVersion', (global): ActionReturnType => {
+  if (IS_ELECTRON) {
+    return;
+  }
+
   const APP_VERSION_REGEX = /^\d+\.\d+(\.\d+)?$/;
 
   fetch(`${APP_VERSION_URL}?${Date.now()}`)
@@ -598,6 +640,15 @@ addActionHandler('checkAppVersion', (global): ActionReturnType => {
     });
 });
 
+addActionHandler('setIsAppUpdateAvailable', (global, action, payload): ActionReturnType => {
+  global = getGlobal();
+  global = {
+    ...global,
+    isUpdateAvailable: Boolean(payload),
+  };
+  setGlobal(global);
+});
+
 addActionHandler('afterHangUp', (global): ActionReturnType => {
   if (!selectTabState(global, getCurrentTabId()).multitabNextAction) return;
   reestablishMasterToSelf();
@@ -609,18 +660,6 @@ const NOTIFICATION_INTERVAL = 500;
 
 addActionHandler('onTabFocusChange', (global, actions, payload): ActionReturnType => {
   const { isBlurred, tabId = getCurrentTabId() } = payload;
-
-  if (!isBlurred) {
-    actions.updateIsOnline(true);
-  }
-
-  const blurredTabTokens = unique(isBlurred
-    ? [...global.blurredTabTokens, tabId]
-    : global.blurredTabTokens.filter((t) => t !== tabId));
-
-  if (blurredTabTokens.length === getAllMultitabTokens().length) {
-    actions.updateIsOnline(false);
-  }
 
   if (isBlurred) {
     if (notificationInterval) clearInterval(notificationInterval);
@@ -635,9 +674,12 @@ addActionHandler('onTabFocusChange', (global, actions, payload): ActionReturnTyp
     notificationInterval = undefined;
   }
 
+  global = updateTabState(global, {
+    isBlurred,
+  }, tabId);
+
   return {
     ...global,
-    blurredTabTokens,
     initialUnreadNotifications: isBlurred ? getAllNotificationsCount() : undefined,
   };
 });
@@ -668,11 +710,12 @@ addActionHandler('updatePageTitle', (global, actions, payload): ActionReturnType
   updateIcon(false);
 
   const messageList = selectCurrentMessageList(global, tabId);
-  if (messageList && canDisplayChatInTitle) {
+
+  if (messageList && canDisplayChatInTitle && !global.passcode.isScreenLocked) {
     const { chatId, threadId } = messageList;
     const currentChat = selectChat(global, chatId);
     if (currentChat) {
-      const title = getChatTitle(langProvider.translate, currentChat, undefined, chatId === currentUserId);
+      const title = getChatTitle(langProvider.translate, currentChat, chatId === currentUserId);
       if (currentChat.isForum && currentChat.topics?.[threadId]) {
         setPageTitle(`${title} › ${currentChat.topics[threadId].title}`);
         return;
@@ -683,5 +726,35 @@ addActionHandler('updatePageTitle', (global, actions, payload): ActionReturnType
     }
   }
 
-  setPageTitleInstant(PAGE_TITLE);
+  setPageTitleInstant(IS_ELECTRON ? '' : PAGE_TITLE);
+});
+
+let prevIsScreenLocked: boolean | undefined;
+let prevBlurredTabsCount: number = 0;
+let onlineTimeout: number | undefined;
+const ONLINE_TIMEOUT = 100;
+addCallback((global: GlobalState) => {
+  // eslint-disable-next-line eslint-multitab-tt/no-getactions-in-actions
+  const { updatePageTitle, updateIsOnline } = getActions();
+
+  const isLockedUpdated = global.passcode.isScreenLocked !== prevIsScreenLocked;
+  const blurredTabsCount = Object.values(global.byTabId).filter((l) => l.isBlurred).length;
+  const isMasterTab = selectTabState(global, getCurrentTabId()).isMasterTab;
+
+  if (isLockedUpdated) {
+    updatePageTitle();
+  }
+
+  if (blurredTabsCount !== prevBlurredTabsCount && isMasterTab) {
+    if (onlineTimeout) clearTimeout(onlineTimeout);
+
+    onlineTimeout = window.setTimeout(() => {
+      global = getGlobal();
+      const newBlurredTabsCount = Object.values(global.byTabId).filter((l) => l.isBlurred).length;
+      updateIsOnline(newBlurredTabsCount !== getAllMultitabTokens().length);
+    }, ONLINE_TIMEOUT);
+  }
+
+  prevIsScreenLocked = global.passcode.isScreenLocked;
+  prevBlurredTabsCount = blurredTabsCount;
 });

@@ -1,33 +1,34 @@
 import type { ChangeEvent } from 'react';
-
-import monkeyPath from '../../assets/monkey.svg';
-
 import type { FC } from '../../lib/teact/teact';
 import React, {
   memo, useCallback, useEffect, useLayoutEffect, useRef, useState,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
+import type { ApiCountryCode } from '../../api/types';
 import type { GlobalState } from '../../global/types';
 import type { LangCode } from '../../types';
-import type { ApiCountryCode } from '../../api/types';
 
-import { IS_SAFARI, IS_TOUCH_ENV } from '../../util/environment';
+import { requestMeasure } from '../../lib/fasterdom/fasterdom';
 import { preloadImage } from '../../util/files';
 import preloadFonts from '../../util/fonts';
 import { pick } from '../../util/iteratees';
-import { formatPhoneNumber, getCountryCodesByIso, getCountryFromPhoneNumber } from '../../util/phoneNumber';
 import { setLanguage } from '../../util/langProvider';
-import useLang from '../../hooks/useLang';
-import useFlag from '../../hooks/useFlag';
-import useLangString from '../../hooks/useLangString';
+import { formatPhoneNumber, getCountryCodesByIso, getCountryFromPhoneNumber } from '../../util/phoneNumber';
+import { IS_SAFARI, IS_TOUCH_ENV } from '../../util/windowEnvironment';
 import { getSuggestedLanguage } from './helpers/getSuggestedLanguage';
+
+import useFlag from '../../hooks/useFlag';
+import useLang from '../../hooks/useLang';
+import useLangString from '../../hooks/useLangString';
 
 import Button from '../ui/Button';
 import Checkbox from '../ui/Checkbox';
 import InputText from '../ui/InputText';
 import Loading from '../ui/Loading';
 import CountryCodeInput from './CountryCodeInput';
+
+import monkeyPath from '../../assets/monkey.svg';
 
 type StateProps = Pick<GlobalState, (
   'connectionState' | 'authState' |
@@ -70,7 +71,8 @@ const AuthPhoneNumber: FC<StateProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestedLanguage = getSuggestedLanguage();
 
-  const continueText = useLangString(suggestedLanguage, 'ContinueOnThisLanguage');
+  const isConnected = connectionState === 'connectionStateReady';
+  const continueText = useLangString(isConnected ? suggestedLanguage : undefined, 'ContinueOnThisLanguage', true);
   const [country, setCountry] = useState<ApiCountryCode | undefined>();
   const [phoneNumber, setPhoneNumber] = useState<string | undefined>();
   const [isTouched, setIsTouched] = useState(false);
@@ -87,16 +89,16 @@ const AuthPhoneNumber: FC<StateProps> = ({
   }, [country]);
 
   useEffect(() => {
-    if (connectionState === 'connectionStateReady' && !authNearestCountry) {
+    if (isConnected && !authNearestCountry) {
       loadNearestCountry();
     }
-  }, [connectionState, authNearestCountry, loadNearestCountry]);
+  }, [isConnected, authNearestCountry]);
 
   useEffect(() => {
-    if (connectionState === 'connectionStateReady') {
+    if (isConnected) {
       loadCountryList({ langCode: language });
     }
-  }, [connectionState, language, loadCountryList]);
+  }, [isConnected, language]);
 
   useEffect(() => {
     if (authNearestCountry && phoneCodeList && !country && !isTouched) {
@@ -149,7 +151,7 @@ const AuthPhoneNumber: FC<StateProps> = ({
   const isJustPastedRef = useRef(false);
   const handlePaste = useCallback(() => {
     isJustPastedRef.current = true;
-    requestAnimationFrame(() => {
+    requestMeasure(() => {
       isJustPastedRef.current = false;
     });
   }, []);
@@ -215,7 +217,7 @@ const AuthPhoneNumber: FC<StateProps> = ({
         <div id="logo" />
         <h1>Telegram</h1>
         <p className="note">{lang('StartText')}</p>
-        <form action="" onSubmit={handleSubmit}>
+        <form className="form" action="" onSubmit={handleSubmit}>
           <CountryCodeInput
             id="sign-in-phone-code"
             value={country}

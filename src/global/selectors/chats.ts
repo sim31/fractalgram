@@ -1,19 +1,33 @@
-import type { ApiChatType, ApiChat } from '../../api/types';
-import { MAIN_THREAD_ID } from '../../api/types';
+import type { ApiChat, ApiChatFullInfo, ApiChatType } from '../../api/types';
 import type { GlobalState, TabArgs } from '../types';
+import { MAIN_THREAD_ID } from '../../api/types';
 
-import {
-  getPrivateChatUserId, isChatChannel, isUserId, isHistoryClearMessage, isUserBot, isUserOnline,
-} from '../helpers';
-import { selectBot, selectUser } from './users';
 import {
   ALL_FOLDER_ID, ARCHIVED_FOLDER_ID, MEMBERS_LOAD_SLICE, SERVICE_NOTIFICATIONS_USER_ID,
 } from '../../config';
-import { selectTabState } from './tabs';
 import { getCurrentTabId } from '../../util/establishMultitabRole';
+import { IS_TRANSLATION_SUPPORTED } from '../../util/windowEnvironment';
+import {
+  getHasAdminRight,
+  getPrivateChatUserId,
+  isChatChannel,
+  isChatSuperGroup,
+  isHistoryClearMessage,
+  isUserBot,
+  isUserId,
+  isUserOnline,
+} from '../helpers';
+import { selectTabState } from './tabs';
+import {
+  selectBot, selectIsCurrentUserPremium, selectUser, selectUserFullInfo,
+} from './users';
 
 export function selectChat<T extends GlobalState>(global: T, chatId: string): ApiChat | undefined {
   return global.chats.byId[chatId];
+}
+
+export function selectChatFullInfo<T extends GlobalState>(global: T, chatId: string): ApiChatFullInfo | undefined {
+  return global.chats.fullInfoById[chatId];
 }
 
 export function selectChatUser<T extends GlobalState>(global: T, chat: ApiChat) {
@@ -25,8 +39,8 @@ export function selectChatUser<T extends GlobalState>(global: T, chat: ApiChat) 
   return selectUser(global, userId);
 }
 
-export function selectChatUsers(global: GlobalState, chat: ApiChat) {
-  const members = chat?.fullInfo?.members;
+export function selectChatUsers(global: GlobalState, chat?: ApiChatFullInfo) {
+  const members = chat?.members;
   if (members) {
     return members.map((member) => selectUser(global, member.userId));
   } else {
@@ -48,17 +62,18 @@ export function selectSupportChat<T extends GlobalState>(global: T) {
 }
 
 export function selectChatOnlineCount<T extends GlobalState>(global: T, chat: ApiChat) {
-  if (isUserId(chat.id) || isChatChannel(chat) || !chat.fullInfo) {
+  const fullInfo = selectChatFullInfo(global, chat.id);
+  if (isUserId(chat.id) || isChatChannel(chat) || !fullInfo) {
     return undefined;
   }
 
-  if (!chat.fullInfo.members || chat.fullInfo.members.length === MEMBERS_LOAD_SLICE) {
-    return chat.fullInfo.onlineCount;
+  if (!fullInfo.members || fullInfo.members.length === MEMBERS_LOAD_SLICE) {
+    return fullInfo.onlineCount;
   }
 
-  return chat.fullInfo.members.reduce((onlineCount, { userId }) => {
+  return fullInfo.members.reduce((onlineCount, { userId }) => {
     if (
-      userId !== global.currentUserId
+      !selectIsChatWithSelf(global, userId)
       && global.users.byId[userId]
       && isUserOnline(global.users.byId[userId], global.users.statusesById[userId])
     ) {
@@ -67,17 +82,6 @@ export function selectChatOnlineCount<T extends GlobalState>(global: T, chat: Ap
 
     return onlineCount;
   }, 0);
-}
-
-export function selectChatBot<T extends GlobalState>(global: T, chatId: string) {
-  const chat = selectChat(global, chatId);
-  const userId = chat && getPrivateChatUserId(chat);
-  const user = userId && selectUser(global, userId);
-  if (!user || !isUserBot(user)) {
-    return undefined;
-  }
-
-  return user;
 }
 
 export function selectIsTrustedBot<T extends GlobalState>(global: T, botId: string) {
@@ -108,7 +112,7 @@ export function selectChatType<T extends GlobalState>(global: T, chatId: string)
 
 export function selectIsChatBotNotStarted<T extends GlobalState>(global: T, chatId: string) {
   const chat = selectChat(global, chatId);
-  const bot = selectChatBot(global, chatId);
+  const bot = selectBot(global, chatId);
   if (!chat || !bot) {
     return false;
   }
@@ -204,7 +208,7 @@ export function selectSendAs<T extends GlobalState>(global: T, chatId: string) {
   const chat = selectChat(global, chatId);
   if (!chat) return undefined;
 
-  const id = chat?.fullInfo?.sendAsId;
+  const id = selectChatFullInfo(global, chatId)?.sendAsId;
   if (!id) return undefined;
 
   return selectUser(global, id) || selectChat(global, id);
@@ -242,4 +246,72 @@ export function filterChatIdsByType<T extends GlobalState>(
     }
     return filter.includes(type);
   });
+}
+
+export function selectCanInviteToChat<T extends GlobalState>(global: T, chatId: string) {
+  const chat = selectChat(global, chatId);
+  if (!chat) return false;
+
+  // https://github.com/TelegramMessenger/Telegram-iOS/blob/5126be83b3b9578fb014eb52ca553da9e7a8b83a/submodules/TelegramCore/Sources/TelegramEngine/Peers/Communities.swift#L6
+  return !chat.migratedTo && Boolean(!isUserId(chatId) && ((isChatChannel(chat) || isChatSuperGroup(chat)) ? (
+    chat.isCreator || getHasAdminRight(chat, 'inviteUsers')
+    || (chat.usernames?.length && !chat.isJoinRequest)
+  ) : (chat.isCreator || getHasAdminRight(chat, 'inviteUsers'))));
+}
+
+export function selectCanShareFolder<T extends GlobalState>(global: T, folderId: number) {
+  const folder = selectChatFolder(global, folderId);
+  if (!folder) return false;
+
+  const {
+    bots, groups, channels, contacts, nonContacts, includedChatIds, pinnedChatIds,
+    excludeArchived, excludeMuted, excludeRead, excludedChatIds,
+  } = folder;
+
+  return !bots && !groups && !channels && !contacts && !nonContacts
+    && !excludeArchived && !excludeMuted && !excludeRead && !excludedChatIds?.length
+    && (pinnedChatIds?.length || includedChatIds.length)
+    && folder.includedChatIds.concat(folder.pinnedChatIds || []).some((chatId) => {
+      return selectCanInviteToChat(global, chatId);
+    });
+}
+
+export function selectShouldDetectChatLanguage<T extends GlobalState>(
+  global: T, chatId: string,
+) {
+  const chat = selectChat(global, chatId);
+  const fullInfo = isUserId(chatId) ? selectUserFullInfo(global, chatId) : selectChatFullInfo(global, chatId);
+  if (!chat || !fullInfo) return false;
+  const { canTranslateChats } = global.settings.byKey;
+
+  const isPremium = selectIsCurrentUserPremium(global);
+  const isSavedMessages = selectIsChatWithSelf(global, chatId);
+
+  return IS_TRANSLATION_SUPPORTED && canTranslateChats && isPremium && !isSavedMessages;
+}
+
+export function selectCanTranslateChat<T extends GlobalState>(
+  global: T, chatId: string, ...[tabId = getCurrentTabId()]: TabArgs<T>
+) {
+  const chat = selectChat(global, chatId);
+  if (!chat) return false;
+
+  const requestedTranslation = selectRequestedChatTranslationLanguage(global, chatId, tabId);
+  if (requestedTranslation) return true; // Prevent translation dropping on reevaluation
+
+  const isLanguageDetectable = selectShouldDetectChatLanguage(global, chatId);
+  const detectedLanguage = chat.detectedLanguage;
+
+  const { doNotTranslate } = global.settings.byKey;
+
+  return Boolean(isLanguageDetectable && detectedLanguage && !doNotTranslate.includes(detectedLanguage));
+}
+
+export function selectRequestedChatTranslationLanguage<T extends GlobalState>(
+  global: T, chatId: string,
+  ...[tabId = getCurrentTabId()]: TabArgs<T>
+) {
+  const { requestedTranslations } = selectTabState(global, tabId);
+
+  return requestedTranslations.byChatId[chatId]?.toLanguage;
 }

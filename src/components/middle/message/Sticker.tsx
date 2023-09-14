@@ -1,25 +1,26 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { useCallback, useEffect, useRef } from '../../../lib/teact/teact';
-
-import type { ApiMessage } from '../../../api/types';
-import { ApiMediaFormat } from '../../../api/types';
-import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
-
-import { getStickerDimensions } from '../../common/helpers/mediaDimensions';
-import { getMessageMediaHash } from '../../../global/helpers';
-import buildClassName from '../../../util/buildClassName';
-import { IS_WEBM_SUPPORTED } from '../../../util/environment';
+import React, { useEffect, useRef } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
-import { useIsIntersecting } from '../../../hooks/useIntersectionObserver';
-import useMedia from '../../../hooks/useMedia';
-import useFlag from '../../../hooks/useFlag';
-import useLang from '../../../hooks/useLang';
+import type { ApiMessage } from '../../../api/types';
+import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
+import { ApiMediaFormat } from '../../../api/types';
+
+import { getMessageMediaHash } from '../../../global/helpers';
+import buildClassName from '../../../util/buildClassName';
+import { IS_WEBM_SUPPORTED } from '../../../util/windowEnvironment';
+import { getStickerDimensions } from '../../common/helpers/mediaDimensions';
+
 import useAppLayout from '../../../hooks/useAppLayout';
+import useFlag from '../../../hooks/useFlag';
+import { useIsIntersecting } from '../../../hooks/useIntersectionObserver';
+import useLang from '../../../hooks/useLang';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useMedia from '../../../hooks/useMedia';
 import usePrevious from '../../../hooks/usePrevious';
 
-import StickerView from '../../common/StickerView';
 import AnimatedSticker from '../../common/AnimatedSticker';
+import StickerView from '../../common/StickerView';
 
 import './Sticker.scss';
 
@@ -31,15 +32,15 @@ type OwnProps = {
   observeIntersection: ObserveFn;
   observeIntersectionForPlaying: ObserveFn;
   shouldLoop?: boolean;
-  lastSyncTime?: number;
   shouldPlayEffect?: boolean;
+  withEffect?: boolean;
   onPlayEffect?: VoidFunction;
   onStopEffect?: VoidFunction;
 };
 
 const Sticker: FC<OwnProps> = ({
-  message, observeIntersection, observeIntersectionForPlaying, shouldLoop, lastSyncTime,
-  shouldPlayEffect, onPlayEffect, onStopEffect,
+  message, observeIntersection, observeIntersectionForPlaying, shouldLoop,
+  shouldPlayEffect, withEffect, onPlayEffect, onStopEffect,
 }) => {
   const { showNotification, openStickerSet } = getActions();
 
@@ -63,33 +64,32 @@ const Sticker: FC<OwnProps> = ({
     mediaHashEffect,
     !canLoad || !hasEffect,
     ApiMediaFormat.BlobUrl,
-    lastSyncTime,
   );
   const [isPlayingEffect, startPlayingEffect, stopPlayingEffect] = useFlag();
 
-  const handleEffectEnded = useCallback(() => {
+  const handleEffectEnded = useLastCallback(() => {
     stopPlayingEffect();
     onStopEffect?.();
-  }, [onStopEffect, stopPlayingEffect]);
+  });
 
   const previousShouldPlayEffect = usePrevious(shouldPlayEffect);
 
   useEffect(() => {
-    if (hasEffect && canPlay && (shouldPlayEffect || previousShouldPlayEffect)) {
+    if (hasEffect && withEffect && canPlay && (shouldPlayEffect || previousShouldPlayEffect)) {
       startPlayingEffect();
       onPlayEffect?.();
     }
-  }, [hasEffect, canPlay, onPlayEffect, shouldPlayEffect, previousShouldPlayEffect, startPlayingEffect]);
+  }, [hasEffect, canPlay, onPlayEffect, shouldPlayEffect, previousShouldPlayEffect, startPlayingEffect, withEffect]);
 
-  const openModal = useCallback(() => {
+  const openModal = useLastCallback(() => {
     openStickerSet({
       stickerSetInfo: sticker.stickerSetInfo,
     });
-  }, [openStickerSet, sticker]);
+  });
 
-  const handleClick = useCallback(() => {
+  const handleClick = useLastCallback(() => {
     if (hasEffect) {
-      if (isPlayingEffect) {
+      if (isPlayingEffect || !withEffect) {
         showNotification({
           message: lang('PremiumStickerTooltip'),
           action: {
@@ -101,17 +101,14 @@ const Sticker: FC<OwnProps> = ({
           actionText: lang('ViewAction'),
         });
         return;
-      } else {
+      } else if (withEffect) {
         startPlayingEffect();
         onPlayEffect?.();
         return;
       }
     }
     openModal();
-  }, [
-    hasEffect, isPlayingEffect, lang, onPlayEffect, openModal, showNotification, startPlayingEffect,
-    sticker.stickerSetInfo,
-  ]);
+  });
 
   const isMemojiSticker = 'isMissing' in stickerSetInfo;
   const { width, height } = getStickerDimensions(sticker, isMobile);
@@ -138,9 +135,8 @@ const Sticker: FC<OwnProps> = ({
         noLoad={!canLoad}
         noPlay={!canPlay}
         withSharedAnimation
-        cacheBuster={lastSyncTime}
       />
-      {hasEffect && canLoad && isPlayingEffect && (
+      {hasEffect && withEffect && canLoad && isPlayingEffect && (
         <AnimatedSticker
           key={mediaHashEffect}
           className="effect-sticker"

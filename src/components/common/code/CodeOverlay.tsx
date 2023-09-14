@@ -4,12 +4,12 @@ import React, {
 } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
-import { copyTextToClipboard } from '../../../util/clipboard';
 import buildClassName from '../../../util/buildClassName';
+import { copyTextToClipboard } from '../../../util/clipboard';
 import { areLinesWrapping } from '../helpers/renderText';
 
-import useWindowSize from '../../../hooks/useWindowSize';
 import useLang from '../../../hooks/useLang';
+import useWindowSize from '../../../hooks/useWindowSize';
 
 import styles from './CodeOverlay.module.scss';
 
@@ -63,12 +63,12 @@ const CodeOverlay: FC<OwnProps> = ({
       <div className={contentClass}>
         {withWordWrapButton && (
           <div className={wrapClass} onClick={handleWordWrapClick} title="Word Wrap">
-            <i className="icon-word-wrap" />
+            <i className="icon icon-word-wrap" />
           </div>
         )}
         {!noCopy && (
           <div className={styles.copy} onClick={handleCopy} title={lang('Copy')}>
-            <i className="icon-copy" />
+            <i className="icon icon-copy" />
           </div>
         )}
       </div>

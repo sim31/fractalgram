@@ -1,26 +1,30 @@
-import type { RefObject } from 'react';
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useRef, useState } from '../../lib/teact/teact';
+import React, {
+  memo, useMemo, useRef, useState,
+} from '../../lib/teact/teact';
 
-import { IS_CANVAS_FILTER_SUPPORTED } from '../../util/environment';
+import type { IconName } from '../../types/icons';
+
 import buildClassName from '../../util/buildClassName';
 import { formatMediaDateTime, formatPastTimeShort } from '../../util/dateFormat';
+import { IS_CANVAS_FILTER_SUPPORTED } from '../../util/windowEnvironment';
 import { getColorFromExtension, getFileSizeString } from './helpers/documentInfo';
 import { getDocumentThumbnailDimensions } from './helpers/mediaDimensions';
 import renderText from './helpers/renderText';
-import useShowTransition from '../../hooks/useShowTransition';
-import useMediaTransition from '../../hooks/useMediaTransition';
-import useLang from '../../hooks/useLang';
-import useCanvasBlur from '../../hooks/useCanvasBlur';
-import useAppLayout from '../../hooks/useAppLayout';
 
-import ProgressSpinner from '../ui/ProgressSpinner';
+import useAppLayout from '../../hooks/useAppLayout';
+import useCanvasBlur from '../../hooks/useCanvasBlur';
+import useLang from '../../hooks/useLang';
+import useMediaTransition from '../../hooks/useMediaTransition';
+import useShowTransition from '../../hooks/useShowTransition';
+
 import Link from '../ui/Link';
+import ProgressSpinner from '../ui/ProgressSpinner';
 
 import './File.scss';
 
 type OwnProps = {
-  ref?: RefObject<HTMLDivElement>;
+  ref?: React.RefObject<HTMLDivElement>;
   name: string;
   extension?: string;
   size: number;
@@ -35,7 +39,7 @@ type OwnProps = {
   isSelectable?: boolean;
   isSelected?: boolean;
   transferProgress?: number;
-  actionIcon?: string;
+  actionIcon?: IconName;
   onClick?: () => void;
   onDateClick?: (e: React.MouseEvent<HTMLAnchorElement>) => void;
 };
@@ -80,6 +84,10 @@ const File: FC<OwnProps> = ({
 
   const color = getColorFromExtension(extension);
   const sizeString = getFileSizeString(size);
+  const subtitle = useMemo(() => {
+    if (!isTransferring || !transferProgress) return sizeString;
+    return `${getFileSizeString(size * transferProgress)} / ${sizeString}`;
+  }, [isTransferring, size, sizeString, transferProgress]);
 
   const { width, height } = getDocumentThumbnailDimensions(smaller);
 
@@ -95,7 +103,7 @@ const File: FC<OwnProps> = ({
     <div ref={elementRef} className={fullClassName} dir={lang.isRtl ? 'rtl' : undefined}>
       {isSelectable && (
         <div className="message-select-control">
-          {isSelected && <i className="icon-select" />}
+          {isSelected && <i className="icon icon-select" />}
         </div>
       )}
       <div className="file-icon-container" onClick={isUploading ? undefined : onClick}>
@@ -135,7 +143,8 @@ const File: FC<OwnProps> = ({
           <i
             className={buildClassName(
               'action-icon',
-              actionIcon || 'icon-download',
+              'icon',
+              actionIcon ? `icon-${actionIcon}` : 'icon-download',
               shouldSpinnerRender && 'hidden',
             )}
           />
@@ -145,7 +154,7 @@ const File: FC<OwnProps> = ({
         <div className="file-title" dir="auto" title={name}>{renderText(name)}</div>
         <div className="file-subtitle" dir="auto">
           <span>
-            {isTransferring && transferProgress ? `${Math.round(transferProgress * 100)}%` : sizeString}
+            {subtitle}
           </span>
           {sender && <span className="file-sender">{renderText(sender)}</span>}
           {!sender && Boolean(timestamp) && (

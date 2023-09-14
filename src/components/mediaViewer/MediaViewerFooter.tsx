@@ -3,10 +3,14 @@ import React, { useEffect, useState } from '../../lib/teact/teact';
 
 import type { TextPart } from '../../types';
 
-import { REM } from '../common/helpers/mediaDimensions';
-import { throttle } from '../../util/schedulers';
 import buildClassName from '../../util/buildClassName';
+import { throttle } from '../../util/schedulers';
+import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
+import { REM } from '../common/helpers/mediaDimensions';
+
 import useAppLayout from '../../hooks/useAppLayout';
+import useDerivedState from '../../hooks/useDerivedState';
+import useControlsSignal from './hooks/useControlsSignal';
 
 import './MediaViewerFooter.scss';
 
@@ -15,16 +19,18 @@ const RESIZE_THROTTLE_MS = 500;
 type OwnProps = {
   text: TextPart | TextPart[];
   onClick: () => void;
-  isHidden?: boolean;
   isForVideo: boolean;
+  isForceMobileVersion?: boolean;
   isProtected?: boolean;
 };
 
 const MediaViewerFooter: FC<OwnProps> = ({
-  text = '', isHidden, isForVideo, onClick, isProtected,
+  text = '', isForVideo, onClick, isProtected, isForceMobileVersion,
 }) => {
   const [isMultiline, setIsMultiline] = useState(false);
   const { isMobile } = useAppLayout();
+  const [getIsVisible] = useControlsSignal();
+  const isHidden = useDerivedState(() => (IS_TOUCH_ENV ? !getIsVisible() : false), [getIsVisible]);
 
   useEffect(() => {
     const footerContent = document.querySelector('.MediaViewerFooter .media-text') as HTMLDivElement | null;
@@ -58,13 +64,16 @@ const MediaViewerFooter: FC<OwnProps> = ({
     isForVideo && 'is-for-video',
     isHidden && 'is-hidden',
     isProtected && 'is-protected',
+    isForceMobileVersion && 'mobile',
   );
 
   return (
     <div className={classNames} onClick={stopEvent}>
       {Boolean(text) && (
         <div className="media-viewer-footer-content" onClick={!isMobile ? onClick : undefined}>
-          <p className={`media-text custom-scroll ${isMultiline ? 'multiline' : ''}`} dir="auto">{text}</p>
+          <p className={`media-text custom-scroll allow-selection ${isMultiline ? 'multiline' : ''}`} dir="auto">
+            {text}
+          </p>
         </div>
       )}
     </div>

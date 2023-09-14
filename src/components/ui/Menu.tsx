@@ -1,27 +1,31 @@
-import type { RefObject } from 'react';
-import type { FC } from '../../lib/teact/teact';
-import React, { memo, useEffect, useRef } from '../../lib/teact/teact';
+import React, {
+  type FC, memo, useEffect, useRef,
+} from '../../lib/teact/teact';
 
-import useShowTransition from '../../hooks/useShowTransition';
-import useKeyboardListNavigation from '../../hooks/useKeyboardListNavigation';
-import useVirtualBackdrop from '../../hooks/useVirtualBackdrop';
-import useEffectWithPrevDeps from '../../hooks/useEffectWithPrevDeps';
-import captureEscKeyListener from '../../util/captureEscKeyListener';
 import buildClassName from '../../util/buildClassName';
 import buildStyle from '../../util/buildStyle';
+import captureEscKeyListener from '../../util/captureEscKeyListener';
+import freezeWhenClosed from '../../util/hoc/freezeWhenClosed';
+import { IS_BACKDROP_BLUR_SUPPORTED } from '../../util/windowEnvironment';
+import { preventMessageInputBlurWithBubbling } from '../middle/helpers/preventMessageInputBlur';
+
+import useAppLayout from '../../hooks/useAppLayout';
+import useEffectWithPrevDeps from '../../hooks/useEffectWithPrevDeps';
 import { dispatchHeavyAnimationEvent } from '../../hooks/useHeavyAnimationCheck';
 import useHistoryBack from '../../hooks/useHistoryBack';
-import { preventMessageInputBlurWithBubbling } from '../middle/helpers/preventMessageInputBlur';
-import { IS_BACKDROP_BLUR_SUPPORTED, IS_COMPACT_MENU } from '../../util/environment';
+import useKeyboardListNavigation from '../../hooks/useKeyboardListNavigation';
+import useShowTransition from '../../hooks/useShowTransition';
+import useVirtualBackdrop from '../../hooks/useVirtualBackdrop';
 
 import Portal from './Portal';
 
 import './Menu.scss';
 
 type OwnProps = {
-  ref?: RefObject<HTMLDivElement>;
-  containerRef?: RefObject<HTMLElement>;
+  ref?: React.RefObject<HTMLDivElement>;
+  containerRef?: React.RefObject<HTMLElement>;
   isOpen: boolean;
+  shouldCloseFast?: boolean;
   id?: string;
   className?: string;
   bubbleClassName?: string;
@@ -36,6 +40,7 @@ type OwnProps = {
   shouldSkipTransition?: boolean;
   footer?: string;
   noCloseOnBackdrop?: boolean;
+  backdropExcludedSelector?: string;
   noCompact?: boolean;
   onKeyDown?: (e: React.KeyboardEvent<any>) => void;
   onCloseAnimationEnd?: () => void;
@@ -52,6 +57,7 @@ const ANIMATION_DURATION = 200;
 const Menu: FC<OwnProps> = ({
   ref,
   containerRef,
+  shouldCloseFast,
   isOpen,
   id,
   className,
@@ -67,6 +73,7 @@ const Menu: FC<OwnProps> = ({
   autoClose = false,
   footer,
   noCloseOnBackdrop = false,
+  backdropExcludedSelector,
   noCompact,
   onCloseAnimationEnd,
   onClose,
@@ -82,6 +89,7 @@ const Menu: FC<OwnProps> = ({
     menuRef = ref;
   }
   const backdropContainerRef = containerRef || menuRef;
+  const { isTouchScreen } = useAppLayout();
 
   const {
     transitionClassNames,
@@ -116,6 +124,8 @@ const Menu: FC<OwnProps> = ({
     isOpen,
     backdropContainerRef,
     noCloseOnBackdrop ? undefined : onClose,
+    undefined,
+    backdropExcludedSelector,
   );
 
   const bubbleFullClassName = buildClassName(
@@ -125,6 +135,7 @@ const Menu: FC<OwnProps> = ({
     footer && 'with-footer',
     transitionClassNames,
     bubbleClassName,
+    shouldCloseFast && 'close-fast',
   );
 
   const transformOriginYStyle = transformOriginY !== undefined ? `${transformOriginY}px` : undefined;
@@ -134,9 +145,10 @@ const Menu: FC<OwnProps> = ({
     <div
       id={id}
       className={buildClassName(
-        'Menu no-selection',
-        !noCompact && IS_COMPACT_MENU && 'compact',
+        'Menu',
+        !noCompact && !isTouchScreen && 'compact',
         !IS_BACKDROP_BLUR_SUPPORTED && 'no-blur',
+        withPortal && 'in-portal',
         className,
       )}
       style={style}
@@ -177,4 +189,4 @@ const Menu: FC<OwnProps> = ({
   return menu;
 };
 
-export default memo(Menu);
+export default memo(freezeWhenClosed(Menu));

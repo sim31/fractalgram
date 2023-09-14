@@ -2,12 +2,19 @@
   --offset-y: 3.25rem !important;
   --offset-x: auto !important;
   --color-text: var(--color-primary);
+  --border-radius-default: 1.25rem;
 
   left: 0.5rem;
   width: 100%;
-  max-width: 26rem;
-  height: 26rem;
+  max-width: calc(var(--symbol-menu-width) + var(--scrollbar-width));
+  height: var(--symbol-menu-height);
   padding: 0 !important;
+
+  :global(body:not(.no-menu-blur)) & {
+    --color-background: var(--color-background-compact-menu);
+
+    backdrop-filter: blur(25px);
+  }
 
   @media (max-width: 26rem) {
     left: 0.5rem !important;
@@ -15,7 +22,7 @@
     width: calc(100vw - 1rem);
   }
 
-  :global(.custom-emoji) {
+  :global(.sticker-set-cover), :global(.custom-emoji) {
     color: var(--color-primary);
   }
 }

@@ -26,7 +26,7 @@
       height: 100%;
       overflow: hidden;
 
-      > div {
+      > .Transition_slide {
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -35,7 +35,7 @@
   }
 
   .Composer {
-    #message-compose {
+    .composer-wrapper {
       transform: scaleX(1) translateX(0);
       transition: transform var(--select-transition), border-bottom-right-radius var(--select-transition);
 
@@ -44,7 +44,7 @@
         transition: transform var(--select-transition);
       }
 
-      body.animation-level-0 & {
+      body.no-message-composer-animations & {
         &,
         &::before {
           transition: none !important;
@@ -57,7 +57,7 @@
       opacity: 1;
       transition: opacity var(--select-transition);
 
-      body.animation-level-0 & {
+      body.no-message-composer-animations & {
         transition: none !important;
       }
     }
@@ -68,7 +68,7 @@
       transition: opacity var(--select-transition), transform var(--select-transition), background-color 0.15s,
       color 0.15s;
 
-      body.animation-level-0 & {
+      body.no-message-composer-animations & {
         transition: none !important;
       }
     }
@@ -83,7 +83,7 @@
         height: 0;
       }
 
-      #message-compose {
+      .composer-wrapper {
         transform: scaleX(var(--composer-hidden-scale, 1)) translateX(var(--composer-translate-x, 0));
         border-bottom-right-radius: var(--border-radius-messages);
 
@@ -120,12 +120,12 @@
       opacity: 1;
       transition: opacity var(--select-transition);
 
-      body.animation-level-0 & {
+      body.no-page-transitions & {
         transition: none !important;
       }
     }
 
-    body.animation-level-0 & {
+    body.no-page-transitions & {
       transition: none !important;
     }
 
@@ -162,8 +162,13 @@
     /* stylelint-disable-next-line plugin/no-low-performance-animation-properties */
     transition: top 200ms, transform var(--layer-transition);
 
-    body.animation-level-0 & {
+    body.no-page-transitions & {
       transition: none !important;
+    }
+
+    body.no-right-column-animations & {
+      /* stylelint-disable-next-line plugin/no-low-performance-animation-properties */
+      transition: top 200ms !important;
     }
 
     @media (min-width: 1276px) {
@@ -178,21 +183,22 @@
       padding: 0 0.5rem;
 
       body.is-symbol-menu-open & {
-        transform: translate3d(0, calc(-1 * (var(--symbol-menu-height) + var(--symbol-menu-footer-height))), 0);
+        transform: translate3d(0, calc(-1 * (var(--symbol-menu-height))), 0);
       }
     }
 
     &:not(.no-composer) {
-      padding-bottom: env(safe-area-inset-bottom);
+      padding-bottom: 0;
       top: 0;
 
-      body.keyboard-visible & {
-        top: env(safe-area-inset-bottom);
-      }
+      @media (max-width: 600px) {
+        @supports (padding-bottom: env(safe-area-inset-bottom)) {
+          padding-bottom: env(safe-area-inset-bottom);
 
-      // Target: Old Firefox (Waterfox Classic)
-      @supports not (padding-bottom: env(safe-area-inset-bottom)) {
-        padding-bottom: 0;
+          body.keyboard-visible & {
+            top: env(safe-area-inset-bottom);
+          }
+        }
       }
     }
 
@@ -324,7 +330,6 @@
     padding-bottom: 0.75rem;
     margin-left: -0.5rem;
 
-    // Target: Old Firefox (Waterfox Classic)
     @supports (padding-bottom: calc(0.75rem + env(safe-area-inset-bottom))) {
       padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
     }
@@ -333,4 +338,14 @@
   .mask-image-disabled &::before {
     background: unset;
   }
+}
+
+.resize-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 0.25rem;
+  z-index: var(--z-resize-handle);
+  cursor: ew-resize;
 }

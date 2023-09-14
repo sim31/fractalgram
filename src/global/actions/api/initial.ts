@@ -1,39 +1,40 @@
-import {
-  addActionHandler, getGlobal, setGlobal,
-} from '../../index';
-
-import { initApi, callApi, callApiLocal } from '../../../api/gramjs';
+import type { ActionReturnType } from '../../types';
 
 import {
-  LANG_CACHE_NAME,
   CUSTOM_BG_CACHE_NAME,
+  IS_TEST,
+  LANG_CACHE_NAME,
+  LOCK_SCREEN_ANIMATION_DURATION_MS,
   MEDIA_CACHE_NAME,
   MEDIA_CACHE_NAME_AVATARS,
   MEDIA_PROGRESSIVE_CACHE_NAME,
-  IS_TEST,
-  LOCK_SCREEN_ANIMATION_DURATION_MS,
 } from '../../../config';
-import {
-  IS_MOV_SUPPORTED, IS_WEBM_SUPPORTED, MAX_BUFFER_SIZE, PLATFORM_ENV,
-} from '../../../util/environment';
-import { unsubscribe } from '../../../util/notifications';
-import * as cacheApi from '../../../util/cacheApi';
 import { updateAppBadge } from '../../../util/appBadge';
-import {
-  storeSession,
-  loadStoredSession,
-  clearStoredSession,
-  importLegacySession,
-  clearLegacySessions,
-} from '../../../util/sessions';
-import { forceWebsync } from '../../../util/websync';
-import { addUsers, clearGlobalForLockScreen, updatePasscodeSettings } from '../../reducers';
-import { clearEncryptedSession, encryptSession, forgetPasscode } from '../../../util/passcode';
-import { serializeGlobal } from '../../cache';
-import { parseInitialLocationHash } from '../../../util/routing';
-import type { ActionReturnType } from '../../types';
+import * as cacheApi from '../../../util/cacheApi';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
 import { buildCollectionByKey } from '../../../util/iteratees';
+import { unsubscribe } from '../../../util/notifications';
+import { clearEncryptedSession, encryptSession, forgetPasscode } from '../../../util/passcode';
+import { parseInitialLocationHash, resetInitialLocationHash } from '../../../util/routing';
+import {
+  clearLegacySessions,
+  clearStoredSession,
+  importLegacySession,
+  loadStoredSession,
+  storeSession,
+} from '../../../util/sessions';
+import { forceWebsync } from '../../../util/websync';
+import {
+  IS_WEBM_SUPPORTED, MAX_BUFFER_SIZE, PLATFORM_ENV,
+} from '../../../util/windowEnvironment';
+import {
+  callApi, callApiLocal, initApi, setShouldEnableDebugLog,
+} from '../../../api/gramjs';
+import { serializeGlobal } from '../../cache';
+import {
+  addActionHandler, getGlobal, setGlobal,
+} from '../../index';
+import { addUsers, clearGlobalForLockScreen, updatePasscodeSettings } from '../../reducers';
 
 addActionHandler('initApi', async (global, actions): Promise<void> => {
   if (!IS_TEST) {
@@ -48,13 +49,17 @@ addActionHandler('initApi', async (global, actions): Promise<void> => {
     platform: PLATFORM_ENV,
     sessionData: loadStoredSession(),
     isTest: window.location.search.includes('test') || initialLocationHash?.tgWebAuthTest === '1',
-    isMovSupported: IS_MOV_SUPPORTED,
     isWebmSupported: IS_WEBM_SUPPORTED,
     maxBufferSize: MAX_BUFFER_SIZE,
     webAuthToken: initialLocationHash?.tgWebAuthToken,
     dcId: initialLocationHash?.tgWebAuthDcId ? Number(initialLocationHash?.tgWebAuthDcId) : undefined,
     mockScenario: initialLocationHash?.mockScenario,
+    shouldAllowHttpTransport: global.settings.byKey.shouldAllowHttpTransport,
+    shouldForceHttpTransport: global.settings.byKey.shouldForceHttpTransport,
+    shouldDebugExportedSenders: global.settings.byKey.shouldDebugExportedSenders,
   });
+
+  void setShouldEnableDebugLog(Boolean(global.settings.byKey.shouldCollectDebugLogs));
 });
 
 addActionHandler('setAuthPhoneNumber', (global, actions, payload): ActionReturnType => {
@@ -157,6 +162,7 @@ addActionHandler('signOut', async (global, actions, payload): Promise<void> => {
   if ('leaveGroupCall' in actions) actions.leaveGroupCall({ tabId: getCurrentTabId() });
 
   try {
+    resetInitialLocationHash();
     await unsubscribe();
     await callApi('destroy');
     await forceWebsync(false);
@@ -171,6 +177,12 @@ addActionHandler('signOut', async (global, actions, payload): Promise<void> => {
   }
 });
 
+addActionHandler('requestChannelDifference', (global, actions, payload): ActionReturnType => {
+  const { chatId } = payload;
+
+  void callApi('requestChannelDifference', chatId);
+});
+
 addActionHandler('reset', (global, actions): ActionReturnType => {
   clearStoredSession();
   clearEncryptedSession();
@@ -181,7 +193,7 @@ addActionHandler('reset', (global, actions): ActionReturnType => {
   void cacheApi.clear(CUSTOM_BG_CACHE_NAME);
 
   const langCachePrefix = LANG_CACHE_NAME.replace(/\d+$/, '');
-  const langCacheVersion = (LANG_CACHE_NAME.match(/\d+$/) || [0])[0];
+  const langCacheVersion = Number((LANG_CACHE_NAME.match(/\d+$/) || ['0'])[0]);
   for (let i = 0; i < langCacheVersion; i++) {
     void cacheApi.clear(`${langCachePrefix}${i === 0 ? '' : i}`);
   }
@@ -251,6 +263,7 @@ addActionHandler('lockScreen', async (global): Promise<void> => {
     {
       isScreenLocked: true,
       invalidAttemptsCount: 0,
+      timeoutUntil: undefined,
     },
   );
   setGlobal(global);

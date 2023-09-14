@@ -1,5 +1,6 @@
 export {
-  destroy, disconnect, downloadMedia, fetchCurrentUser, repairFileReference,
+  destroy, disconnect, downloadMedia, fetchCurrentUser, repairFileReference, abortChatRequests, abortRequestGroup,
+  setForceHttpTransport, setShouldDebugExportedSenders, setAllowHttpTransport, requestChannelDifference,
 } from './client';
 
 export {
@@ -20,7 +21,9 @@ export {
   updateChatTitle, updateChatAbout, toggleSignatures, updateChatAdmin, fetchGroupsForDiscussion, setDiscussionGroup,
   migrateChat, openChatByInvite, fetchMembers, importChatInvite, addChatMembers, deleteChatMember, toggleIsProtected,
   getChatByPhoneNumber, toggleJoinToSend, toggleJoinRequest, fetchTopics, deleteTopic, togglePinnedTopic,
-  editTopic, toggleForum, fetchTopicById, createTopic, toggleParticipantsHidden,
+  editTopic, toggleForum, fetchTopicById, createTopic, toggleParticipantsHidden, checkChatlistInvite,
+  joinChatlistInvite, createChalistInvite, editChatlistInvite, deleteChatlistInvite, fetchChatlistInvites,
+  fetchLeaveChatlistSuggestions, leaveChatlist, togglePeerTranslations,
 } from './chats';
 
 export {
@@ -36,6 +39,7 @@ export {
 export {
   fetchFullUser, fetchNearestCountry, fetchTopUsers, fetchContactList, fetchUsers,
   updateContact, importContact, deleteContact, fetchProfilePhotos, fetchCommonChats, reportSpam, updateEmojiStatus,
+  saveCloseFriends,
 } from './users';
 
 export {
@@ -47,14 +51,14 @@ export {
 } from './symbols';
 
 export {
-  checkChatUsername, setChatUsername, updatePrivateLink,
+  checkChatUsername, setChatUsername, updatePrivateLink, deactivateAllUsernames,
   fetchExportedChatInvites, editExportedChatInvite, exportChatInvite, deleteExportedChatInvite,
   deleteRevokedExportedChatInvites, fetchChatInviteImporters, hideChatJoinRequest, hideAllChatJoinRequests,
   hideChatReportPanel,
 } from './management';
 
 export {
-  updateProfile, checkUsername, updateUsername, fetchBlockedContacts, blockContact, unblockContact,
+  updateProfile, checkUsername, updateUsername, fetchBlockedUsers, blockUser, unblockUser,
   updateProfilePhoto, uploadProfilePhoto, deleteProfilePhotos, fetchWallpapers, uploadWallpaper,
   fetchAuthorizations, terminateAuthorization, terminateAllAuthorizations,
   fetchWebAuthorizations, terminateWebAuthorization, terminateAllWebAuthorizations,
@@ -71,8 +75,9 @@ export {
 
 export {
   answerCallbackButton, fetchTopInlineBots, fetchInlineBot, fetchInlineBotResults, sendInlineBotResult, startBot,
-  requestWebView, requestSimpleWebView, sendWebViewData, prolongWebView, loadAttachBots, toggleAttachBot,
-  requestBotUrlAuth, requestLinkUrlAuth, acceptBotUrlAuth, acceptLinkUrlAuth, loadAttachBot,
+  requestWebView, requestSimpleWebView, sendWebViewData, prolongWebView, loadAttachBots, toggleAttachBot, fetchBotApp,
+  requestBotUrlAuth, requestLinkUrlAuth, acceptBotUrlAuth, acceptLinkUrlAuth, loadAttachBot, requestAppWebView,
+  allowBotSendMessages, fetchBotCanSendMessage, invokeWebViewCustomMethod,
 } from './bots';
 
 export {
@@ -87,8 +92,8 @@ export {
 } from './calls';
 
 export {
-  getAvailableReactions, sendReaction, sendEmojiInteraction, fetchMessageReactionsList,
-  setDefaultReaction, fetchMessageReactions, sendWatchingEmojiInteraction,
+  getAvailableReactions, sendReaction, sendEmojiInteraction, fetchMessageReactionsList, clearRecentReactions,
+  setDefaultReaction, fetchMessageReactions, sendWatchingEmojiInteraction, fetchRecentReactions, fetchTopReactions,
 } from './reactions';
 
 export {
@@ -104,3 +109,5 @@ export {
 export {
   broadcastLocalDbUpdateFull,
 } from '../localDb';
+
+export * from './stories';

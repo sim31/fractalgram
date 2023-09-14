@@ -1,4 +1,5 @@
 import type { ApiAttachment } from '../../../../api/types';
+
 import {
   GIF_MIME_TYPE,
   SUPPORTED_AUDIO_CONTENT_TYPES,
@@ -7,13 +8,14 @@ import {
 } from '../../../../config';
 import { parseAudioMetadata } from '../../../../util/audio';
 import {
+  createPosterForVideo,
   preloadImage,
   preloadVideo,
-  createPosterForVideo,
 } from '../../../../util/files';
 import { scaleImage } from '../../../../util/imageResize';
 
 const MAX_QUICK_IMG_SIZE = 1280; // px
+const MAX_THUMB_IMG_SIZE = 40; // px
 const MAX_ASPECT_RATIO = 20;
 const FILE_EXT_REGEX = /\.[^/.]+$/;
 
@@ -53,13 +55,23 @@ export default async function buildAttachment(
       quick = { width, height };
     }
 
-    previewBlobUrl = blobUrl;
+    const shouldShrinkPreview = Math.max(width, height) > MAX_THUMB_IMG_SIZE;
+    if (shouldShrinkPreview) {
+      previewBlobUrl = await scaleImage(
+        blobUrl, MAX_THUMB_IMG_SIZE / Math.max(width, height), 'image/jpeg',
+      );
+    } else {
+      previewBlobUrl = blobUrl;
+    }
   } else if (SUPPORTED_VIDEO_CONTENT_TYPES.has(mimeType)) {
-    const { videoWidth: width, videoHeight: height, duration } = await preloadVideo(blobUrl);
-    shouldSendAsFile = !validateAspectRatio(width, height);
-
-    if (!shouldSendAsFile) {
-      quick = { width, height, duration };
+    try {
+      const { videoWidth: width, videoHeight: height, duration } = await preloadVideo(blobUrl);
+      shouldSendAsFile = !validateAspectRatio(width, height);
+      if (!shouldSendAsFile) {
+        quick = { width: width!, height: height!, duration: duration! };
+      }
+    } catch (err) {
+      shouldSendAsFile = true;
     }
 
     previewBlobUrl = await createPosterForVideo(blobUrl);

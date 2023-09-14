@@ -1,36 +1,37 @@
-import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { FC } from '../../lib/teact/teact';
-import React, {
-  useEffect, useCallback, memo, useMemo,
-} from '../../lib/teact/teact';
+import React, { memo, useEffect, useMemo } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type {
-  ApiChat, ApiTopic, ApiThreadInfo, ApiTypingStatus,
+  ApiChat, ApiThreadInfo, ApiTopic, ApiTypingStatus,
 } from '../../api/types';
-import type { GlobalState } from '../../global/types';
-import type { AnimationLevel } from '../../types';
 import type { LangFn } from '../../hooks/useLang';
 import { MediaViewerOrigin } from '../../types';
 
-import { REM } from './helpers/mediaDimensions';
 import {
   getChatTypeString,
   getMainUsername,
   isChatSuperGroup,
 } from '../../global/helpers';
 import {
-  selectChat, selectChatMessages, selectChatOnlineCount, selectThreadInfo, selectThreadMessagesCount,
+  selectChat,
+  selectChatMessages,
+  selectChatOnlineCount,
+  selectThreadInfo,
+  selectThreadMessagesCount,
 } from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
+import { REM } from './helpers/mediaDimensions';
 import renderText from './helpers/renderText';
+
 import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
 
 import Avatar from './Avatar';
-import TypingStatus from './TypingStatus';
 import DotAnimation from './DotAnimation';
 import FullNameTitle from './FullNameTitle';
 import TopicIcon from './TopicIcon';
+import TypingStatus from './TypingStatus';
 
 const TOPIC_ICON_SIZE = 2.5 * REM;
 
@@ -39,7 +40,7 @@ type OwnProps = {
   threadId?: number;
   className?: string;
   typingStatus?: ApiTypingStatus;
-  avatarSize?: 'small' | 'medium' | 'large' | 'jumbo';
+  avatarSize?: 'tiny' | 'small' | 'medium' | 'large' | 'jumbo';
   status?: string;
   withDots?: boolean;
   withMediaViewer?: boolean;
@@ -47,9 +48,9 @@ type OwnProps = {
   withFullInfo?: boolean;
   withUpdatingStatus?: boolean;
   withChatType?: boolean;
-  withVideoAvatar?: boolean;
   noRtl?: boolean;
   noAvatar?: boolean;
+  noStatusOrTyping?: boolean;
   onClick?: VoidFunction;
 };
 
@@ -60,10 +61,8 @@ type StateProps =
     topic?: ApiTopic;
     onlineCount?: number;
     areMessagesLoaded: boolean;
-    animationLevel: AnimationLevel;
     messagesCount?: number;
-  }
-  & Pick<GlobalState, 'lastSyncTime'>;
+  };
 
 const GroupChatInfo: FC<OwnProps & StateProps> = ({
   typingStatus,
@@ -77,16 +76,14 @@ const GroupChatInfo: FC<OwnProps & StateProps> = ({
   withFullInfo,
   withUpdatingStatus,
   withChatType,
-  withVideoAvatar,
   threadInfo,
   noRtl,
   chat,
   onlineCount,
   areMessagesLoaded,
-  animationLevel,
-  lastSyncTime,
   topic,
   messagesCount,
+  noStatusOrTyping,
   onClick,
 }) => {
   const {
@@ -95,29 +92,32 @@ const GroupChatInfo: FC<OwnProps & StateProps> = ({
     loadProfilePhotos,
   } = getActions();
 
+  const lang = useLang();
+
   const isSuperGroup = chat && isChatSuperGroup(chat);
   const isTopic = Boolean(chat?.isForum && threadInfo && topic);
   const { id: chatId, isMin, isRestricted } = chat || {};
 
   useEffect(() => {
-    if (chatId && !isMin && lastSyncTime) {
+    if (chatId && !isMin) {
       if (withFullInfo) loadFullChat({ chatId });
       if (withMediaViewer) loadProfilePhotos({ profileId: chatId });
     }
-  }, [chatId, isMin, lastSyncTime, withFullInfo, loadFullChat, loadProfilePhotos, isSuperGroup, withMediaViewer]);
+  }, [chatId, isMin, withFullInfo, loadFullChat, loadProfilePhotos, isSuperGroup, withMediaViewer]);
 
-  const handleAvatarViewerOpen = useCallback((e: ReactMouseEvent<HTMLDivElement, MouseEvent>, hasMedia: boolean) => {
-    if (chat && hasMedia) {
-      e.stopPropagation();
-      openMediaViewer({
-        avatarOwnerId: chat.id,
-        mediaId: 0,
-        origin: avatarSize === 'jumbo' ? MediaViewerOrigin.ProfileAvatar : MediaViewerOrigin.MiddleHeaderAvatar,
-      });
-    }
-  }, [chat, avatarSize, openMediaViewer]);
+  const handleAvatarViewerOpen = useLastCallback(
+    (e: React.MouseEvent<HTMLDivElement, MouseEvent>, hasMedia: boolean) => {
+      if (chat && hasMedia) {
+        e.stopPropagation();
+        openMediaViewer({
+          avatarOwnerId: chat.id,
+          mediaId: 0,
+          origin: avatarSize === 'jumbo' ? MediaViewerOrigin.ProfileAvatar : MediaViewerOrigin.MiddleHeaderAvatar,
+        });
+      }
+    },
+  );
 
-  const lang = useLang();
   const mainUsername = useMemo(() => chat && withUsername && getMainUsername(chat), [chat, withUsername]);
 
   if (!chat) {
@@ -185,20 +185,22 @@ const GroupChatInfo: FC<OwnProps & StateProps> = ({
         <Avatar
           key={chat.id}
           size={avatarSize}
-          chat={chat}
+          peer={chat}
           onClick={withMediaViewer ? handleAvatarViewerOpen : undefined}
-          withVideo={withVideoAvatar}
-          animationLevel={animationLevel}
         />
       )}
       {isTopic && (
-        <TopicIcon topic={topic!} className="topic-header-icon" size={TOPIC_ICON_SIZE} />
+        <TopicIcon
+          topic={topic!}
+          className="topic-header-icon"
+          size={TOPIC_ICON_SIZE}
+        />
       )}
       <div className="info">
         {topic
           ? <h3 dir="auto" className="fullName">{renderText(topic.title)}</h3>
           : <FullNameTitle peer={chat} />}
-        {renderStatusOrTyping()}
+        {!noStatusOrTyping && renderStatusOrTyping()}
       </div>
     </div>
   );
@@ -223,7 +225,6 @@ function getGroupStatus(lang: LangFn, chat: ApiChat) {
 
 export default memo(withGlobal<OwnProps>(
   (global, { chatId, threadId }): StateProps => {
-    const { lastSyncTime } = global;
     const chat = selectChat(global, chatId);
     const threadInfo = threadId ? selectThreadInfo(global, chatId, threadId) : undefined;
     const onlineCount = chat ? selectChatOnlineCount(global, chat) : undefined;
@@ -232,13 +233,11 @@ export default memo(withGlobal<OwnProps>(
     const messagesCount = topic && selectThreadMessagesCount(global, chatId, threadId!);
 
     return {
-      lastSyncTime,
       chat,
       threadInfo,
       onlineCount,
       topic,
       areMessagesLoaded,
-      animationLevel: global.settings.byKey.animationLevel,
       messagesCount,
     };
   },

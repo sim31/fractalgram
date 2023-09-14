@@ -1,9 +1,10 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  useState, useEffect, memo, useCallback, useMemo,
+  useCallback, useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
 
 import buildClassName from '../../util/buildClassName';
+
 import useLang from '../../hooks/useLang';
 
 import Button from '../ui/Button';
@@ -67,8 +68,8 @@ const NewChatButton: FC<OwnProps> = ({
         ariaLabel={lang(isMenuOpen ? 'Close' : 'NewMessageTitle')}
         tabIndex={-1}
       >
-        <i className="icon-new-chat-filled" />
-        <i className="icon-close" />
+        <i className="icon icon-new-chat-filled" />
+        <i className="icon icon-close" />
       </Button>
       <Menu
         isOpen={isMenuOpen}
@@ -83,4 +84,4 @@ const NewChatButton: FC<OwnProps> = ({
   );
 };
 
-export default memo(NewChatButton);
+export default NewChatButton;

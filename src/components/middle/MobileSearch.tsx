@@ -1,19 +1,24 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useRef, useState, useLayoutEffect,
+  memo, useEffect, useLayoutEffect,
+  useRef, useState,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type { ApiChat } from '../../api/types';
 
-import { debounce } from '../../util/schedulers';
+import { requestMutation } from '../../lib/fasterdom/fasterdom';
 import {
-  selectCurrentTextSearch,
   selectCurrentChat,
-  selectTabState,
   selectCurrentMessageList,
+  selectCurrentTextSearch,
+  selectTabState,
 } from '../../global/selectors';
 import { getDayStartAt } from '../../util/dateFormat';
+import { debounce } from '../../util/schedulers';
+import { IS_IOS } from '../../util/windowEnvironment';
+
+import useLastCallback from '../../hooks/useLastCallback';
 
 import Button from '../ui/Button';
 import SearchInput from '../ui/SearchInput';
@@ -69,12 +74,17 @@ const MobileSearchFooter: FC<StateProps> = ({
       const { activeElement } = document;
       if (activeElement && (activeElement === inputRef.current)) {
         const { pageTop, height } = visualViewport;
-        mainEl.style.transform = `translateY(${pageTop}px)`;
-        mainEl.style.height = `${height}px`;
-        document.documentElement.scrollTop = pageTop;
+
+        requestMutation(() => {
+          mainEl.style.transform = `translateY(${pageTop}px)`;
+          mainEl.style.height = `${height}px`;
+          document.documentElement.scrollTop = pageTop;
+        });
       } else {
-        mainEl.style.transform = '';
-        mainEl.style.height = '';
+        requestMutation(() => {
+          mainEl.style.transform = '';
+          mainEl.style.height = '';
+        });
       }
     };
 
@@ -96,13 +106,11 @@ const MobileSearchFooter: FC<StateProps> = ({
   }, [chat?.id, focusMessage, foundIds, threadId]);
 
   // Disable native up/down buttons on iOS
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!IS_IOS) return;
+
     Array.from(document.querySelectorAll<HTMLInputElement>('input')).forEach((input) => {
       input.disabled = Boolean(isActive && input !== inputRef.current);
-    });
-
-    Array.from(document.querySelectorAll<HTMLDivElement>('div[contenteditable]')).forEach((div) => {
-      div.contentEditable = isActive ? 'false' : 'true';
     });
   }, [isActive]);
 
@@ -113,38 +121,38 @@ const MobileSearchFooter: FC<StateProps> = ({
     }
   }, [isActive]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     const searchInput = document.querySelector<HTMLInputElement>('#MobileSearch input')!;
     searchInput.blur();
   }, [isHistoryCalendarOpen]);
 
-  const handleMessageSearchQueryChange = useCallback((newQuery: string) => {
+  const handleMessageSearchQueryChange = useLastCallback((newQuery: string) => {
     setLocalTextSearchQuery({ query: newQuery });
 
     if (newQuery.length) {
       runDebouncedForSearch(searchTextMessagesLocal);
     }
-  }, [searchTextMessagesLocal, setLocalTextSearchQuery]);
+  });
 
-  const handleUp = useCallback(() => {
+  const handleUp = useLastCallback(() => {
     if (chat && foundIds) {
       const newFocusIndex = focusedIndex + 1;
       focusMessage({ chatId: chat.id, messageId: foundIds[newFocusIndex], threadId });
       setFocusedIndex(newFocusIndex);
     }
-  }, [chat, foundIds, focusedIndex, threadId]);
+  });
 
-  const handleDown = useCallback(() => {
+  const handleDown = useLastCallback(() => {
     if (chat && foundIds) {
       const newFocusIndex = focusedIndex - 1;
       focusMessage({ chatId: chat.id, messageId: foundIds[newFocusIndex], threadId });
       setFocusedIndex(newFocusIndex);
     }
-  }, [chat, foundIds, focusedIndex, threadId]);
+  });
 
-  const handleCloseLocalTextSearch = useCallback(() => {
+  const handleCloseLocalTextSearch = useLastCallback(() => {
     closeLocalTextSearch();
-  }, [closeLocalTextSearch]);
+  });
 
   return (
     <div id="MobileSearch" className={isActive ? 'active' : ''}>
@@ -155,7 +163,7 @@ const MobileSearchFooter: FC<StateProps> = ({
           color="translucent"
           onClick={handleCloseLocalTextSearch}
         >
-          <i className="icon-arrow-left" />
+          <i className="icon icon-arrow-left" />
         </Button>
         <SearchInput
           ref={inputRef}
@@ -182,7 +190,7 @@ const MobileSearchFooter: FC<StateProps> = ({
               onClick={() => openHistoryCalendar({ selectedAt: getDayStartAt(Date.now()) })}
               ariaLabel="Search messages by date"
             >
-              <i className="icon-calendar" />
+              <i className="icon icon-calendar" />
             </Button>
           )}
         </div>
@@ -193,7 +201,7 @@ const MobileSearchFooter: FC<StateProps> = ({
           onClick={handleUp}
           disabled={!foundIds || !foundIds.length || focusedIndex === foundIds.length - 1}
         >
-          <i className="icon-up" />
+          <i className="icon icon-up" />
         </Button>
         <Button
           round
@@ -202,7 +210,7 @@ const MobileSearchFooter: FC<StateProps> = ({
           onClick={handleDown}
           disabled={!foundIds || !foundIds.length || focusedIndex === 0}
         >
-          <i className="icon-down" />
+          <i className="icon icon-down" />
         </Button>
       </div>
     </div>

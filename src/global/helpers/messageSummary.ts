@@ -1,13 +1,14 @@
 import type { TeactNode } from '../../lib/teact/teact';
+
 import type { ApiMessage } from '../../api/types';
-import { ApiMessageEntityTypes } from '../../api/types';
-import { CONTENT_NOT_SUPPORTED } from '../../config';
-
 import type { LangFn } from '../../hooks/useLang';
+import { ApiMessageEntityTypes } from '../../api/types';
 
+import { CONTENT_NOT_SUPPORTED } from '../../config';
 import trimText from '../../util/trimText';
+import { getGlobal } from '../index';
 import { getMessageText, getMessageTranscription } from './messages';
-import { getMessageRecentReaction } from './reactions';
+import { getUserFirstOrLastName } from './users';
 
 const SPOILER_CHARS = ['⠺', '⠵', '⠞', '⠟'];
 export const TRUNCATED_SUMMARY_LENGTH = 80;
@@ -17,13 +18,12 @@ export function getMessageSummaryText(
   message: ApiMessage,
   noEmoji = false,
   truncateLength = TRUNCATED_SUMMARY_LENGTH,
-  noReactions = true,
   isExtended = false,
 ) {
-  const emoji = !noEmoji && getMessageSummaryEmoji(message, noReactions);
+  const emoji = !noEmoji && getMessageSummaryEmoji(message);
   const emojiWithSpace = emoji ? `${emoji} ` : '';
   const text = trimText(getMessageTextWithSpoilers(message), truncateLength);
-  const description = getMessageSummaryDescription(lang, message, text, noReactions, isExtended);
+  const description = getMessageSummaryDescription(lang, message, text, isExtended);
 
   return `${emojiWithSpace}${description}`;
 }
@@ -58,7 +58,7 @@ export function getMessageTextWithSpoilers(message: ApiMessage) {
   return transcription ? `${transcription}\n${text}` : text;
 }
 
-export function getMessageSummaryEmoji(message: ApiMessage, noReactions = true) {
+export function getMessageSummaryEmoji(message: ApiMessage) {
   const {
     photo,
     video,
@@ -97,11 +97,6 @@ export function getMessageSummaryEmoji(message: ApiMessage, noReactions = true) 
     return '📊';
   }
 
-  const reaction = !noReactions && getMessageRecentReaction(message);
-  if (reaction) {
-    return reaction.reaction;
-  }
-
   return undefined;
 }
 
@@ -109,7 +104,6 @@ export function getMessageSummaryDescription(
   lang: LangFn,
   message: ApiMessage,
   truncatedText?: string | TeactNode,
-  noReactions = true,
   isExtended = false,
 ) {
   const {
@@ -125,19 +119,24 @@ export function getMessageSummaryDescription(
     invoice,
     location,
     game,
+    storyData,
   } = message.content;
 
+  let hasUsedTruncatedText = false;
   let summary: string | TeactNode | undefined;
 
   if (message.groupedId) {
+    hasUsedTruncatedText = true;
     summary = truncatedText || lang('lng_in_dlg_album');
   }
 
   if (photo) {
+    hasUsedTruncatedText = true;
     summary = truncatedText || lang('AttachPhoto');
   }
 
   if (video) {
+    hasUsedTruncatedText = true;
     summary = truncatedText || lang(video.isGif ? 'AttachGif' : 'AttachVideo');
   }
 
@@ -150,10 +149,12 @@ export function getMessageSummaryDescription(
   }
 
   if (voice) {
+    hasUsedTruncatedText = true;
     summary = truncatedText || lang('AttachAudio');
   }
 
   if (document) {
+    hasUsedTruncatedText = !isExtended;
     summary = isExtended ? document.fileName : (truncatedText || document.fileName);
   }
 
@@ -170,7 +171,7 @@ export function getMessageSummaryDescription(
   }
 
   if (text) {
-    if (isExtended && summary) {
+    if (isExtended && summary && !hasUsedTruncatedText) {
       summary += `\n${truncatedText}`;
     } else {
       summary = truncatedText;
@@ -189,9 +190,17 @@ export function getMessageSummaryDescription(
     summary = `🎮 ${game.title}`;
   }
 
-  const reaction = !noReactions && getMessageRecentReaction(message);
-  if (summary && reaction) {
-    summary = `to your "${summary}"`;
+  if (storyData) {
+    if (storyData.isMention) {
+      // eslint-disable-next-line eslint-multitab-tt/no-immediate-global
+      const global = getGlobal();
+      const firstName = getUserFirstOrLastName(global.users.byId[message.chatId]);
+      summary = message.isOutgoing
+        ? lang('Chat.Service.StoryMentioned.You', firstName)
+        : lang('Chat.Service.StoryMentioned', firstName);
+    } else {
+      summary = lang('ForwardedStory');
+    }
   }
 
   return summary || CONTENT_NOT_SUPPORTED;

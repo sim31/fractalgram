@@ -1,19 +1,19 @@
 import BigInt from 'big-integer';
 import { Api as GramJs } from '../../../lib/gramjs';
+
 import type {
-  ApiStickerSetInfo, ApiSticker, ApiVideo, OnApiUpdate,
+  ApiSticker, ApiStickerSetInfo, ApiVideo, OnApiUpdate,
 } from '../../types';
 
-import { invokeRequest } from './client';
+import { DEFAULT_GIF_SEARCH_BOT_USERNAME, RECENT_STATUS_LIMIT, RECENT_STICKERS_LIMIT } from '../../../config';
+import { buildVideoFromDocument } from '../apiBuilders/messageContent';
 import {
   buildStickerSet, buildStickerSetCovered, processStickerPackResult, processStickerResult,
 } from '../apiBuilders/symbols';
 import { buildApiUserEmojiStatus } from '../apiBuilders/users';
-import { buildInputStickerSet, buildInputDocument, buildInputStickerSetShortName } from '../gramjsBuilders';
-import { buildVideoFromDocument } from '../apiBuilders/messages';
-import { DEFAULT_GIF_SEARCH_BOT_USERNAME, RECENT_STATUS_LIMIT, RECENT_STICKERS_LIMIT } from '../../../config';
-
+import { buildInputDocument, buildInputStickerSet, buildInputStickerSetShortName } from '../gramjsBuilders';
 import localDb from '../localDb';
+import { invokeRequest } from './client';
 
 let onUpdate: OnApiUpdate;
 
@@ -164,7 +164,9 @@ export async function fetchStickers(
     stickerset: 'id' in stickerSetInfo
       ? buildInputStickerSet(stickerSetInfo.id, stickerSetInfo.accessHash)
       : buildInputStickerSetShortName(stickerSetInfo.shortName),
-  }), undefined, true);
+  }), {
+    shouldThrow: true,
+  });
 
   if (!(result instanceof GramJs.messages.StickerSet)) {
     return undefined;
@@ -314,7 +316,7 @@ export function saveGif({ gif, shouldUnsave }: { gif: ApiVideo; shouldUnsave?: b
     unsave: shouldUnsave,
   });
 
-  return invokeRequest(request, true);
+  return invokeRequest(request, { shouldReturnTrue: true });
 }
 
 export async function installStickerSet({ stickerSetId, accessHash }: { stickerSetId: string; accessHash: string }) {

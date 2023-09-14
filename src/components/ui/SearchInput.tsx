@@ -1,17 +1,18 @@
 import type { RefObject } from 'react';
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  useRef, useEffect, memo, useCallback,
+  memo, useCallback, useEffect, useRef,
 } from '../../lib/teact/teact';
 
 import buildClassName from '../../util/buildClassName';
-import useFlag from '../../hooks/useFlag';
-import useLang from '../../hooks/useLang';
-import useInputFocusOnOpen from '../../hooks/useInputFocusOnOpen';
 
-import Loading from './Loading';
+import useFlag from '../../hooks/useFlag';
+import useInputFocusOnOpen from '../../hooks/useInputFocusOnOpen';
+import useLang from '../../hooks/useLang';
+
 import Button from './Button';
-import ShowTransition from './ShowTransition';
+import Loading from './Loading';
+import Transition from './Transition';
 
 import './SearchInput.scss';
 
@@ -46,7 +47,7 @@ const SearchInput: FC<OwnProps> = ({
   inputId,
   className,
   focused,
-  isLoading,
+  isLoading = false,
   spinnerColor,
   spinnerBackgroundColor,
   placeholder,
@@ -133,10 +134,18 @@ const SearchInput: FC<OwnProps> = ({
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
       />
-      <i className="icon-search" />
-      <ShowTransition isOpen={Boolean(isLoading)} className="slow">
-        <Loading color={spinnerColor} backgroundColor={spinnerBackgroundColor} onClick={onSpinnerClick} />
-      </ShowTransition>
+      <Transition
+        name="fade"
+        shouldCleanup
+        activeKey={Number(isLoading)}
+        className="icon-container"
+      >
+        {isLoading ? (
+          <Loading color={spinnerColor} backgroundColor={spinnerBackgroundColor} onClick={onSpinnerClick} />
+        ) : (
+          <i className="icon icon-search search-icon" />
+        )}
+      </Transition>
       {!isLoading && (value || canClose) && onReset && (
         <Button
           round
@@ -144,7 +153,7 @@ const SearchInput: FC<OwnProps> = ({
           color="translucent"
           onClick={onReset}
         >
-          <span className="icon-close" />
+          <span className="icon icon-close" />
         </Button>
       )}
     </div>

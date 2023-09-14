@@ -1,25 +1,27 @@
 import type { RefObject } from 'react';
 import type { FC } from '../../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useRef,
+  memo, useEffect, useRef,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiChat, ApiSponsoredMessage, ApiUser } from '../../../api/types';
 
-import { IS_ANDROID, IS_TOUCH_ENV } from '../../../util/environment';
-import { renderTextWithEntities } from '../../common/helpers/renderTextWithEntities';
-import { selectChat, selectSponsoredMessage, selectUser } from '../../../global/selectors';
 import { getChatTitle, getUserFullName } from '../../../global/helpers';
+import { selectChat, selectSponsoredMessage, selectUser } from '../../../global/selectors';
+import { IS_ANDROID, IS_TOUCH_ENV } from '../../../util/windowEnvironment';
 import renderText from '../../common/helpers/renderText';
+import { renderTextWithEntities } from '../../common/helpers/renderTextWithEntities';
 import { preventMessageInputBlur } from '../helpers/preventMessageInputBlur';
-import useLang from '../../../hooks/useLang';
+
+import useContextMenuHandlers from '../../../hooks/useContextMenuHandlers';
 import useFlag from '../../../hooks/useFlag';
 import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
-import useContextMenuHandlers from '../../../hooks/useContextMenuHandlers';
+import useLang from '../../../hooks/useLang';
+import useLastCallback from '../../../hooks/useLastCallback';
 
-import Button from '../../ui/Button';
 import AboutAdsModal from '../../common/AboutAdsModal.async';
+import Button from '../../ui/Button';
 import SponsoredMessageContextMenuContainer from './SponsoredMessageContextMenuContainer.async';
 
 import './SponsoredMessage.scss';
@@ -84,7 +86,7 @@ const SponsoredMessage: FC<OwnProps & StateProps> = ({
     handleBeforeContextMenu(e);
   };
 
-  const handleClick = useCallback(() => {
+  const handleClick = useLastCallback(() => {
     if (!message) return;
     if (message.chatInviteHash) {
       openChatByInvite({ hash: message.chatInviteHash });
@@ -100,7 +102,7 @@ const SponsoredMessage: FC<OwnProps & StateProps> = ({
         });
       }
     }
-  }, [focusMessage, message, openChat, openChatByInvite, startBot]);
+  });
 
   if (!message) {
     return undefined;
@@ -118,12 +120,15 @@ const SponsoredMessage: FC<OwnProps & StateProps> = ({
         <div className="content-inner" dir="auto">
           <div className="message-title" dir="ltr">
             {bot && renderText(getUserFullName(bot) || '')}
-            {channel && renderText(message.chatInviteTitle || getChatTitle(lang, channel, bot) || '')}
+            {channel && renderText(message.chatInviteTitle || getChatTitle(lang, channel) || '')}
           </div>
 
           <div className="text-content with-meta" dir="auto" ref={contentRef}>
             <span className="text-content-inner" dir="auto">
-              {renderTextWithEntities(message.text.text, message.text.entities)}
+              {renderTextWithEntities({
+                text: message.text.text,
+                entities: message.text.entities,
+              })}
             </span>
 
             <span className="MessageMeta" dir="ltr">

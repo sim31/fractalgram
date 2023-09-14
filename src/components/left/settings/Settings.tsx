@@ -1,36 +1,41 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback, useState } from '../../../lib/teact/teact';
+import React, { memo, useState } from '../../../lib/teact/teact';
+import { getActions, getGlobal } from '../../../global';
 
-import { SettingsScreens } from '../../../types';
 import type { FolderEditDispatch, FoldersState } from '../../../hooks/reducers/useFoldersReducer';
+import { SettingsScreens } from '../../../types';
 
-import { LAYERS_ANIMATION_NAME } from '../../../util/environment';
+import { selectTabState } from '../../../global/selectors';
+import { LAYERS_ANIMATION_NAME } from '../../../util/windowEnvironment';
+
 import useTwoFaReducer from '../../../hooks/reducers/useTwoFaReducer';
+import useLastCallback from '../../../hooks/useLastCallback';
 
 import Transition from '../../ui/Transition';
-import SettingsHeader from './SettingsHeader';
-import SettingsMain from './SettingsMain';
-import SettingsEditProfile from './SettingsEditProfile';
-import SettingsDataStorage from './SettingsDataStorage';
 import SettingsFolders from './folders/SettingsFolders';
+import SettingsPasscode from './passcode/SettingsPasscode';
+import SettingsActiveSessions from './SettingsActiveSessions';
+import SettingsActiveWebsites from './SettingsActiveWebsites';
+import SettingsCustomEmoji from './SettingsCustomEmoji';
+import SettingsDataStorage from './SettingsDataStorage';
+import SettingsDoNotTranslate from './SettingsDoNotTranslate';
+import SettingsEditProfile from './SettingsEditProfile';
+import SettingsExperimental from './SettingsExperimental';
 import SettingsGeneral from './SettingsGeneral';
 import SettingsGeneralBackground from './SettingsGeneralBackground';
 import SettingsGeneralBackgroundColor from './SettingsGeneralBackgroundColor';
-import SettingsNotifications from './SettingsNotifications';
-import SettingsPrivacy from './SettingsPrivacy';
+import SettingsHeader from './SettingsHeader';
 import SettingsLanguage from './SettingsLanguage';
-import SettingsPrivacyVisibility from './SettingsPrivacyVisibility';
-import SettingsActiveSessions from './SettingsActiveSessions';
-import SettingsActiveWebsites from './SettingsActiveWebsites';
+import SettingsMain from './SettingsMain';
+import SettingsNotifications from './SettingsNotifications';
+import SettingsPerformance from './SettingsPerformance';
+import SettingsPrivacy from './SettingsPrivacy';
 import SettingsPrivacyBlockedUsers from './SettingsPrivacyBlockedUsers';
-import SettingsTwoFa from './twoFa/SettingsTwoFa';
+import SettingsPrivacyVisibility from './SettingsPrivacyVisibility';
 import SettingsPrivacyVisibilityExceptionList from './SettingsPrivacyVisibilityExceptionList';
 import SettingsQuickReaction from './SettingsQuickReaction';
-import SettingsPasscode from './passcode/SettingsPasscode';
 import SettingsStickers from './SettingsStickers';
-import SettingsCustomEmoji from './SettingsCustomEmoji';
-import SettingsDoNotTranslate from './SettingsDoNotTranslate';
-import SettingsExperimental from './SettingsExperimental';
+import SettingsTwoFa from './twoFa/SettingsTwoFa';
 
 import './Settings.scss';
 
@@ -66,10 +71,12 @@ const FOLDERS_SCREENS = [
   SettingsScreens.FoldersCreateFolder,
   SettingsScreens.FoldersEditFolder,
   SettingsScreens.FoldersEditFolderFromChatList,
+  SettingsScreens.FoldersEditFolderInvites,
   SettingsScreens.FoldersIncludedChats,
   SettingsScreens.FoldersIncludedChatsFromChatList,
   SettingsScreens.FoldersExcludedChats,
   SettingsScreens.FoldersExcludedChatsFromChatList,
+  SettingsScreens.FoldersShare,
 ];
 
 const PRIVACY_SCREENS = [
@@ -136,11 +143,18 @@ const Settings: FC<OwnProps> = ({
   onReset,
   shouldSkipTransition,
 }) => {
+  const { closeShareChatFolderModal } = getActions();
   const [twoFaState, twoFaDispatch] = useTwoFaReducer();
   const [privacyPasscode, setPrivacyPasscode] = useState<string>('');
 
-  const handleReset = useCallback((forceReturnToChatList?: true | Event) => {
-    if (forceReturnToChatList === true) {
+  const handleReset = useLastCallback((forceReturnToChatList?: true | Event) => {
+    const isFromSettings = selectTabState(getGlobal()).shareFolderScreen?.isFromSettings;
+
+    if (currentScreen === SettingsScreens.FoldersShare) {
+      closeShareChatFolderModal();
+    }
+
+    if (forceReturnToChatList === true || (isFromSettings !== undefined && !isFromSettings)) {
       onReset(true);
       return;
     }
@@ -149,6 +163,7 @@ const Settings: FC<OwnProps> = ({
       currentScreen === SettingsScreens.FoldersCreateFolder
       || currentScreen === SettingsScreens.FoldersEditFolder
       || currentScreen === SettingsScreens.FoldersEditFolderFromChatList
+      || currentScreen === SettingsScreens.FoldersEditFolderInvites
     ) {
       setTimeout(() => {
         foldersDispatch({ type: 'reset' });
@@ -168,15 +183,7 @@ const Settings: FC<OwnProps> = ({
     }
 
     onReset();
-  }, [
-    foldersState.mode, foldersDispatch,
-    currentScreen, onReset, onScreenSelect,
-  ]);
-
-  const handleSaveFilter = useCallback(() => {
-    foldersDispatch({ type: 'saveFilters' });
-    handleReset();
-  }, [foldersDispatch, handleReset]);
+  });
 
   function renderCurrentSectionContent(isScreenActive: boolean, screen: SettingsScreens) {
     const privacyAllowScreens: Record<number, boolean> = {
@@ -360,10 +367,12 @@ const Settings: FC<OwnProps> = ({
       case SettingsScreens.FoldersCreateFolder:
       case SettingsScreens.FoldersEditFolder:
       case SettingsScreens.FoldersEditFolderFromChatList:
+      case SettingsScreens.FoldersEditFolderInvites:
       case SettingsScreens.FoldersIncludedChats:
       case SettingsScreens.FoldersIncludedChatsFromChatList:
       case SettingsScreens.FoldersExcludedChats:
       case SettingsScreens.FoldersExcludedChatsFromChatList:
+      case SettingsScreens.FoldersShare:
         return (
           <SettingsFolders
             currentScreen={currentScreen}
@@ -425,6 +434,14 @@ const Settings: FC<OwnProps> = ({
           />
         );
 
+      case SettingsScreens.Performance:
+        return (
+          <SettingsPerformance
+            isActive={isScreenActive}
+            onReset={handleReset}
+          />
+        );
+
       default:
         return undefined;
     }
@@ -436,7 +453,6 @@ const Settings: FC<OwnProps> = ({
         <SettingsHeader
           currentScreen={currentScreen}
           onReset={handleReset}
-          onSaveFilter={handleSaveFilter}
           onScreenSelect={onScreenSelect}
           editedFolderId={foldersState.folderId}
         />
@@ -451,6 +467,7 @@ const Settings: FC<OwnProps> = ({
       name={shouldSkipTransition ? 'none' : LAYERS_ANIMATION_NAME}
       activeKey={currentScreen}
       renderCount={TRANSITION_RENDER_COUNT}
+      shouldWrap
     >
       {renderCurrentSection}
     </Transition>

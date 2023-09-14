@@ -1,5 +1,5 @@
-
 src/lib/rlottie/rlottie-wasm.js
+src/lib/video-preview/polyfill
 src/lib/webp/webp_wasm.js
 src/lib/fasttextweb/fasttext-wasm.js
 
@@ -16,4 +16,7 @@ jest.config.js
 src/lib/secret-sauce/
 playwright.config.ts
 
-dist/*
+dist
+public
+
+deploy/update_version.js

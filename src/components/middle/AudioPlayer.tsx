@@ -1,36 +1,36 @@
-import React, { useCallback, useMemo, useRef } from '../../lib/teact/teact';
+import type { FC } from '../../lib/teact/teact';
+import React, { useMemo, useRef } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { FC } from '../../lib/teact/teact';
-import type { AudioOrigin } from '../../types';
 import type {
   ApiAudio, ApiChat, ApiMessage, ApiUser,
 } from '../../api/types';
+import type { AudioOrigin } from '../../types';
 
-import { IS_IOS, IS_TOUCH_ENV } from '../../util/environment';
 import { PLAYBACK_RATE_FOR_AUDIO_MIN_DURATION } from '../../config';
-
-import * as mediaLoader from '../../util/mediaLoader';
 import {
   getMediaDuration, getMessageContent, getMessageMediaHash, getSenderTitle, isMessageLocal,
 } from '../../global/helpers';
-import { selectChat, selectTabState, selectSender } from '../../global/selectors';
-import buildClassName from '../../util/buildClassName';
+import { selectChat, selectSender, selectTabState } from '../../global/selectors';
 import { makeTrackId } from '../../util/audioPlayer';
+import buildClassName from '../../util/buildClassName';
+import * as mediaLoader from '../../util/mediaLoader';
 import { clearMediaSession } from '../../util/mediaSession';
+import { IS_IOS, IS_TOUCH_ENV } from '../../util/windowEnvironment';
 import renderText from '../common/helpers/renderText';
 
-import useLang from '../../hooks/useLang';
 import useAppLayout from '../../hooks/useAppLayout';
 import useAudioPlayer from '../../hooks/useAudioPlayer';
-import useMessageMediaMetadata from '../../hooks/useMessageMediaMetadata';
 import useContextMenuHandlers from '../../hooks/useContextMenuHandlers';
+import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
+import useMessageMediaMetadata from '../../hooks/useMessageMediaMetadata';
 
-import RippleEffect from '../ui/RippleEffect';
 import Button from '../ui/Button';
-import RangeSlider from '../ui/RangeSlider';
 import DropdownMenu from '../ui/DropdownMenu';
 import MenuItem from '../ui/MenuItem';
+import RangeSlider from '../ui/RangeSlider';
+import RippleEffect from '../ui/RippleEffect';
 
 import './AudioPlayer.scss';
 
@@ -124,39 +124,39 @@ const AudioPlayer: FC<OwnProps & StateProps> = ({
     handleContextMenuClose, handleContextMenuHide,
   } = useContextMenuHandlers(ref);
 
-  const handleClick = useCallback(() => {
+  const handleClick = useLastCallback(() => {
     focusMessage({ chatId: message.chatId, messageId: message.id });
-  }, [focusMessage, message.chatId, message.id]);
+  });
 
-  const handleClose = useCallback(() => {
+  const handleClose = useLastCallback(() => {
     if (isPlaying) {
       playPause();
     }
     closeAudioPlayer();
     clearMediaSession();
     stop();
-  }, [closeAudioPlayer, isPlaying, playPause, stop]);
+  });
 
-  const handleVolumeChange = useCallback((value: number) => {
+  const handleVolumeChange = useLastCallback((value: number) => {
     setAudioPlayerVolume({ volume: value / 100 });
 
     setVolume(value / 100);
-  }, [setAudioPlayerVolume, setVolume]);
+  });
 
-  const handleVolumeClick = useCallback(() => {
+  const handleVolumeClick = useLastCallback(() => {
     if (IS_TOUCH_ENV && !IS_IOS) return;
     toggleMuted();
     setAudioPlayerMuted({ isMuted: !isMuted });
-  }, [isMuted, setAudioPlayerMuted, toggleMuted]);
+  });
 
-  const updatePlaybackRate = useCallback((newRate: number, isActive = true) => {
+  const updatePlaybackRate = useLastCallback((newRate: number, isActive = true) => {
     const rate = PLAYBACK_RATES[newRate];
     const shouldBeActive = newRate !== REGULAR_PLAYBACK_RATE && isActive;
     setAudioPlayerPlaybackRate({ playbackRate: rate, isPlaybackRateActive: shouldBeActive });
     setPlaybackRate(shouldBeActive ? rate : REGULAR_PLAYBACK_RATE);
-  }, [setAudioPlayerPlaybackRate, setPlaybackRate]);
+  });
 
-  const handlePlaybackClick = useCallback(() => {
+  const handlePlaybackClick = useLastCallback(() => {
     handleContextMenuClose();
     const oldRate = Number(Object.entries(PLAYBACK_RATES).find(([, rate]) => rate === playbackRate)?.[0])
       || REGULAR_PLAYBACK_RATE;
@@ -166,9 +166,9 @@ const AudioPlayer: FC<OwnProps & StateProps> = ({
       newIsActive && oldRate === REGULAR_PLAYBACK_RATE ? DEFAULT_FAST_PLAYBACK_RATE : oldRate,
       newIsActive,
     );
-  }, [handleContextMenuClose, isPlaybackRateActive, playbackRate, updatePlaybackRate]);
+  });
 
-  const PlaybackRateButton = useCallback(() => {
+  const PlaybackRateButton = useLastCallback(() => {
     const displayRate = Object.entries(PLAYBACK_RATES).find(([, rate]) => rate === playbackRate)?.[0]
       || REGULAR_PLAYBACK_RATE;
     const text = `${playbackRate === REGULAR_PLAYBACK_RATE ? DEFAULT_FAST_PLAYBACK_RATE : displayRate}Х`;
@@ -201,10 +201,7 @@ const AudioPlayer: FC<OwnProps & StateProps> = ({
         </Button>
       </div>
     );
-  }, [
-    handleBeforeContextMenu, handleContextMenu, handleContextMenuClose, handlePlaybackClick, isContextMenuOpen,
-    isMobile, isPlaybackRateActive, playbackRate,
-  ]);
+  });
 
   const volumeIcon = useMemo(() => {
     if (volume === 0 || isMuted) return 'icon-muted';
@@ -234,7 +231,7 @@ const AudioPlayer: FC<OwnProps & StateProps> = ({
         onClick={requestPreviousTrack}
         ariaLabel="Previous track"
       >
-        <i className="icon-skip-previous" />
+        <i className="icon icon-skip-previous" />
       </Button>
       <Button
         round
@@ -245,8 +242,8 @@ const AudioPlayer: FC<OwnProps & StateProps> = ({
         onClick={playPause}
         ariaLabel={isPlaying ? 'Pause audio' : 'Play audio'}
       >
-        <i className="icon-play" />
-        <i className="icon-pause" />
+        <i className="icon icon-play" />
+        <i className="icon icon-pause" />
       </Button>
       <Button
         round
@@ -258,7 +255,7 @@ const AudioPlayer: FC<OwnProps & StateProps> = ({
         onClick={requestNextTrack}
         ariaLabel="Next track"
       >
-        <i className="icon-skip-next" />
+        <i className="icon icon-skip-next" />
       </Button>
 
       <div className="volume-button-wrapper">
@@ -271,7 +268,7 @@ const AudioPlayer: FC<OwnProps & StateProps> = ({
           onClick={handleVolumeClick}
           ripple={!isMobile}
         >
-          <i className={volumeIcon} />
+          <i className={buildClassName('icon', volumeIcon)} />
         </Button>
 
         {!IS_IOS && (
@@ -309,7 +306,7 @@ const AudioPlayer: FC<OwnProps & StateProps> = ({
         onClick={handleClose}
         ariaLabel="Close player"
       >
-        <i className="icon-close" />
+        <i className="icon icon-close" />
       </Button>
     </div>
   );
@@ -349,7 +346,7 @@ function renderPlaybackRateMenuItem(
       // eslint-disable-next-line react/jsx-no-bind
       onClick={() => onClick(rate)}
       icon={isSelected ? 'check' : undefined}
-      customIcon={!isSelected ? <i className="icon-placeholder" /> : undefined}
+      customIcon={!isSelected ? <i className="icon icon-placeholder" /> : undefined}
     >
       {rate}X
     </MenuItem>

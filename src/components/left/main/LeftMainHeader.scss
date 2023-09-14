@@ -77,6 +77,15 @@
     }
   }
 
+  .MenuItem .Toggle {
+    margin-inline-start: auto;
+  }
+
+  .MenuItem.compact .Toggle {
+    transform: scale(0.75);
+    margin-inline-end: -0.125rem;
+  }
+
   .MenuItem.compact .Switcher {
     transform: scale(0.75);
   }
@@ -87,12 +96,15 @@
     max-height: calc(100 * var(--vh) - 3.75rem);
 
     overflow-y: auto;
-    @include overflow-y-overlay();
   }
 
   .extra-spacing {
     position: relative;
     margin-left: 0.8125rem;
+
+    body.is-electron.is-macos #Main:not(.is-fullscreen) & {
+      margin-left: 0.5rem;
+    }
   }
 
   .emoji-status-effect {

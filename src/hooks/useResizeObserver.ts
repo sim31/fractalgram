@@ -3,25 +3,30 @@ import { useEffect } from '../lib/teact/teact';
 import type { CallbackManager } from '../util/callbacks';
 
 import { createCallbackManager } from '../util/callbacks';
+import { useStateRef } from './useStateRef';
 
 const elementObserverMap = new Map<HTMLElement, [ResizeObserver, CallbackManager]>();
 
 export default function useResizeObserver(
   ref: React.RefObject<HTMLElement> | undefined,
   onResize: (entry: ResizeObserverEntry) => void,
+  isDisabled = false,
 ) {
+  const onResizeRef = useStateRef(onResize);
+
   useEffect(() => {
-    if (!('ResizeObserver' in window) || !ref?.current) {
+    const el = ref?.current;
+    if (!el || isDisabled) {
       return undefined;
     }
-    const el = ref.current;
+
     const callback: ResizeObserverCallback = ([entry]) => {
-      // During animation
-      if (!(entry.target as HTMLElement).offsetParent) {
+      // Ignore updates when element is not properly mounted (`display: none`)
+      if (entry.contentRect.width === 0 && entry.contentRect.height === 0) {
         return;
       }
 
-      onResize(entry);
+      onResizeRef.current(entry);
     };
 
     let [observer, callbackManager] = elementObserverMap.get(el) || [undefined, undefined];
@@ -41,5 +46,5 @@ export default function useResizeObserver(
         elementObserverMap.delete(el);
       }
     };
-  }, [onResize, ref]);
+  }, [isDisabled, onResizeRef, ref]);
 }

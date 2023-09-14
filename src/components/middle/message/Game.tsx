@@ -1,14 +1,14 @@
 import type { FC } from '../../../lib/teact/teact';
 import React, { memo } from '../../../lib/teact/teact';
+import { getActions } from '../../../global';
 
 import type { ApiMessage } from '../../../api/types';
 
-import { getActions } from '../../../global';
 import { getGamePreviewPhotoHash, getGamePreviewVideoHash, getMessageText } from '../../../global/helpers';
 
 import useMedia from '../../../hooks/useMedia';
 
-import Skeleton from '../../ui/Skeleton';
+import Skeleton from '../../ui/placeholder/Skeleton';
 
 import './Game.scss';
 
@@ -20,13 +20,11 @@ const DEFAULT_PREVIEW_DIMENSIONS = {
 type OwnProps = {
   message: ApiMessage;
   canAutoLoadMedia?: boolean;
-  lastSyncTime?: number;
 };
 
 const Game: FC<OwnProps> = ({
   message,
   canAutoLoadMedia,
-  lastSyncTime,
 }) => {
   const { clickBotInlineButton } = getActions();
   const game = message.content.game!;
@@ -34,8 +32,8 @@ const Game: FC<OwnProps> = ({
     title, description,
   } = game;
 
-  const photoHash = Boolean(lastSyncTime) && getGamePreviewPhotoHash(game);
-  const videoHash = Boolean(lastSyncTime) && getGamePreviewVideoHash(game);
+  const photoHash = getGamePreviewPhotoHash(game);
+  const videoHash = getGamePreviewVideoHash(game);
   const photoBlobUrl = useMedia(photoHash, !canAutoLoadMedia);
   const videoBlobUrl = useMedia(videoHash, !canAutoLoadMedia);
 

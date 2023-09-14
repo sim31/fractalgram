@@ -1,14 +1,14 @@
-import {
-  useCallback, useEffect, useRef,
-} from '../../../lib/teact/teact';
+import { useEffect, useRef } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
 import type { ActiveEmojiInteraction } from '../../../global/types';
 
-import safePlay from '../../../util/safePlay';
+import { IS_ELECTRON } from '../../../config';
 import buildStyle from '../../../util/buildStyle';
+import safePlay from '../../../util/safePlay';
 import { REM } from '../helpers/mediaDimensions';
 
+import useLastCallback from '../../../hooks/useLastCallback';
 import useMedia from '../../../hooks/useMedia';
 
 const SIZE = 7 * REM;
@@ -38,11 +38,11 @@ export default function useAnimatedEmoji(
   const soundMediaData = useMedia(soundId ? `document${soundId}` : undefined, !soundId);
 
   const size = preferredSize || SIZE;
-  const style = buildStyle(`width: ${size}px`, `height: ${size}px`, emoji && 'cursor: pointer');
+  const style = buildStyle(`width: ${size}px`, `height: ${size}px`, emoji && !IS_ELECTRON && 'cursor: pointer');
 
   const interactions = useRef<number[] | undefined>(undefined);
   const startedInteractions = useRef<number | undefined>(undefined);
-  const sendInteractionBunch = useCallback(() => {
+  const sendInteractionBunch = useLastCallback(() => {
     const container = ref.current;
 
     if (!container) return;
@@ -55,9 +55,9 @@ export default function useAnimatedEmoji(
     });
     startedInteractions.current = undefined;
     interactions.current = undefined;
-  }, [sendEmojiInteraction, chatId, messageId, emoji]);
+  });
 
-  const play = useCallback(() => {
+  const play = useLastCallback(() => {
     const audio = audioRef.current;
     if (soundMediaData) {
       if (audio) {
@@ -71,9 +71,9 @@ export default function useAnimatedEmoji(
         audioRef.current = undefined;
       }, { once: true });
     }
-  }, [soundMediaData]);
+  });
 
-  const handleClick = useCallback(() => {
+  const handleClick = useLastCallback(() => {
     play();
 
     const container = ref.current;
@@ -101,7 +101,7 @@ export default function useAnimatedEmoji(
     interactions.current.push(startedInteractions.current
       ? (performance.now() - startedInteractions.current) / MS_DIVIDER
       : TIME_DEFAULT);
-  }, [chatId, emoji, interactWithAnimatedEmoji, isOwn, messageId, play, sendInteractionBunch, size]);
+  });
 
   // Set an end anchor for remote activated interaction
   useEffect(() => {

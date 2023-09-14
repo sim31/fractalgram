@@ -1,6 +1,8 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo } from '../../../lib/teact/teact';
+import React from '../../../lib/teact/teact';
+
 import type { OwnProps } from './PollModal';
+
 import { Bundles } from '../../../util/moduleLoader';
 
 import useModuleLoader from '../../../hooks/useModuleLoader';
@@ -13,4 +15,4 @@ const PollModalAsync: FC<OwnProps> = (props) => {
   return PollModal ? <PollModal {...props} /> : undefined;
 };
 
-export default memo(PollModalAsync);
+export default PollModalAsync;

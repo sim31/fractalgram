@@ -1,30 +1,30 @@
+import type { ApiGroupCall } from '../../../api/types';
 import type { RequiredGlobalActions } from '../../index';
+import type {
+  ActionReturnType, CallSound, GlobalState, TabArgs,
+} from '../../types';
+
+import { requestNextMutation } from '../../../lib/fasterdom/fasterdom';
+import { copyTextToClipboard } from '../../../util/clipboard';
+import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import { buildCollectionByKey, omit } from '../../../util/iteratees';
+import * as langProvider from '../../../util/langProvider';
+import safePlay from '../../../util/safePlay';
+import { ARE_CALLS_SUPPORTED } from '../../../util/windowEnvironment';
+import { callApi } from '../../../api/gramjs';
+import { getMainUsername } from '../../helpers';
 import {
   addActionHandler, getGlobal,
   setGlobal,
 } from '../../index';
-import { callApi } from '../../../api/gramjs';
-import {
-  selectChat, selectTabState, selectUser,
-} from '../../selectors';
-import { copyTextToClipboard } from '../../../util/clipboard';
-import { fetchChatByUsername, loadFullChat } from '../api/chats';
-
-import type { ApiGroupCall } from '../../../api/types';
-import type {
-  CallSound, ActionReturnType, GlobalState, TabArgs,
-} from '../../types';
-
 import { addChats, addUsers } from '../../reducers';
 import { updateGroupCall } from '../../reducers/calls';
-import { selectActiveGroupCall, selectChatGroupCall, selectGroupCall } from '../../selectors/calls';
-import { getMainUsername } from '../../helpers';
-import { buildCollectionByKey, omit } from '../../../util/iteratees';
-import safePlay from '../../../util/safePlay';
-import { ARE_CALLS_SUPPORTED } from '../../../util/environment';
-import * as langProvider from '../../../util/langProvider';
 import { updateTabState } from '../../reducers/tabs';
-import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import {
+  selectChat, selectChatFullInfo, selectTabState, selectUser,
+} from '../../selectors';
+import { selectActiveGroupCall, selectChatGroupCall, selectGroupCall } from '../../selectors/calls';
+import { fetchChatByUsername, loadFullChat } from '../api/chats';
 
 // This is a tiny MP3 file that is silent - retrieved from https://bigsoundbank.com and then modified
 // eslint-disable-next-line max-len
@@ -52,7 +52,7 @@ export function initializeSoundsForSafari() {
         sound.currentTime = 0;
         sound.muted = false;
 
-        requestAnimationFrame(() => {
+        requestNextMutation(() => {
           sound.src = prevSrc;
         });
       });
@@ -198,7 +198,7 @@ addActionHandler('createGroupCallInviteLink', async (global, actions, payload): 
 
   const hasPublicUsername = Boolean(getMainUsername(chat));
 
-  let { inviteLink } = chat.fullInfo!;
+  let inviteLink = selectChatFullInfo(global, chat.id)?.inviteLink;
   if (hasPublicUsername) {
     inviteLink = await callApi('exportGroupCallInvite', {
       call: groupCall,
@@ -218,7 +218,7 @@ addActionHandler('createGroupCallInviteLink', async (global, actions, payload): 
 });
 
 addActionHandler('joinVoiceChatByLink', async (global, actions, payload): Promise<void> => {
-  const { username, inviteHash, tabId = getCurrentTabId() } = payload!;
+  const { username, inviteHash, tabId = getCurrentTabId() } = payload;
 
   const chat = await fetchChatByUsername(global, username);
 
@@ -261,7 +261,13 @@ addActionHandler('joinGroupCall', async (global, actions, payload): Promise<void
     chatId, id, accessHash, inviteHash, tabId = getCurrentTabId(),
   } = payload;
 
-  if (!ARE_CALLS_SUPPORTED) return;
+  if (!ARE_CALLS_SUPPORTED) {
+    actions.showNotification({
+      message: "Sorry, your browser doesn't support group calls",
+      tabId,
+    });
+    return;
+  }
 
   if (global.phoneCall) {
     actions.toggleGroupCallPanel({ tabId });
@@ -277,7 +283,7 @@ addActionHandler('joinGroupCall', async (global, actions, payload): Promise<void
   const { groupCalls: { activeGroupCallId } } = global;
   let groupCall = id ? selectGroupCall(global, id) : selectChatGroupCall(global, chatId!);
 
-  if (groupCall?.id === activeGroupCallId) {
+  if (groupCall && groupCall.id === activeGroupCallId) {
     actions.toggleGroupCallPanel({ tabId });
     return;
   }
@@ -297,7 +303,15 @@ addActionHandler('joinGroupCall', async (global, actions, payload): Promise<void
     return;
   }
 
-  if (!groupCall && (!id || !accessHash)) {
+  if (!groupCall && (!id || !accessHash) && chatId) {
+    const chat = selectChat(global, chatId);
+
+    if (!chat) return;
+
+    await loadFullChat(global, actions, chat, tabId);
+    global = getGlobal();
+    groupCall = selectChatGroupCall(global, chatId);
+  } else if (!groupCall && id && accessHash) {
     groupCall = await fetchGroupCall(global, {
       id,
       accessHash,
@@ -370,7 +384,7 @@ addActionHandler('requestMasterAndRequestCall', (global, actions, payload): Acti
   });
 });
 
-addActionHandler('requestCall', async (global, actions, payload): Promise<void> => {
+addActionHandler('requestCall', (global, actions, payload): ActionReturnType => {
   const { userId, isVideo, tabId = getCurrentTabId() } = payload;
 
   if (global.phoneCall) {
@@ -454,6 +468,7 @@ export function checkNavigatorUserMediaPermissions<T extends GlobalState>(
             tabId,
           });
         } else {
+          stream.getTracks().forEach((track) => track.stop());
           checkMicrophonePermission(global, actions, tabId);
         }
       })
@@ -478,6 +493,8 @@ function checkMicrophonePermission<T extends GlobalState>(
           message: langProvider.translate('RequestAcces.Error.HaveNotAccess.Call'),
           tabId,
         });
+      } else {
+        stream.getTracks().forEach((track) => track.stop());
       }
     })
     .catch(() => {

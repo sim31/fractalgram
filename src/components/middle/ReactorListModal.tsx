@@ -1,31 +1,37 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  useCallback, memo, useMemo, useEffect, useState, useRef,
+  memo, useEffect, useMemo, useRef,
+  useState,
 } from '../../lib/teact/teact';
 import { getActions, getGlobal, withGlobal } from '../../global';
 
 import type { ApiAvailableReaction, ApiMessage, ApiReaction } from '../../api/types';
-import type { AnimationLevel } from '../../types';
 import { LoadMoreDirection } from '../../types';
 
-import { selectChatMessage, selectTabState } from '../../global/selectors';
+import { getReactionUniqueKey, isSameReaction } from '../../global/helpers';
+import {
+  selectChatMessage,
+  selectTabState,
+} from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
-import { formatIntegerCompact } from '../../util/textFormat';
+import { formatDateAtTime } from '../../util/dateFormat';
 import { unique } from '../../util/iteratees';
-import { isSameReaction, getReactionUniqueKey } from '../../global/helpers';
+import { formatIntegerCompact } from '../../util/textFormat';
 
-import useLang from '../../hooks/useLang';
-import useInfiniteScroll from '../../hooks/useInfiniteScroll';
 import useFlag from '../../hooks/useFlag';
+import useInfiniteScroll from '../../hooks/useInfiniteScroll';
+import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
 
-import InfiniteScroll from '../ui/InfiniteScroll';
-import Modal from '../ui/Modal';
-import Button from '../ui/Button';
 import Avatar from '../common/Avatar';
-import ListItem from '../ui/ListItem';
-import ReactionStaticEmoji from '../common/ReactionStaticEmoji';
-import Loading from '../ui/Loading';
 import FullNameTitle from '../common/FullNameTitle';
+import PrivateChatInfo from '../common/PrivateChatInfo';
+import ReactionStaticEmoji from '../common/ReactionStaticEmoji';
+import Button from '../ui/Button';
+import InfiniteScroll from '../ui/InfiniteScroll';
+import ListItem from '../ui/ListItem';
+import Loading from '../ui/Loading';
+import Modal from '../ui/Modal';
 
 import './ReactorListModal.scss';
 
@@ -35,10 +41,9 @@ export type OwnProps = {
   isOpen: boolean;
 };
 
-export type StateProps = Pick<ApiMessage, 'reactors' | 'reactions' | 'seenByUserIds'> & {
+export type StateProps = Pick<ApiMessage, 'reactors' | 'reactions' | 'seenByDates'> & {
   chatId?: string;
   messageId?: number;
-  animationLevel: AnimationLevel;
   availableReactions?: ApiAvailableReaction[];
 };
 
@@ -48,8 +53,7 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
   reactions,
   chatId,
   messageId,
-  seenByUserIds,
-  animationLevel,
+  seenByDates,
   availableReactions,
 }) => {
   const {
@@ -58,7 +62,8 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
     openChat,
   } = getActions();
 
-  // No need for expensive global updates on users, so we avoid them
+  // No need for expensive global updates on chats or users, so we avoid them
+  const chatsById = getGlobal().chats.byId;
   const usersById = getGlobal().users.byId;
 
   const lang = useLang();
@@ -79,28 +84,28 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
     }
   }, [isClosing, isOpen, stopClosing]);
 
-  const handleCloseAnimationEnd = useCallback(() => {
+  const handleCloseAnimationEnd = useLastCallback(() => {
     if (chatIdRef.current) {
       openChat({ id: chatIdRef.current });
     }
     closeReactorListModal();
-  }, [closeReactorListModal, openChat]);
+  });
 
-  const handleClose = useCallback(() => {
+  const handleClose = useLastCallback(() => {
     startClosing();
-  }, [startClosing]);
+  });
 
-  const handleClick = useCallback((userId: string) => {
+  const handleClick = useLastCallback((userId: string) => {
     chatIdRef.current = userId;
     handleClose();
-  }, [handleClose]);
+  });
 
-  const handleLoadMore = useCallback(() => {
+  const handleLoadMore = useLastCallback(() => {
     loadReactors({
       chatId: chatId!,
       messageId: messageId!,
     });
-  }, [chatId, loadReactors, messageId]);
+  });
 
   const allReactions = useMemo(() => {
     const uniqueReactions: ApiReaction[] = [];
@@ -112,17 +117,20 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
     return uniqueReactions;
   }, [reactors]);
 
-  const userIds = useMemo(() => {
+  const peerIds = useMemo(() => {
     if (chosenTab) {
       return reactors?.reactions
         .filter(({ reaction }) => isSameReaction(reaction, chosenTab))
-        .map(({ userId }) => userId);
+        .map(({ peerId }) => peerId);
     }
-    return unique(reactors?.reactions.map(({ userId }) => userId).concat(seenByUserIds || []) || []);
-  }, [chosenTab, reactors, seenByUserIds]);
+
+    const seenByUserIds = Object.keys(seenByDates || {});
+
+    return unique(reactors?.reactions.map(({ peerId }) => peerId).concat(seenByUserIds || []) || []);
+  }, [chosenTab, reactors, seenByDates]);
 
   const [viewportIds, getMore] = useInfiniteScroll(
-    handleLoadMore, userIds, reactors && reactors.nextOffset === undefined,
+    handleLoadMore, peerIds, reactors && reactors.nextOffset === undefined,
   );
 
   useEffect(() => {
@@ -138,7 +146,7 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
       onCloseAnimationEnd={handleCloseAnimationEnd}
     >
       {canShowFilters && (
-        <div className="Reactions">
+        <div className="Reactions" dir={lang.isRtl ? 'rtl' : undefined}>
           <Button
             className={buildClassName(!chosenTab && 'chosen')}
             size="tiny"
@@ -146,7 +154,7 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
             // eslint-disable-next-line react/jsx-no-bind
             onClick={() => setChosenTab(undefined)}
           >
-            <i className="icon-heart" />
+            <i className="icon icon-heart" />
             {Boolean(reactors?.count) && formatIntegerCompact(reactors.count)}
           </Button>
           {allReactions.map((reaction) => {
@@ -173,7 +181,7 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
         </div>
       )}
 
-      <div dir={lang.isRtl ? 'rtl' : undefined}>
+      <div dir={lang.isRtl ? 'rtl' : undefined} className="reactor-list-wrapper">
         {viewportIds?.length ? (
           <InfiniteScroll
             className="reactor-list custom-scroll"
@@ -181,21 +189,31 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
             onLoadMore={getMore}
           >
             {viewportIds?.flatMap(
-              (userId) => {
-                const user = usersById[userId];
-                const userReactions = reactors?.reactions.filter((reactor) => reactor.userId === userId);
+              (peerId) => {
+                const peer = usersById[peerId] || chatsById[peerId];
+
+                const peerReactions = reactors?.reactions.filter((reactor) => reactor.peerId === peerId);
                 const items: React.ReactNode[] = [];
-                userReactions?.forEach((r) => {
+                const seenByUser = seenByDates?.[peerId];
+
+                peerReactions?.forEach((r) => {
                   if (chosenTab && !isSameReaction(r.reaction, chosenTab)) return;
+
                   items.push(
                     <ListItem
-                      key={`${userId}-${getReactionUniqueKey(r.reaction)}`}
+                      key={`${peerId}-${getReactionUniqueKey(r.reaction)}`}
                       className="chat-item-clickable reactors-list-item"
                       // eslint-disable-next-line react/jsx-no-bind
-                      onClick={() => handleClick(userId)}
+                      onClick={() => handleClick(peerId)}
                     >
-                      <Avatar user={user} size="small" animationLevel={animationLevel} withVideo />
-                      <FullNameTitle peer={user} withEmojiStatus />
+                      <Avatar peer={peer} size="medium" />
+                      <div className="info">
+                        <FullNameTitle peer={peer} withEmojiStatus />
+                        <span className="status" dir="auto">
+                          <i className="icon icon-heart-outline status-icon" />
+                          {formatDateAtTime(lang, r.addedDate * 1000)}
+                        </span>
+                      </div>
                       {r.reaction && (
                         <ReactionStaticEmoji
                           className="reactors-list-emoji"
@@ -206,6 +224,25 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
                     </ListItem>,
                   );
                 });
+
+                if (!chosenTab && !peerReactions?.length) {
+                  items.push(
+                    <ListItem
+                      key={`${peerId}-seen-by`}
+                      className="chat-item-clickable scroll-item small-icon"
+                      // eslint-disable-next-line react/jsx-no-bind
+                      onClick={() => handleClick(peerId)}
+                    >
+                      <PrivateChatInfo
+                        userId={peerId}
+                        noStatusOrTyping
+                        avatarSize="medium"
+                        status={seenByUser ? formatDateAtTime(lang, seenByUser * 1000) : undefined}
+                        statusIcon="message-read"
+                      />
+                    </ListItem>,
+                  );
+                }
                 return items;
               },
             )}
@@ -233,8 +270,7 @@ export default memo(withGlobal<OwnProps>(
       messageId,
       reactions: message?.reactions,
       reactors: message?.reactors,
-      seenByUserIds: message?.seenByUserIds,
-      animationLevel: global.settings.byKey.animationLevel,
+      seenByDates: message?.seenByDates,
       availableReactions: global.availableReactions,
     };
   },

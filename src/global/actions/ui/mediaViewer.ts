@@ -1,8 +1,10 @@
-import { addActionHandler } from '../../index';
 import type { ActionReturnType } from '../../types';
+
+import { DEFAULT_PLAYBACK_RATE } from '../../../config';
+import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import { addActionHandler } from '../../index';
 import { updateTabState } from '../../reducers/tabs';
 import { selectTabState } from '../../selectors';
-import { getCurrentTabId } from '../../../util/establishMultitabRole';
 
 addActionHandler('openMediaViewer', (global, actions, payload): ActionReturnType => {
   const {
@@ -11,6 +13,7 @@ addActionHandler('openMediaViewer', (global, actions, payload): ActionReturnType
   } = payload;
 
   const tabState = selectTabState(global, tabId);
+
   return updateTabState(global, {
     mediaViewer: {
       ...tabState.mediaViewer,
@@ -22,7 +25,12 @@ addActionHandler('openMediaViewer', (global, actions, payload): ActionReturnType
       origin,
       isHidden: false,
       volume: volume ?? tabState.mediaViewer.volume,
-      playbackRate: playbackRate || tabState.mediaViewer.playbackRate || global.mediaViewer.lastPlaybackRate,
+      playbackRate: (
+        playbackRate
+        || tabState.mediaViewer.playbackRate
+        || global.mediaViewer.lastPlaybackRate
+        || DEFAULT_PLAYBACK_RATE
+      ),
       isMuted: isMuted || tabState.mediaViewer.isMuted,
     },
     forwardMessages: {},

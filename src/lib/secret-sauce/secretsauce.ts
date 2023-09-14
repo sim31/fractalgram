@@ -11,9 +11,11 @@ import {
   IS_NOISE_SUPPRESSION_SUPPORTED,
   THRESHOLD,
 } from './utils';
+import Deferred from "../../util/Deferred";
+import safePlay from "../../util/safePlay";
 
 export type StreamType = 'audio' | 'video' | 'presentation';
-
+const DEFAULT_MID = 3;
 type GroupCallState = {
   connection?: RTCPeerConnection;
   screenshareConnection?: RTCPeerConnection;
@@ -45,6 +47,10 @@ type GroupCallState = {
   destination?: MediaStreamAudioDestinationNode;
   audioContext?: AudioContext;
   mediaStream?: MediaStream;
+  lastMid: number;
+  audioStream?: MediaStream;
+  audioSource?: MediaStreamAudioSourceNode;
+  audioAnalyser?: AnalyserNode;
 };
 
 let state: GroupCallState | undefined;
@@ -141,7 +147,11 @@ function updateGroupCallStreams(userId: string) {
   });
 }
 
-function getUserStream(streamType: StreamType, facing: VideoFacingModeEnum = 'user') {
+async function getUserStream(streamType: StreamType, facing: VideoFacingModeEnum = 'user') {
+  if (streamType === 'audio' && state?.audioStream) {
+    return state.audioStream;
+  }
+
   if (streamType === 'presentation') {
     return (navigator.mediaDevices as any).getDisplayMedia({
       audio: false,
@@ -149,17 +159,31 @@ function getUserStream(streamType: StreamType, facing: VideoFacingModeEnum = 'us
     });
   }
 
-  return navigator.mediaDevices.getUserMedia({
+  const media = await navigator.mediaDevices.getUserMedia({
     audio: streamType === 'audio' ? {
       // @ts-ignore
-      ...(IS_ECHO_CANCELLATION_SUPPORTED && { echoCancellation: true }),
-      ...(IS_NOISE_SUPPRESSION_SUPPORTED && { noiseSuppression: true }),
+      ...(IS_ECHO_CANCELLATION_SUPPORTED && {echoCancellation: true}),
+      ...(IS_NOISE_SUPPRESSION_SUPPORTED && {noiseSuppression: true}),
     } : false,
     video: streamType === 'video' ? {
       facingMode: facing,
     } : false,
-
   });
+
+  if (state && streamType === 'audio') {
+    state.audioStream = media;
+  }
+
+  if (streamType === 'video') {
+    const vid = document.createElement('video');
+    vid.srcObject = media;
+
+    const deferred = new Deferred();
+    vid.oncanplay = () => deferred.resolve();
+    await deferred.promise;
+  }
+
+  return media;
 }
 
 export async function switchCameraInput() {
@@ -229,9 +253,9 @@ export async function toggleStream(streamType: StreamType, value: boolean | unde
       } else if (streamType === 'audio') {
         const { audioContext } = state;
         if (!audioContext) return;
-        const source = audioContext.createMediaStreamSource(newStream);
+        const source = state.audioSource || audioContext.createMediaStreamSource(newStream);
 
-        const analyser = audioContext.createAnalyser();
+        const analyser = state.audioAnalyser || audioContext.createAnalyser();
         analyser.minDecibels = -100;
         analyser.maxDecibels = -30;
         analyser.smoothingTimeConstant = 0.05;
@@ -241,6 +265,8 @@ export async function toggleStream(streamType: StreamType, value: boolean | unde
 
         state = {
           ...state,
+          audioSource: source,
+          audioAnalyser: analyser,
           participantFunctions: {
             ...state.participantFunctions,
             [state.myId]: {
@@ -255,7 +281,6 @@ export async function toggleStream(streamType: StreamType, value: boolean | unde
         };
       }
     } else if (!value && track.enabled) {
-      track.stop();
       const newStream = streamType === 'audio' ? state.silence : state.black;
       if (!newStream) return;
 
@@ -263,6 +288,14 @@ export async function toggleStream(streamType: StreamType, value: boolean | unde
       state.streams[state.myId][streamType] = newStream;
       if (streamType === 'video') {
         state.facingMode = undefined;
+      }
+
+      if(streamType !== 'audio') {
+        // We only want to stop video streams
+        track.stop();
+      } else {
+        state.audioSource?.disconnect();
+        state.audioAnalyser?.disconnect();
       }
     }
     updateGroupCallStreams(state.myId!);
@@ -291,6 +324,10 @@ export function leaveGroupCall() {
       });
     });
   }
+
+  state.audioStream?.getTracks().forEach((track) => {
+    track.stop();
+  });
   leavePresentation(true);
   state.dataChannel?.close();
   state.connection?.close();
@@ -379,7 +416,6 @@ export async function handleUpdateGroupCallParticipants(updatedParticipants: Gro
 
   const newEndpoints: string[] = [];
   updatedParticipants.forEach((participant) => {
-    console.log('handleUpdateGroupCallParticipants', participant);
     if (participant.isSelf) {
       if (participant.isMuted && !participant.canSelfUnmute) {
         // Muted by admin
@@ -429,6 +465,7 @@ export async function handleUpdateGroupCallParticipants(updatedParticipants: Gro
 
     if (!isAudioLeft && !hasAudio) {
       // console.log('add audio');
+      state!.lastMid = state!.lastMid + 1;
       conference.ssrcs!.push({
         userId: participant.id,
         isMain: false,
@@ -438,11 +475,14 @@ export async function handleUpdateGroupCallParticipants(updatedParticipants: Gro
           semantics: 'FID',
           sources: [participant.source],
         }],
+        mid: state!.lastMid.toString()
       });
     }
 
     if (!isVideoLeft && !hasVideo && participant.video) {
       // console.log('add video', participant.video);
+      state!.lastMid = state!.lastMid + 1;
+
       newEndpoints.push(participant.video.endpoint);
       conference.ssrcs!.push({
         userId: participant.id,
@@ -450,11 +490,13 @@ export async function handleUpdateGroupCallParticipants(updatedParticipants: Gro
         endpoint: participant.video.endpoint,
         isVideo: true,
         sourceGroups: participant.video.sourceGroups,
+        mid: state!.lastMid.toString()
       });
     }
 
     if (!isPresentationLeft && !hasPresentation && participant.presentation) {
       // console.log('add presentation');
+      state!.lastMid = state!.lastMid + 1;
       conference.ssrcs!.push({
         isPresentation: true,
         userId: participant.id,
@@ -462,6 +504,7 @@ export async function handleUpdateGroupCallParticipants(updatedParticipants: Gro
         endpoint: participant.presentation.endpoint,
         isVideo: true,
         sourceGroups: participant.presentation.sourceGroups,
+        mid: state!.lastMid.toString()
       });
     }
   });
@@ -474,7 +517,6 @@ export async function handleUpdateGroupCallParticipants(updatedParticipants: Gro
   }
 
   const sdp = buildSdp(conference as Conference);
-  console.log('build sdp!', sdp);
   await connection.setRemoteDescription({
     type: 'offer',
     sdp,
@@ -558,8 +600,6 @@ export async function handleUpdateGroupCallConnection(data: GroupCallConnectionD
     ...state,
     ...(!isPresentation ? { conference: newConference } : { screenshareConference: newConference }),
   };
-
-  console.warn('update remote description', newConference, buildSdp(newConference, true, isPresentation));
 
   try {
     await connection.setRemoteDescription({
@@ -675,7 +715,7 @@ function initializeConnection(
   if (!isPresentation) {
     connection.oniceconnectionstatechange = () => {
       const connectionState = connection.iceConnectionState;
-      console.log('ice', connectionState);
+      console.log('iceconnectionstatechange', connectionState);
       if (connectionState === 'connected' || connectionState === 'completed') {
         updateConnectionState('connected');
       } else if (connectionState === 'checking' || connectionState === 'new') {
@@ -685,9 +725,14 @@ function initializeConnection(
       }
     };
   }
+  connection.onconnectionstatechange = () => {
+    console.log('connectionstatechange', connection.connectionState);
+  }
   connection.ontrack = handleTrack;
   connection.onnegotiationneeded = async () => {
     if (!state) return;
+
+    console.log('onnegotiationneeded');
 
     const { myId } = state;
 
@@ -698,17 +743,16 @@ function initializeConnection(
       offerToReceiveVideo: true,
       offerToReceiveAudio: !isPresentation,
     });
-
-    console.log('created offer!', offer);
+    console.log('offer created');
 
     await connection.setLocalDescription(offer);
+    console.log('local desc set');
 
     if (!offer.sdp) {
       return;
     }
 
     const sdp = parseSdp(offer);
-    console.log('parsed sdp', sdp);
     const audioSsrc: Ssrc | undefined = !isPresentation ? {
       userId: '',
       sourceGroups: [
@@ -722,6 +766,7 @@ function initializeConnection(
       isVideo: false,
       isPresentation,
       endpoint: isPresentation ? '1' : '0',
+      mid: isPresentation ? '1' : '0'
     } : undefined;
 
     const videoSsrc: Ssrc | undefined = sdp['ssrc-groups'] && {
@@ -731,6 +776,7 @@ function initializeConnection(
       isMain: true,
       isVideo: true,
       endpoint: isPresentation ? '0' : '1',
+      mid: isPresentation ? '0' : '1'
     };
 
     const conference = isPresentation ? state.screenshareConference : state.conference;
@@ -801,7 +847,7 @@ export async function startSharingScreen(): Promise<JoinGroupCallPayload | undef
     return await new Promise((resolve) => {
       const { connection, dataChannel } = initializeConnection([stream], resolve, true);
       state = {
-        ...state,
+        ...state!,
         screenshareConnection: connection,
         screenshareDataChannel: dataChannel,
       };
@@ -825,7 +871,7 @@ export function joinGroupCall(
 
   const mediaStream = new MediaStream();
   audioElement.srcObject = mediaStream;
-  audioElement.play().catch((l) => console.warn(l));
+  safePlay(audioElement);
 
   state = {
     onUpdate,
@@ -840,11 +886,15 @@ export function joinGroupCall(
     // destination,
     audioContext,
     mediaStream,
+    lastMid: DEFAULT_MID,
   };
+
+  // Prepare microphone
+  getUserStream('audio');
 
   return new Promise((resolve) => {
     state = {
-      ...state,
+      ...state!,
       ...initializeConnection([state!.silence!, state!.black!], resolve),
     };
   });

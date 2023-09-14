@@ -11,11 +11,11 @@
     height: 0 !important;
   }
 
-  body.animation-level-0 & {
+  body.no-message-composer-animations & {
     transition: none !important;
   }
 
-  & > div {
+  &_inner {
     display: flex;
     align-items: center;
     padding-right: 0.625rem;
@@ -61,7 +61,7 @@
     }
 
     .icon-placeholder {
-      width: 1.25rem;
+      width: 1.5rem;
     }
   }
 }

@@ -4,12 +4,13 @@ import React, {
 } from '../../../../lib/teact/teact';
 import { withGlobal } from '../../../../global';
 
-import type { GlobalState } from '../../../../global/types';
 import type { ApiSticker } from '../../../../api/types';
+import type { GlobalState } from '../../../../global/types';
 
 import cycleRestrict from '../../../../util/cycleRestrict';
-import useMedia from '../../../../hooks/useMedia';
+
 import useFlag from '../../../../hooks/useFlag';
+import useMedia from '../../../../hooks/useMedia';
 
 import AnimatedSticker from '../../../common/AnimatedSticker';
 
@@ -100,6 +101,7 @@ const AnimatedCircleSticker: FC<{
     </>
   );
 };
+
 const PremiumFeaturePreviewStickers: FC<OwnProps & StateProps> = ({
   stickers, isActive,
 }) => {
@@ -132,7 +134,7 @@ const PremiumFeaturePreviewStickers: FC<OwnProps & StateProps> = ({
       className={styles.root}
       ref={containerRef}
     >
-      {renderedStickers?.map((l, i) => {
+      {Boolean(size) && renderedStickers?.map((l, i) => {
         return (
           <AnimatedCircleSticker
             size={size}

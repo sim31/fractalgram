@@ -1,20 +1,20 @@
-import React, {
-  memo, useCallback, useRef, useState,
-} from '../../../lib/teact/teact';
+import type { FC } from '../../../lib/teact/teact';
+import React, { memo, useRef, useState } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
+import type { ApiSticker, ApiVideo } from '../../../api/types';
 import type { IAnchorPosition } from '../../../types';
-import type { ApiVideo, ApiSticker } from '../../../api/types';
 
 import { EDITABLE_INPUT_CSS_SELECTOR, EDITABLE_INPUT_MODAL_CSS_SELECTOR } from '../../../config';
 import buildClassName from '../../../util/buildClassName';
+
 import useFlag from '../../../hooks/useFlag';
-import useContextMenuPosition from '../../../hooks/useContextMenuPosition';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useMenuPosition from '../../../hooks/useMenuPosition';
 
 import Button from '../../ui/Button';
-import Spinner from '../../ui/Spinner';
 import ResponsiveHoverButton from '../../ui/ResponsiveHoverButton';
+import Spinner from '../../ui/Spinner';
 import SymbolMenu from './SymbolMenu.async';
 
 const MOBILE_KEYBOARD_HIDE_DELAY_MS = 100;
@@ -27,6 +27,9 @@ type OwnProps = {
   isSymbolMenuOpen?: boolean;
   canSendGifs?: boolean;
   canSendStickers?: boolean;
+  isMessageComposer?: boolean;
+  idPrefix: string;
+  forceDarkTheme?: boolean;
   openSymbolMenu: VoidFunction;
   closeSymbolMenu: VoidFunction;
   onCustomEmojiSelect: (emoji: ApiSticker) => void;
@@ -35,7 +38,7 @@ type OwnProps = {
     isSilent?: boolean,
     shouldSchedule?: boolean,
     shouldPreserveInput?: boolean,
-    shouldUpdateStickerSetsOrder?: boolean
+    canUpdateStickerSetsOrder?: boolean,
   ) => void;
   onGifSelect?: (gif: ApiVideo, isSilent?: boolean, shouldSchedule?: boolean) => void;
   onRemoveSymbol: VoidFunction;
@@ -46,6 +49,7 @@ type OwnProps = {
   isAttachmentModal?: boolean;
   canSendPlainText?: boolean;
   className?: string;
+  inputCssSelector?: string;
 };
 
 const SymbolMenuButton: FC<OwnProps> = ({
@@ -54,21 +58,25 @@ const SymbolMenuButton: FC<OwnProps> = ({
   isMobile,
   canSendGifs,
   canSendStickers,
+  isMessageComposer,
   isReady,
   isSymbolMenuOpen,
+  idPrefix,
+  isAttachmentModal,
+  canSendPlainText,
+  isSymbolMenuForced,
+  className,
+  forceDarkTheme,
+  inputCssSelector = EDITABLE_INPUT_CSS_SELECTOR,
   openSymbolMenu,
   closeSymbolMenu,
   onCustomEmojiSelect,
   onStickerSelect,
   onGifSelect,
-  isAttachmentModal,
-  canSendPlainText,
   onRemoveSymbol,
   onEmojiSelect,
   closeBotCommandMenu,
   closeSendAsMenu,
-  isSymbolMenuForced,
-  className,
 }) => {
   const {
     setStickerSearchQuery,
@@ -91,7 +99,7 @@ const SymbolMenuButton: FC<OwnProps> = ({
       : (isSymbolMenuOpen && 'is-loading'),
   );
 
-  const handleActivateSymbolMenu = useCallback(() => {
+  const handleActivateSymbolMenu = useLastCallback(() => {
     closeBotCommandMenu?.();
     closeSendAsMenu?.();
     openSymbolMenu();
@@ -99,9 +107,9 @@ const SymbolMenuButton: FC<OwnProps> = ({
     if (!triggerEl) return;
     const { x, y } = triggerEl.getBoundingClientRect();
     setContextMenuPosition({ x, y });
-  }, [closeBotCommandMenu, closeSendAsMenu, openSymbolMenu]);
+  });
 
-  const handleSearchOpen = useCallback((type: 'stickers' | 'gifs') => {
+  const handleSearchOpen = useLastCallback((type: 'stickers' | 'gifs') => {
     if (type === 'stickers') {
       setStickerSearchQuery({ query: '' });
       setGifSearchQuery({ query: undefined });
@@ -109,11 +117,11 @@ const SymbolMenuButton: FC<OwnProps> = ({
       setGifSearchQuery({ query: '' });
       setStickerSearchQuery({ query: undefined });
     }
-  }, [setStickerSearchQuery, setGifSearchQuery]);
+  });
 
-  const handleSymbolMenuOpen = useCallback(() => {
+  const handleSymbolMenuOpen = useLastCallback(() => {
     const messageInput = document.querySelector<HTMLDivElement>(
-      isAttachmentModal ? EDITABLE_INPUT_MODAL_CSS_SELECTOR : EDITABLE_INPUT_CSS_SELECTOR,
+      isAttachmentModal ? EDITABLE_INPUT_MODAL_CSS_SELECTOR : inputCssSelector,
     );
 
     if (!isMobile || messageInput !== document.activeElement) {
@@ -126,27 +134,16 @@ const SymbolMenuButton: FC<OwnProps> = ({
       closeBotCommandMenu?.();
       openSymbolMenu();
     }, MOBILE_KEYBOARD_HIDE_DELAY_MS);
-  }, [isAttachmentModal, isMobile, openSymbolMenu, closeBotCommandMenu]);
+  });
 
-  const getTriggerElement = useCallback(() => triggerRef.current, []);
-
-  const getRootElement = useCallback(
-    () => triggerRef.current?.closest('.custom-scroll, .no-scrollbar'),
-    [],
-  );
-
-  const getMenuElement = useCallback(
-    () => document.querySelector('#portals .SymbolMenu .bubble'),
-    [],
-  );
-
-  const getLayout = useCallback(() => ({
-    withPortal: true,
-  }), []);
+  const getTriggerElement = useLastCallback(() => triggerRef.current);
+  const getRootElement = useLastCallback(() => triggerRef.current?.closest('.custom-scroll, .no-scrollbar'));
+  const getMenuElement = useLastCallback(() => document.querySelector('#portals .SymbolMenu .bubble'));
+  const getLayout = useLastCallback(() => ({ withPortal: true }));
 
   const {
     positionX, positionY, transformOriginX, transformOriginY, style: menuStyle,
-  } = useContextMenuPosition(
+  } = useMenuPosition(
     contextMenuPosition,
     getTriggerElement,
     getRootElement,
@@ -164,8 +161,8 @@ const SymbolMenuButton: FC<OwnProps> = ({
           onClick={isSymbolMenuOpen ? closeSymbolMenu : handleSymbolMenuOpen}
           ariaLabel="Choose emoji, sticker or GIF"
         >
-          <i className="icon-smile" />
-          <i className="icon-keyboard" />
+          <i className="icon icon-smile" />
+          <i className="icon icon-keyboard" />
           {isSymbolMenuOpen && !isSymbolMenuLoaded && <Spinner color="gray" />}
         </Button>
       ) : (
@@ -177,7 +174,7 @@ const SymbolMenuButton: FC<OwnProps> = ({
           ariaLabel="Choose emoji, sticker or GIF"
         >
           <div ref={triggerRef} className="symbol-menu-trigger" />
-          <i className="icon-smile" />
+          <i className="icon icon-smile" />
         </ResponsiveHoverButton>
       )}
 
@@ -187,6 +184,8 @@ const SymbolMenuButton: FC<OwnProps> = ({
         isOpen={isSymbolMenuOpen || Boolean(isSymbolMenuForced)}
         canSendGifs={canSendGifs}
         canSendStickers={canSendStickers}
+        isMessageComposer={isMessageComposer}
+        idPrefix={idPrefix}
         onLoad={onSymbolMenuLoadingComplete}
         onClose={closeSymbolMenu}
         onEmojiSelect={onEmojiSelect}
@@ -199,7 +198,7 @@ const SymbolMenuButton: FC<OwnProps> = ({
         addRecentCustomEmoji={addRecentCustomEmoji}
         isAttachmentModal={isAttachmentModal}
         canSendPlainText={canSendPlainText}
-        className={className}
+        className={buildClassName(className, forceDarkTheme && 'component-theme-dark')}
         positionX={isAttachmentModal ? positionX : undefined}
         positionY={isAttachmentModal ? positionY : undefined}
         transformOriginX={isAttachmentModal ? transformOriginX : undefined}

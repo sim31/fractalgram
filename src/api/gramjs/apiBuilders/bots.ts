@@ -1,24 +1,27 @@
 import { Api as GramJs } from '../../../lib/gramjs';
+
 import type {
   ApiAttachBot,
   ApiAttachBotIcon,
   ApiAttachMenuPeerType,
+  ApiBotApp,
   ApiBotCommand,
   ApiBotInfo,
   ApiBotInlineMediaResult,
   ApiBotInlineResult,
   ApiBotInlineSwitchPm,
+  ApiBotInlineSwitchWebview,
   ApiBotMenuButton,
   ApiInlineResultType,
 } from '../../types';
 
 import { pick } from '../../../util/iteratees';
-import { buildApiPhoto, buildApiThumbnailFromStripped } from './common';
-import { buildApiDocument, buildApiWebDocument, buildVideoFromDocument } from './messages';
-import { buildStickerFromDocument } from './symbols';
 import localDb from '../localDb';
-import { buildApiPeerId } from './peers';
+import { buildApiPhoto, buildApiThumbnailFromStripped } from './common';
 import { omitVirtualClassFields } from './helpers';
+import { buildApiDocument, buildApiWebDocument, buildVideoFromDocument } from './messageContent';
+import { buildApiPeerId } from './peers';
+import { buildStickerFromDocument } from './symbols';
 
 export function buildApiBotInlineResult(result: GramJs.BotInlineResult, queryId: string): ApiBotInlineResult {
   const {
@@ -60,6 +63,10 @@ export function buildApiBotInlineMediaResult(
 
 export function buildBotSwitchPm(switchPm?: GramJs.InlineBotSwitchPM) {
   return switchPm ? pick(switchPm, ['text', 'startParam']) as ApiBotInlineSwitchPm : undefined;
+}
+
+export function buildBotSwitchWebview(switchWebview?: GramJs.InlineBotWebView) {
+  return switchWebview ? pick(switchWebview, ['text', 'url']) as ApiBotInlineSwitchWebview : undefined;
 }
 
 export function buildApiAttachBot(bot: GramJs.AttachMenuBot): ApiAttachBot {
@@ -136,5 +143,28 @@ export function buildApiBotMenuButton(menuButton?: GramJs.TypeBotMenuButton): Ap
 
   return {
     type: 'commands',
+  };
+}
+
+export function buildApiBotApp(botApp: GramJs.messages.BotApp): ApiBotApp | undefined {
+  const { app, inactive, requestWriteAccess } = botApp;
+  if (app instanceof GramJs.BotAppNotModified) return undefined;
+  const {
+    id, accessHash, title, description, shortName, photo, document,
+  } = app;
+
+  const apiPhoto = photo instanceof GramJs.Photo ? buildApiPhoto(photo) : undefined;
+  const apiDocument = document instanceof GramJs.Document ? buildApiDocument(document) : undefined;
+
+  return {
+    id: id.toString(),
+    accessHash: accessHash.toString(),
+    title,
+    description,
+    shortName,
+    photo: apiPhoto,
+    document: apiDocument,
+    isInactive: inactive,
+    shouldRequestWriteAccess: requestWriteAccess,
   };
 }

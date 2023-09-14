@@ -1,28 +1,28 @@
 import React from '../../../lib/teact/teact';
 
 import type {
-  ApiChat, ApiMessage, ApiUser, ApiGroupCall, ApiTopic,
+  ApiChat, ApiGroupCall, ApiMessage, ApiTopic, ApiUser,
 } from '../../../api/types';
-import type { TextPart } from '../../../types';
 import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
 import type { LangFn } from '../../../hooks/useLang';
+import type { TextPart } from '../../../types';
 
 import {
   getChatTitle,
   getMessageSummaryText,
   getUserFullName,
 } from '../../../global/helpers';
-import trimText from '../../../util/trimText';
 import { formatCurrency } from '../../../util/formatCurrency';
+import trimText from '../../../util/trimText';
 import renderText from './renderText';
 
-import UserLink from '../UserLink';
-import MessageLink from '../MessageLink';
 import ChatLink from '../ChatLink';
-import GroupCallLink from '../GroupCallLink';
-import MessageSummary from '../MessageSummary';
 import CustomEmoji from '../CustomEmoji';
+import GroupCallLink from '../GroupCallLink';
+import MessageLink from '../MessageLink';
+import MessageSummary from '../MessageSummary';
 import TopicDefaultIcon from '../TopicDefaultIcon';
+import UserLink from '../UserLink';
 
 interface RenderOptions {
   asPlainText?: boolean;
@@ -50,7 +50,7 @@ export function renderActionMessageText(
   }
 
   const {
-    text, translationValues, amount, currency, call, score, topicEmojiIconId,
+    text, translationValues, amount, currency, call, score, topicEmojiIconId, giftCryptoInfo,
   } = message.content.action;
   const content: TextPart[] = [];
   const noLinks = options.asPlainText || options.isEmbedded;
@@ -91,13 +91,16 @@ export function renderActionMessageText(
     ) : actionOriginChat ? (
       renderChatContent(lang, actionOriginChat, noLinks) || NBSP
     ) : 'User',
+    '',
   );
 
   unprocessed = processed.pop() as string;
   content.push(...processed);
 
   if (unprocessed.includes('%action_topic%')) {
-    const topicEmoji = topic?.iconEmojiId ? <CustomEmoji documentId={topic.iconEmojiId} /> : '';
+    const topicEmoji = topic?.iconEmojiId
+      ? <CustomEmoji documentId={topic.iconEmojiId} />
+      : '';
     const topicString = topic ? `${topic.title}` : 'a topic';
     processed = processPlaceholder(
       unprocessed,
@@ -123,10 +126,17 @@ export function renderActionMessageText(
   }
 
   if (unprocessed.includes('%gift_payment_amount%')) {
+    const price = formatCurrency(amount!, currency!, lang.code);
+    let priceText = price;
+
+    if (giftCryptoInfo) {
+      priceText = `${giftCryptoInfo.amount} ${giftCryptoInfo.currency} (~${price})`;
+    }
+
     processed = processPlaceholder(
       unprocessed,
       '%gift_payment_amount%',
-      formatCurrency(amount!, currency!, lang.code),
+      priceText,
     );
     unprocessed = processed.pop() as string;
     content.push(...processed);
@@ -148,6 +158,7 @@ export function renderActionMessageText(
     targetUsers
       ? targetUsers.map((user) => renderUserContent(user, noLinks)).filter(Boolean)
       : 'User',
+    '',
   );
 
   unprocessed = processed.pop() as string;
@@ -181,6 +192,7 @@ export function renderActionMessageText(
     targetChatId
       ? renderMigratedContent(targetChatId, noLinks)
       : 'another chat',
+    '',
   );
   processed.forEach((part) => {
     content.push(...renderText(part));

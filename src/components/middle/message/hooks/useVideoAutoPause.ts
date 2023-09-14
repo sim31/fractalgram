@@ -1,54 +1,85 @@
-import { useCallback, useEffect, useRef } from '../../../../lib/teact/teact';
+import { useEffect, useRef } from '../../../../lib/teact/teact';
 
-import { fastRaf } from '../../../../util/schedulers';
-import useBackgroundMode from '../../../../hooks/useBackgroundMode';
-import useHeavyAnimationCheck from '../../../../hooks/useHeavyAnimationCheck';
-import usePlayPause from '../../../../hooks/usePlayPause';
+import { requestMeasure } from '../../../../lib/fasterdom/fasterdom';
 
-export default function useVideoAutoPause(playerRef: { current: HTMLVideoElement | null }, canPlay: boolean) {
+import useBackgroundMode, { isBackgroundModeActive } from '../../../../hooks/useBackgroundMode';
+import useHeavyAnimationCheck, { isHeavyAnimating } from '../../../../hooks/useHeavyAnimationCheck';
+import useLastCallback from '../../../../hooks/useLastCallback';
+import usePriorityPlaybackCheck, { isPriorityPlaybackActive } from '../../../../hooks/usePriorityPlaybackCheck';
+
+export default function useVideoAutoPause(
+  playerRef: { current: HTMLVideoElement | null }, canPlay: boolean, isPriority?: boolean,
+) {
   const canPlayRef = useRef();
   canPlayRef.current = canPlay;
 
   const { play, pause } = usePlayPause(playerRef);
 
-  const isFrozenRef = useRef();
-
-  const freezePlaying = useCallback(() => {
-    isFrozenRef.current = true;
-
-    pause();
-  }, [pause]);
-
-  const unfreezePlaying = useCallback(() => {
-    isFrozenRef.current = false;
-
-    if (canPlayRef.current) {
+  const unfreezePlaying = useLastCallback(() => {
+    if (canPlayRef.current && (isPriority || !isFrozen())) {
       play();
     }
-  }, [play]);
+  });
 
-  const unfreezePlayingOnRaf = useCallback(() => {
-    fastRaf(unfreezePlaying);
-  }, [unfreezePlaying]);
+  const unfreezePlayingOnRaf = useLastCallback(() => {
+    requestMeasure(unfreezePlaying);
+  });
 
-  useBackgroundMode(freezePlaying, unfreezePlayingOnRaf);
-  useHeavyAnimationCheck(freezePlaying, unfreezePlaying);
+  useBackgroundMode(pause, unfreezePlayingOnRaf, !canPlay);
+  useHeavyAnimationCheck(pause, unfreezePlaying, !canPlay);
+  usePriorityPlaybackCheck(pause, unfreezePlaying, !canPlay);
 
-  const handlePlaying = useCallback(() => {
-    if (!canPlayRef.current || isFrozenRef.current) {
+  const handlePlaying = useLastCallback(() => {
+    if (!canPlayRef.current || (!isPriority && isFrozen())) {
       pause();
     }
-  }, [pause]);
+  });
 
   useEffect(() => {
     if (canPlay) {
-      if (!isFrozenRef.current) {
+      if (isPriority || !isFrozen()) {
         play();
       }
     } else {
       pause();
     }
-  }, [canPlay, play, pause]);
+  }, [canPlay, play, pause, isPriority]);
 
   return { handlePlaying };
+}
+
+function usePlayPause(mediaRef: React.RefObject<HTMLMediaElement>) {
+  const shouldPauseRef = useRef(false);
+  const isLoadingPlayRef = useRef(false);
+
+  const play = useLastCallback(() => {
+    shouldPauseRef.current = false;
+    if (mediaRef.current && !isLoadingPlayRef.current && document.body.contains(mediaRef.current)) {
+      isLoadingPlayRef.current = true;
+      mediaRef.current.play().then(() => {
+        isLoadingPlayRef.current = false;
+        if (shouldPauseRef.current) {
+          mediaRef.current?.pause();
+          shouldPauseRef.current = false;
+        }
+      }).catch((e) => {
+        // eslint-disable-next-line no-console
+        console.warn(e);
+      });
+    }
+  });
+
+  const pause = useLastCallback(() => {
+    if (isLoadingPlayRef.current) {
+      shouldPauseRef.current = true;
+    } else {
+      mediaRef.current?.pause();
+    }
+  });
+
+  return { play, pause };
+}
+
+function isFrozen() {
+  return isHeavyAnimating() || isPriorityPlaybackActive() || isBackgroundModeActive();
 }

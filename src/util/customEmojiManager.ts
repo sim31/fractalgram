@@ -1,34 +1,39 @@
 import { addCallback } from '../lib/teact/teactn';
 import { getGlobal } from '../global';
 
-import { ApiMediaFormat } from '../api/types';
 import type { ApiSticker } from '../api/types';
 import type { GlobalState } from '../global/types';
+import { ApiMediaFormat } from '../api/types';
 
+import { requestMutation } from '../lib/fasterdom/fasterdom';
 import { getStickerPreviewHash } from '../global/helpers';
+import { selectCanPlayAnimatedEmojis } from '../global/selectors';
+import { createCallbackManager } from './callbacks';
+import generateUniqueId from './generateUniqueId';
 import * as mediaLoader from './mediaLoader';
 import { throttle } from './schedulers';
-import generateIdFor from './generateIdFor';
-import { IS_WEBM_SUPPORTED } from './environment';
+import { IS_WEBM_SUPPORTED } from './windowEnvironment';
 
-import placeholderSrc from '../assets/square.svg';
 import blankSrc from '../assets/blank.png';
+import placeholderSrc from '../assets/square.svg';
 
 type CustomEmojiLoadCallback = (customEmojis: GlobalState['customEmojis']) => void;
 type CustomEmojiInputRenderCallback = (emojiId: string) => void;
 
-const ID_STORE = {};
 const DOM_PROCESS_THROTTLE = 500;
 
 const INPUT_WAITING_CUSTOM_EMOJI_IDS: Set<string> = new Set();
 
 const handlers = new Map<CustomEmojiLoadCallback, string>();
-const renderHandlers = new Set<CustomEmojiInputRenderCallback>();
+const renderCallbacks = createCallbackManager<CustomEmojiInputRenderCallback>();
 
 let prevGlobal: GlobalState | undefined;
 
 addCallback((global: GlobalState) => {
-  if (global.customEmojis.byId !== prevGlobal?.customEmojis.byId) {
+  if (
+    global.customEmojis.byId !== prevGlobal?.customEmojis.byId
+    || selectCanPlayAnimatedEmojis(global) !== selectCanPlayAnimatedEmojis(prevGlobal)
+  ) {
     for (const entry of handlers) {
       const [handler, id] = entry;
       if (global.customEmojis.byId[id]) {
@@ -50,17 +55,8 @@ export function removeCustomEmojiCallback(handler: CustomEmojiLoadCallback) {
   handlers.delete(handler);
 }
 
-export function addCustomEmojiInputRenderCallback(handler: AnyToVoidFunction) {
-  renderHandlers.add(handler);
-}
-
-export function removeCustomEmojiInputRenderCallback(handler: AnyToVoidFunction) {
-  renderHandlers.delete(handler);
-}
-
-const callInputRenderHandlers = throttle((emojiId: string) => {
-  renderHandlers.forEach((handler) => handler(emojiId));
-}, DOM_PROCESS_THROTTLE);
+export const addCustomEmojiInputRenderCallback = renderCallbacks.addCallback;
+const callInputRenderHandlers = throttle(renderCallbacks.runCallbacks, DOM_PROCESS_THROTTLE);
 
 function processDomForCustomEmoji() {
   const emojis = document.querySelectorAll<HTMLImageElement>('.custom-emoji.placeholder');
@@ -72,12 +68,20 @@ function processDomForCustomEmoji() {
     }
     const [isPlaceholder, src, uniqueId] = getInputCustomEmojiParams(customEmoji);
 
-    if (!isPlaceholder) {
-      emoji.src = src;
-      emoji.classList.remove('placeholder');
-      if (uniqueId) emoji.dataset.uniqueId = uniqueId;
+    if (customEmoji.shouldUseTextColor && !emoji.classList.contains('colorable')) {
+      requestMutation(() => {
+        emoji.classList.add('colorable');
+      });
+    }
 
-      callInputRenderHandlers(customEmoji.id);
+    if (!isPlaceholder) {
+      requestMutation(() => {
+        emoji.src = src;
+        emoji.classList.remove('placeholder');
+        if (uniqueId) emoji.dataset.uniqueId = uniqueId;
+
+        callInputRenderHandlers(customEmoji.id);
+      });
     }
   });
 }
@@ -115,7 +119,7 @@ export function getInputCustomEmojiParams(customEmoji?: ApiSticker) {
   const isUsingSharedCanvas = customEmoji.isLottie || (customEmoji.isVideo && !shouldUseStaticFallback);
   if (isUsingSharedCanvas) {
     fetchAndProcess(`sticker${customEmoji.id}`);
-    return [false, blankSrc, generateIdFor(ID_STORE, true)];
+    return [false, blankSrc, generateUniqueId()];
   }
 
   const mediaData = getCustomEmojiMediaDataForInput(customEmoji.id, shouldUseStaticFallback);

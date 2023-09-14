@@ -1,8 +1,9 @@
 import type { RefObject } from 'react';
-import {
-  useState, useEffect, useLayoutEffect, useCallback,
-} from '../lib/teact/teact';
+import { useEffect, useLayoutEffect, useState } from '../lib/teact/teact';
+
+import { requestMutation } from '../lib/fasterdom/fasterdom';
 import useFlag from './useFlag';
+import useLastCallback from './useLastCallback';
 
 export function useResize(
   elementRef: RefObject<HTMLElement>,
@@ -12,20 +13,22 @@ export function useResize(
   cssPropertyName?: string,
 ) {
   const [isActive, markIsActive, unmarkIsActive] = useFlag();
-  const [initialMouseX, setInitialMouseX] = useState<number>();
-  const [initialElementWidth, setInitialElementWidth] = useState<number>();
+  const [initialMouseX, setInitialMouseX] = useState<number>(0);
+  const [initialElementWidth, setInitialElementWidth] = useState<number>(0);
 
-  const setElementStyle = useCallback((width?: number) => {
-    if (!elementRef.current) {
-      return;
-    }
+  const setElementStyle = useLastCallback((width?: number) => {
+    requestMutation(() => {
+      if (!elementRef.current) {
+        return;
+      }
 
-    const widthPx = width ? `${width}px` : '';
-    elementRef.current.style.width = widthPx;
-    if (cssPropertyName) {
-      elementRef.current.style.setProperty(cssPropertyName, widthPx);
-    }
-  }, [cssPropertyName, elementRef]);
+      const widthPx = width ? `${width}px` : '';
+      elementRef.current.style.width = widthPx;
+      if (cssPropertyName) {
+        elementRef.current.style.setProperty(cssPropertyName, widthPx);
+      }
+    });
+  });
 
   useLayoutEffect(() => {
     if (!elementRef.current || !initialWidth) {
@@ -36,13 +39,17 @@ export function useResize(
   }, [cssPropertyName, elementRef, initialWidth, setElementStyle]);
 
   function handleMouseUp() {
-    document.body.classList.remove('cursor-ew-resize');
+    requestMutation(() => {
+      document.body.classList.remove('cursor-ew-resize');
+    });
   }
 
   function initResize(e: React.MouseEvent<HTMLElement, MouseEvent>) {
     e.preventDefault();
 
-    document.body.classList.add('cursor-ew-resize');
+    requestMutation(() => {
+      document.body.classList.add('cursor-ew-resize');
+    });
 
     setInitialMouseX(e.clientX);
     setInitialElementWidth(elementRef.current!.offsetWidth);

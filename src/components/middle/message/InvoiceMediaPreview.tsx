@@ -1,16 +1,17 @@
-import React, { memo, useCallback } from '../../../lib/teact/teact';
+import type { FC } from '../../../lib/teact/teact';
+import React, { memo } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
 import type { ApiMessage } from '../../../api/types';
 
 import { getMessageInvoice } from '../../../global/helpers';
-import { formatCurrency } from '../../../util/formatCurrency';
-import { formatMediaDuration } from '../../../util/dateFormat';
 import buildClassName from '../../../util/buildClassName';
+import { formatMediaDuration } from '../../../util/dateFormat';
+import { formatCurrency } from '../../../util/formatCurrency';
 
-import useLang from '../../../hooks/useLang';
 import useInterval from '../../../hooks/useInterval';
+import useLang from '../../../hooks/useLang';
+import useLastCallback from '../../../hooks/useLastCallback';
 
 import MediaSpoiler from '../../common/MediaSpoiler';
 
@@ -18,14 +19,14 @@ import styles from './InvoiceMediaPreview.module.scss';
 
 type OwnProps = {
   message: ApiMessage;
-  lastSyncTime?: number;
+  isConnected: boolean;
 };
 
 const POLLING_INTERVAL = 30000;
 
 const InvoiceMediaPreview: FC<OwnProps> = ({
   message,
-  lastSyncTime,
+  isConnected,
 }) => {
   const { openInvoice, loadExtendedMedia } = getActions();
   const lang = useLang();
@@ -33,11 +34,11 @@ const InvoiceMediaPreview: FC<OwnProps> = ({
 
   const { chatId, id } = message;
 
-  const refreshExtendedMedia = useCallback(() => {
+  const refreshExtendedMedia = useLastCallback(() => {
     loadExtendedMedia({ chatId, ids: [id] });
-  }, [chatId, id, loadExtendedMedia]);
+  });
 
-  useInterval(refreshExtendedMedia, lastSyncTime ? POLLING_INTERVAL : undefined);
+  useInterval(refreshExtendedMedia, isConnected ? POLLING_INTERVAL : undefined);
 
   const {
     amount,
@@ -49,13 +50,13 @@ const InvoiceMediaPreview: FC<OwnProps> = ({
     width, height, thumbnail, duration,
   } = extendedMedia!;
 
-  const handleClick = useCallback(() => {
+  const handleClick = useLastCallback(() => {
     openInvoice({
       chatId,
       messageId: id,
       isExtendedMedia: true,
     });
-  }, [chatId, id, openInvoice]);
+  });
 
   return (
     <div
@@ -71,7 +72,7 @@ const InvoiceMediaPreview: FC<OwnProps> = ({
       />
       {Boolean(duration) && <div className={styles.duration}>{formatMediaDuration(duration)}</div>}
       <div className={styles.buy}>
-        <i className={buildClassName('icon-lock', styles.lock)} />
+        <i className={buildClassName('icon', 'icon-lock', styles.lock)} />
         {lang('Checkout.PayPrice', formatCurrency(amount, currency))}
       </div>
     </div>

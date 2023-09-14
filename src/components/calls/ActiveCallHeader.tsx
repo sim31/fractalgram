@@ -4,9 +4,10 @@ import { getActions, withGlobal } from '../../global';
 
 import type { ApiGroupCall, ApiUser } from '../../api/types';
 
-import { selectActiveGroupCall, selectPhoneCallUser } from '../../global/selectors/calls';
 import { selectTabState } from '../../global/selectors';
+import { selectActiveGroupCall, selectPhoneCallUser } from '../../global/selectors/calls';
 import buildClassName from '../../util/buildClassName';
+
 import useLang from '../../hooks/useLang';
 
 import './ActiveCallHeader.scss';
@@ -28,9 +29,11 @@ const ActiveCallHeader: FC<StateProps> = ({
 
   useEffect(() => {
     document.body.classList.toggle('has-call-header', Boolean(isCallPanelVisible));
+    window.electron?.setTrafficLightPosition(isCallPanelVisible ? 'lowered' : 'standard');
 
     return () => {
       document.body.classList.toggle('has-call-header', false);
+      window.electron?.setTrafficLightPosition('standard');
     };
   }, [isCallPanelVisible]);
 

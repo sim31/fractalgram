@@ -6,19 +6,21 @@ import React, {
 import type { ApiPremiumPromo } from '../../../api/types';
 import type { ApiLimitType, GlobalState } from '../../../global/types';
 
+import animateHorizontalScroll from '../../../util/animateHorizontalScroll';
 import buildClassName from '../../../util/buildClassName';
-import useLang from '../../../hooks/useLang';
-import fastSmoothScrollHorizontal from '../../../util/fastSmoothScrollHorizontal';
-import useFlag from '../../../hooks/useFlag';
-import renderText from '../../common/helpers/renderText';
-import usePrevious from '../../../hooks/usePrevious';
 import { formatCurrency } from '../../../util/formatCurrency';
+import renderText from '../../common/helpers/renderText';
 
+import useFlag from '../../../hooks/useFlag';
+import useLang from '../../../hooks/useLang';
+import usePrevious from '../../../hooks/usePrevious';
+
+import SliderDots from '../../common/SliderDots';
 import Button from '../../ui/Button';
 import PremiumLimitPreview from './common/PremiumLimitPreview';
-import PremiumFeaturePreviewVideo from './previews/PremiumFeaturePreviewVideo';
-import SliderDots from '../../common/SliderDots';
 import PremiumFeaturePreviewStickers from './previews/PremiumFeaturePreviewStickers';
+import PremiumFeaturePreviewStories from './previews/PremiumFeaturePreviewStories';
+import PremiumFeaturePreviewVideo from './previews/PremiumFeaturePreviewVideo';
 
 import styles from './PremiumFeatureModal.module.scss';
 
@@ -35,6 +37,8 @@ export const PREMIUM_FEATURE_TITLES: Record<string, string> = {
   advanced_chat_management: 'PremiumPreviewAdvancedChatManagement',
   animated_userpics: 'PremiumPreviewAnimatedProfiles',
   emoji_status: 'PremiumPreviewEmojiStatus',
+  translations: 'PremiumPreviewTranslations',
+  stories: 'PremiumPreviewStories',
 };
 
 export const PREMIUM_FEATURE_DESCRIPTIONS: Record<string, string> = {
@@ -50,9 +54,12 @@ export const PREMIUM_FEATURE_DESCRIPTIONS: Record<string, string> = {
   advanced_chat_management: 'PremiumPreviewAdvancedChatManagementDescription',
   animated_userpics: 'PremiumPreviewAnimatedProfilesDescription',
   emoji_status: 'PremiumPreviewEmojiStatusDescription',
+  translations: 'PremiumPreviewTranslationsDescription',
+  stories: 'PremiumPreviewStoriesDescription',
 };
 
 export const PREMIUM_FEATURE_SECTIONS = [
+  'stories',
   'double_limits',
   'more_upload',
   'faster_download',
@@ -65,18 +72,21 @@ export const PREMIUM_FEATURE_SECTIONS = [
   'profile_badge',
   'animated_userpics',
   'emoji_status',
+  'translations',
 ];
 
 const PREMIUM_BOTTOM_VIDEOS: string[] = [
   'faster_download',
   'voice_to_text',
   'advanced_chat_management',
+  'infinite_reactions',
   'profile_badge',
   'animated_userpics',
   'emoji_status',
+  'translations',
 ];
 
-type ApiLimitTypeWithoutUpload = Exclude<ApiLimitType, 'uploadMaxFileparts'>;
+type ApiLimitTypeWithoutUpload = Exclude<ApiLimitType, 'uploadMaxFileparts' | 'chatlistInvites' | 'chatlistJoined'>;
 
 const LIMITS_ORDER: ApiLimitTypeWithoutUpload[] = [
   'channels',
@@ -185,7 +195,7 @@ const PremiumFeatureModal: FC<OwnProps> = ({
     const index = PREMIUM_FEATURE_SECTIONS.indexOf(initialSection);
     setCurrentSlideIndex(index);
     startScrolling();
-    fastSmoothScrollHorizontal(scrollContainer, scrollContainer.clientWidth * index, 0)
+    animateHorizontalScroll(scrollContainer, scrollContainer.clientWidth * index, 0)
       .then(stopScrolling);
   }, [currentSlideIndex, initialSection, prevInitialSection, startScrolling, stopScrolling]);
 
@@ -196,7 +206,7 @@ const PremiumFeatureModal: FC<OwnProps> = ({
     setCurrentSlideIndex(index);
 
     startScrolling();
-    await fastSmoothScrollHorizontal(scrollContainer, scrollContainer.clientWidth * index, 800);
+    await animateHorizontalScroll(scrollContainer, scrollContainer.clientWidth * index, 800);
     stopScrolling();
   }, [startScrolling, stopScrolling]);
 
@@ -213,7 +223,7 @@ const PremiumFeatureModal: FC<OwnProps> = ({
         onClick={onBack}
         ariaLabel={lang('Back')}
       >
-        <i className="icon-arrow-left" />
+        <i className="icon icon-arrow-left" />
       </Button>
 
       <div className={styles.preview} />
@@ -258,6 +268,14 @@ const PremiumFeatureModal: FC<OwnProps> = ({
                 <div className={styles.description}>
                   {renderText(lang(PREMIUM_FEATURE_DESCRIPTIONS.premium_stickers), ['br'])}
                 </div>
+              </div>
+            );
+          }
+
+          if (section === 'stories') {
+            return (
+              <div className={buildClassName(styles.slide, styles.stories)}>
+                <PremiumFeaturePreviewStories />
               </div>
             );
           }

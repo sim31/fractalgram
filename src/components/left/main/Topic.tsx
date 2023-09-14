@@ -1,39 +1,45 @@
-import React, { memo, useCallback } from '../../../lib/teact/teact';
+import type { FC } from '../../../lib/teact/teact';
+import React, { memo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
 import type {
-  ApiChat, ApiFormattedText, ApiTopic, ApiMessage, ApiMessageOutgoingStatus,
-  ApiTypingStatus,
+  ApiChat, ApiFormattedText, ApiMessage, ApiMessageOutgoingStatus,
+  ApiTopic, ApiTypingStatus,
   ApiUser,
 } from '../../../api/types';
 import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
 import type { ChatAnimationTypes } from './hooks';
-import type { AnimationLevel } from '../../../types';
 
-import { IS_MULTITAB_SUPPORTED } from '../../../util/environment';
+import { getMessageAction } from '../../../global/helpers';
 import {
+  selectCanAnimateInterface,
   selectCanDeleteTopic,
   selectChat,
-  selectChatMessage, selectCurrentMessageList,
+  selectChatMessage,
+  selectCurrentMessageList,
   selectDraft,
-  selectOutgoingStatus, selectThreadInfo, selectThreadParam, selectUser,
+  selectOutgoingStatus,
+  selectThreadInfo,
+  selectThreadParam,
+  selectUser,
 } from '../../../global/selectors';
 import buildClassName from '../../../util/buildClassName';
 import { createLocationHash } from '../../../util/routing';
+import { IS_OPEN_IN_NEW_TAB_SUPPORTED } from '../../../util/windowEnvironment';
 import renderText from '../../common/helpers/renderText';
-import { getMessageAction } from '../../../global/helpers';
 
-import useChatListEntry from './hooks/useChatListEntry';
-import useTopicContextActions from './hooks/useTopicContextActions';
 import useFlag from '../../../hooks/useFlag';
 import useLang from '../../../hooks/useLang';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useChatListEntry from './hooks/useChatListEntry';
+import useTopicContextActions from './hooks/useTopicContextActions';
 
-import ListItem from '../../ui/ListItem';
 import LastMessageMeta from '../../common/LastMessageMeta';
-import Badge from './Badge';
-import ConfirmDialog from '../../ui/ConfirmDialog';
 import TopicIcon from '../../common/TopicIcon';
+import ConfirmDialog from '../../ui/ConfirmDialog';
+import ListItem from '../../ui/ListItem';
+import MuteChatModal from '../MuteChatModal.async';
+import ChatBadge from './ChatBadge';
 
 import styles from './Topic.module.scss';
 
@@ -57,11 +63,11 @@ type StateProps = {
   actionTargetUserIds?: string[];
   lastMessageSender?: ApiUser | ApiChat;
   actionTargetChatId?: string;
-  animationLevel?: AnimationLevel;
   typingStatus?: ApiTypingStatus;
   draft?: ApiFormattedText;
   canScrollDown?: boolean;
   wasTopicOpened?: boolean;
+  withInterfaceAnimations?: boolean;
 };
 
 const Topic: FC<OwnProps & StateProps> = ({
@@ -80,7 +86,7 @@ const Topic: FC<OwnProps & StateProps> = ({
   actionTargetChatId,
   lastMessageSender,
   animationType,
-  animationLevel,
+  withInterfaceAnimations,
   orderDiff,
   typingStatus,
   draft,
@@ -91,21 +97,28 @@ const Topic: FC<OwnProps & StateProps> = ({
   const lang = useLang();
 
   const [isDeleteModalOpen, openDeleteModal, closeDeleteModal] = useFlag();
+  const [isMuteModalOpen, openMuteModal, closeMuteModal] = useFlag();
   const [shouldRenderDeleteModal, markRenderDeleteModal, unmarkRenderDeleteModal] = useFlag();
+  const [shouldRenderMuteModal, markRenderMuteModal, unmarkRenderMuteModal] = useFlag();
 
   const {
     isPinned, isClosed,
   } = topic;
   const isMuted = topic.isMuted || (topic.isMuted === undefined && chat.isMuted);
 
-  const handleOpenDeleteModal = useCallback(() => {
+  const handleOpenDeleteModal = useLastCallback(() => {
     markRenderDeleteModal();
     openDeleteModal();
-  }, [markRenderDeleteModal, openDeleteModal]);
+  });
 
-  const handleDelete = useCallback(() => {
+  const handleDelete = useLastCallback(() => {
     deleteTopic({ chatId: chat.id, topicId: topic.id });
-  }, [chat.id, deleteTopic, topic.id]);
+  });
+
+  const handleMute = useLastCallback(() => {
+    markRenderMuteModal();
+    openMuteModal();
+  });
 
   const { renderSubtitle, ref } = useChatListEntry({
     chat,
@@ -122,19 +135,26 @@ const Topic: FC<OwnProps & StateProps> = ({
     typingStatus,
 
     animationType,
-    animationLevel,
+    withInterfaceAnimations,
     orderDiff,
   });
 
-  const handleOpenTopic = useCallback(() => {
+  const handleOpenTopic = useLastCallback(() => {
     openChat({ id: chatId, threadId: topic.id, shouldReplaceHistory: true });
 
     if (canScrollDown) {
       focusLastMessage();
     }
-  }, [openChat, chatId, topic.id, canScrollDown, focusLastMessage]);
+  });
 
-  const contextActions = useTopicContextActions(topic, chat, wasTopicOpened, canDelete, handleOpenDeleteModal);
+  const contextActions = useTopicContextActions({
+    topic,
+    chat,
+    wasOpened: wasTopicOpened,
+    canDelete,
+    handleDelete: handleOpenDeleteModal,
+    handleMute,
+  });
 
   return (
     <ListItem
@@ -146,20 +166,22 @@ const Topic: FC<OwnProps & StateProps> = ({
       )}
       onClick={handleOpenTopic}
       style={style}
-      href={IS_MULTITAB_SUPPORTED ? `#${createLocationHash(chatId, 'thread', topic.id)}` : undefined}
+      href={IS_OPEN_IN_NEW_TAB_SUPPORTED ? `#${createLocationHash(chatId, 'thread', topic.id)}` : undefined}
       contextActions={contextActions}
+      withPortalForMenu
       ref={ref}
     >
       <div className="info">
         <div className="info-row">
           <div className={buildClassName('title')}>
-            <TopicIcon topic={topic} className={styles.topicIcon} />
+            <TopicIcon topic={topic} className={styles.topicIcon} observeIntersection={observeIntersection} />
             <h3 dir="auto" className="fullName">{renderText(topic.title)}</h3>
           </div>
-          {topic.isMuted && <i className="icon-muted" />}
+          {topic.isMuted && <i className="icon icon-muted" />}
           <div className="separator" />
           {isClosed && (
             <i className={buildClassName(
+              'icon',
               'icon-lock-badge',
               styles.closedIcon,
             )}
@@ -174,7 +196,7 @@ const Topic: FC<OwnProps & StateProps> = ({
         </div>
         <div className="subtitle">
           {renderSubtitle()}
-          <Badge
+          <ChatBadge
             chat={chat}
             isPinned={isPinned}
             isMuted={isMuted}
@@ -183,7 +205,6 @@ const Topic: FC<OwnProps & StateProps> = ({
           />
         </div>
       </div>
-
       {shouldRenderDeleteModal && (
         <ConfirmDialog
           isOpen={isDeleteModalOpen}
@@ -193,6 +214,15 @@ const Topic: FC<OwnProps & StateProps> = ({
           confirmHandler={handleDelete}
           text={lang('lng_forum_topic_delete_sure')}
           confirmLabel={lang('Delete')}
+        />
+      )}
+      {shouldRenderMuteModal && (
+        <MuteChatModal
+          isOpen={isMuteModalOpen}
+          onClose={closeMuteModal}
+          onCloseAnimationEnd={unmarkRenderMuteModal}
+          chatId={chatId}
+          topicId={topic.id}
         />
       )}
     </ListItem>
@@ -228,7 +258,7 @@ export default memo(withGlobal<OwnProps>(
       lastMessageSender,
       typingStatus,
       canDelete: selectCanDeleteTopic(global, chatId, topic.id),
-      animationLevel: global.settings.byKey.animationLevel,
+      withInterfaceAnimations: selectCanAnimateInterface(global),
       draft,
       ...(isOutgoing && lastMessage && {
         lastMessageOutgoingStatus: selectOutgoingStatus(global, lastMessage),

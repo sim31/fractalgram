@@ -1,18 +1,20 @@
+import type { ApiLimitType, CallbackAction } from '../../global/types';
 import type { ApiDocument, ApiPhoto, ApiReaction } from './messages';
 import type { ApiUser } from './users';
-import type { ApiLimitType, CallbackAction } from '../../global/types';
 
 export interface ApiInitialArgs {
   userAgent: string;
   platform?: string;
   sessionData?: ApiSessionData;
   isTest?: boolean;
-  isMovSupported?: boolean;
   isWebmSupported?: boolean;
   maxBufferSize?: number;
   webAuthToken?: string;
   dcId?: number;
   mockScenario?: string;
+  shouldAllowHttpTransport?: boolean;
+  shouldForceHttpTransport?: boolean;
+  shouldDebugExportedSenders?: boolean;
 }
 
 export interface ApiOnProgress {
@@ -22,7 +24,6 @@ export interface ApiOnProgress {
   ): void;
 
   isCanceled?: boolean;
-  acceptsBuffer?: boolean;
 }
 
 export interface ApiAttachment {
@@ -107,8 +108,9 @@ export type ApiNotification = {
   title?: string;
   message: string;
   actionText?: string;
-  action?: CallbackAction;
+  action?: CallbackAction | CallbackAction[];
   className?: string;
+  duration?: number;
 };
 
 export type ApiError = {
@@ -153,6 +155,7 @@ export type ApiChatInviteImporter = {
   date: number;
   isRequested?: boolean;
   about?: string;
+  isFromChatList?: boolean;
 };
 
 export interface ApiCountry {
@@ -169,11 +172,11 @@ export interface ApiCountryCode extends ApiCountry {
 }
 
 export interface ApiAppConfig {
+  hash: number;
   emojiSounds: Record<string, string>;
   seenByMaxChatMembers: number;
   seenByExpiresAt: number;
   autologinDomains: string[];
-  autologinToken: string;
   urlAuthDomains: string[];
   premiumInvoiceSlug: string;
   premiumBotUsername: string;
@@ -187,6 +190,10 @@ export interface ApiAppConfig {
   hiddenMembersMinCount: number;
   limits: Record<ApiLimitType, readonly [number, number]>;
   canDisplayAutoarchiveSetting: boolean;
+  areStoriesHidden?: boolean;
+  storyExpirePeriod: number;
+  storyViewersExpirePeriod: number;
+  storyChangelogUserId: string;
 }
 
 export interface ApiConfig {
@@ -194,6 +201,7 @@ export interface ApiConfig {
   defaultReaction?: ApiReaction;
   gifSearchUsername?: string;
   maxGroupSize: number;
+  autologinToken?: string;
 }
 
 export interface GramJsEmojiInteraction {

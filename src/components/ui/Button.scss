@@ -14,7 +14,7 @@
 }
 
 @mixin no-ripple-styles() {
-  body.animation-level-0 & {
+  body.no-page-transitions & {
     &:not(.disabled):not(:disabled) {
       &:active {
         @content;
@@ -37,7 +37,7 @@
   padding: 0.625rem;
   color: white;
   line-height: 1.2;
-  cursor: pointer;
+  cursor: var(--custom-cursor, pointer);
   text-transform: uppercase;
   flex-shrink: 0;
   position: relative;
@@ -50,13 +50,13 @@
   // @optimization
   &:active,
   &.clicked,
-  body.animation-level-0 & {
+  body.no-page-transitions & {
     transition: none !important;
   }
 
   &.disabled {
     opacity: 0.5 !important;
-    cursor: default;
+    cursor: var(--custom-cursor, default);
     &:not(.click-allowed) {
       pointer-events: none;
     }
@@ -66,7 +66,7 @@
     width: 3.5rem;
     border-radius: 50%;
 
-    i {
+    .icon {
       font-size: 1.5rem;
     }
   }
@@ -175,10 +175,9 @@
   }
 
   &.translucent {
+    --ripple-color: var(--color-interactive-element-hover);
     background-color: transparent;
     color: var(--color-text-secondary);
-
-    --ripple-color: var(--color-interactive-element-hover);
 
     @include active-styles() {
       background-color: var(--color-interactive-element-hover);
@@ -194,9 +193,9 @@
   }
 
   &.translucent-white {
+    --ripple-color: rgba(255, 255, 255, 0.08);
     background-color: transparent;
     color: rgba(255, 255, 255, 0.5);
-    --ripple-color: rgba(255, 255, 255, 0.08);
 
     @include active-styles() {
       background-color: rgba(255, 255, 255, 0.08);
@@ -209,9 +208,9 @@
   }
 
   &.translucent-black {
+    --ripple-color: rgba(0, 0, 0, 0.08);
     background-color: transparent;
     color: rgba(0, 0, 0, 0.8);
-    --ripple-color: rgba(0, 0, 0, 0.08);
 
     @include active-styles() {
       background-color: rgba(0, 0, 0, 0.08);
@@ -219,6 +218,22 @@
 
     @include no-ripple-styles() {
       background-color: rgba(0, 0, 0, 0.16);
+    }
+  }
+
+  &.translucent-bordered {
+    --ripple-color: rgba(0, 0, 0, 0.08);
+    background-color: transparent;
+    color: var(--accent-color);
+    border: 1px solid var(--accent-color);
+
+    @include active-styles() {
+      background-color: var(--accent-color);
+      color: var(--color-white);
+    }
+
+    @include no-ripple-styles() {
+      background-color: var(--active-color);
     }
   }
 
@@ -255,7 +270,7 @@
       padding-left: 0.75rem;
       padding-right: 1.25rem;
 
-      i {
+      .icon {
         font-size: 1.5rem;
         margin-right: 0.5rem;
       }
@@ -264,7 +279,7 @@
         padding-left: 1.25rem;
         padding-right: 0.75rem;
 
-        i {
+        .icon {
           margin-left: 0.5rem;
           margin-right: 0;
         }
@@ -293,7 +308,7 @@
       border-radius: 50%;
     }
 
-    i {
+    .icon {
       font-size: 1.25rem;
     }
 

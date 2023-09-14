@@ -2,13 +2,12 @@ import { useCallback, useRef } from '../lib/teact/teact';
 import { getActions } from '../lib/teact/teactn';
 
 import { IS_TEST } from '../config';
-import { fastRaf } from '../util/schedulers';
-import { IS_IOS } from '../util/environment';
-
-import useSyncEffect from './useSyncEffect';
+import { requestMeasure } from '../lib/fasterdom/fasterdom';
+import { IS_IOS } from '../util/windowEnvironment';
 import useEffectOnce from './useEffectOnce';
+import useLastCallback from './useLastCallback';
+import useSyncEffect from './useSyncEffect';
 
-export const LOCATION_HASH = window.location.hash;
 const PATH_BASE = `${window.location.pathname}${window.location.search}`;
 // Carefully selected by swiping and observing visual changes
 // TODO: may be different on other devices such as iPad, maybe take dpi into account?
@@ -110,7 +109,10 @@ function processStateOperations(stateOperations: HistoryOperationState[]) {
 }
 
 function deferHistoryOperation(historyOperation: HistoryOperation) {
-  if (!deferredHistoryOperations.length) fastRaf(applyDeferredHistoryOperations);
+  if (!deferredHistoryOperations.length) {
+    requestMeasure(applyDeferredHistoryOperations);
+  }
+
   deferredHistoryOperations.push(historyOperation);
 }
 
@@ -229,15 +231,18 @@ window.addEventListener('popstate', ({ state }: PopStateEvent) => {
 export default function useHistoryBack({
   isActive,
   shouldBeReplaced,
+  shouldResetUrlHash,
   hash,
   onBack,
 }: {
   isActive?: boolean;
   shouldBeReplaced?: boolean;
   hash?: string;
-  title?: string;
+  shouldResetUrlHash?: boolean;
   onBack: VoidFunction;
 }) {
+  const lastOnBack = useLastCallback(onBack);
+
   // Active index of the record
   const indexRef = useRef<number>();
   const wasReplaced = useRef(false);
@@ -259,17 +264,12 @@ export default function useHistoryBack({
 
     historyState[indexRef.current] = {
       index: indexRef.current,
-      onBack,
+      onBack: lastOnBack,
       shouldBeReplaced,
       markReplaced: () => {
         wasReplaced.current = true;
       },
     };
-
-    // Delete forward navigation in the virtual history. Not really needed, just looks better when debugging `logState`
-    for (let i = indexRef.current + 1; i < historyState.length; i++) {
-      delete historyState[i];
-    }
 
     deferHistoryOperation({
       type: shouldReplace ? 'replaceState' : 'pushState',
@@ -277,9 +277,10 @@ export default function useHistoryBack({
         index: indexRef.current,
         historyUniqueSessionId,
       },
-      hash: hash ? `#${hash}` : undefined,
+      // Space is a hack to make the browser completely remove the hash
+      hash: hash ? `#${hash}` : (shouldResetUrlHash ? ' ' : undefined),
     });
-  }, [hash, onBack, shouldBeReplaced]);
+  }, [hash, shouldBeReplaced, shouldResetUrlHash]);
 
   const processBack = useCallback(() => {
     // Only process back on open records

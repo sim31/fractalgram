@@ -9,24 +9,27 @@ import type { ApiChat } from '../../../api/types';
 import { ManagementProgress } from '../../../types';
 
 import { PURCHASE_USERNAME, TME_LINK_PREFIX, USERNAME_PURCHASE_ERROR } from '../../../config';
-import { selectChat, selectTabState, selectManagement } from '../../../global/selectors';
 import { isChatChannel, isChatPublic } from '../../../global/helpers';
+import {
+  selectChat, selectChatFullInfo,
+  selectManagement, selectTabState,
+} from '../../../global/selectors';
 import { selectCurrentLimit } from '../../../global/selectors/limits';
 
 import useFlag from '../../../hooks/useFlag';
-import useLang from '../../../hooks/useLang';
 import useHistoryBack from '../../../hooks/useHistoryBack';
+import useLang from '../../../hooks/useLang';
 import usePrevious from '../../../hooks/usePrevious';
 
+import ManageUsernames from '../../common/ManageUsernames';
 import SafeLink from '../../common/SafeLink';
-import ListItem from '../../ui/ListItem';
-import RadioGroup from '../../ui/RadioGroup';
-import Loading from '../../ui/Loading';
-import Spinner from '../../ui/Spinner';
-import FloatingActionButton from '../../ui/FloatingActionButton';
 import UsernameInput from '../../common/UsernameInput';
 import ConfirmDialog from '../../ui/ConfirmDialog';
-import ManageUsernames from '../../common/ManageUsernames';
+import FloatingActionButton from '../../ui/FloatingActionButton';
+import ListItem from '../../ui/ListItem';
+import Loading from '../../ui/Loading';
+import RadioGroup from '../../ui/RadioGroup';
+import Spinner from '../../ui/Spinner';
 
 type PrivacyType = 'private' | 'public';
 
@@ -45,6 +48,7 @@ type StateProps = {
   error?: string;
   isProtected?: boolean;
   maxPublicLinks: number;
+  privateInviteLink?: string;
 };
 
 const ManageChatPrivacyType: FC<OwnProps & StateProps> = ({
@@ -57,6 +61,7 @@ const ManageChatPrivacyType: FC<OwnProps & StateProps> = ({
   error,
   isProtected,
   maxPublicLinks,
+  privateInviteLink,
   onClose,
 }) => {
   const {
@@ -64,12 +69,12 @@ const ManageChatPrivacyType: FC<OwnProps & StateProps> = ({
     updatePrivateLink,
     toggleIsProtected,
     openLimitReachedModal,
+    resetManagementError,
   } = getActions();
 
   const firstEditableUsername = useMemo(() => chat.usernames?.find(({ isEditable }) => isEditable), [chat.usernames]);
   const currentUsername = firstEditableUsername?.username || '';
   const isPublic = useMemo(() => isChatPublic(chat), [chat]);
-  const privateLink = chat.fullInfo?.inviteLink;
 
   const [isProfileFieldsTouched, setIsProfileFieldsTouched] = useState(false);
   const [privacyType, setPrivacyType] = useState<PrivacyType>(isPublic ? 'public' : 'private');
@@ -97,15 +102,21 @@ const ManageChatPrivacyType: FC<OwnProps & StateProps> = ({
   }, [currentUsername]);
 
   useEffect(() => {
-    if (privacyType && !privateLink) {
+    if (privacyType && !privateInviteLink) {
       updatePrivateLink();
     }
-  }, [privacyType, privateLink, updatePrivateLink]);
+  }, [privacyType, privateInviteLink, updatePrivateLink]);
 
   const handleUsernameChange = useCallback((value: string) => {
     setEditableUsername(value);
     setIsProfileFieldsTouched(true);
-  }, []);
+
+    if (error) {
+      resetManagementError({
+        chatId: chat.id,
+      });
+    }
+  }, [chat.id, error]);
 
   const handleOptionChange = useCallback((value: string, e: ChangeEvent<HTMLInputElement>) => {
     const myChats = Object.values(getGlobal().chats.byId)
@@ -135,12 +146,12 @@ const ManageChatPrivacyType: FC<OwnProps & StateProps> = ({
     if (isPublic && privacyType === 'private') {
       openUsernameLostDialog();
     } else {
-      updatePublicLink({ username: privacyType === 'public' ? editableUsername : '' });
+      updatePublicLink({ username: privacyType === 'public' ? (editableUsername || '') : '' });
     }
   }, [isPublic, openUsernameLostDialog, privacyType, updatePublicLink, editableUsername]);
 
   const handleMakeChannelPrivateConfirm = useCallback(() => {
-    updatePublicLink({ username: '' });
+    updatePublicLink({ username: '', shouldDisableUsernames: true });
     closeUsernameLostDialog();
   }, [closeUsernameLostDialog, updatePublicLink]);
 
@@ -167,7 +178,7 @@ const ManageChatPrivacyType: FC<OwnProps & StateProps> = ({
   }];
 
   const isLoading = progress === ManagementProgress.InProgress;
-  const shouldRenderUsernamesManage = privacyType === 'public' && chat.usernames && chat.usernames.length > 1;
+  const shouldRenderUsernamesManage = privacyType === 'public' && chat.usernames && chat.usernames.length > 0;
 
   function renderPurchaseLink() {
     const purchaseInfoLink = `${TME_LINK_PREFIX}${PURCHASE_USERNAME}`;
@@ -198,9 +209,9 @@ const ManageChatPrivacyType: FC<OwnProps & StateProps> = ({
         </div>
         {privacyType === 'private' ? (
           <div className="section" dir={lang.isRtl ? 'rtl' : undefined}>
-            {privateLink ? (
+            {privateInviteLink ? (
               <>
-                <SafeLink url={privateLink} className="group-link" text={privateLink} />
+                <SafeLink url={privateInviteLink} className="group-link" text={privateInviteLink} />
                 <p className="section-info" dir={lang.isRtl ? 'rtl' : undefined}>
                   {lang(`${langPrefix1}PrivateLinkHelp`)}
                 </p>
@@ -270,7 +281,7 @@ const ManageChatPrivacyType: FC<OwnProps & StateProps> = ({
         {isLoading ? (
           <Spinner color="white" />
         ) : (
-          <i className="icon-check" />
+          <i className="icon icon-check" />
         )}
       </FloatingActionButton>
       <ConfirmDialog
@@ -298,6 +309,7 @@ export default memo(withGlobal<OwnProps>(
       checkedUsername,
       isProtected: chat?.isProtected,
       maxPublicLinks: selectCurrentLimit(global, 'channelsPublic'),
+      privateInviteLink: selectChatFullInfo(global, chatId)?.inviteLink,
     };
   },
 )(ManageChatPrivacyType));

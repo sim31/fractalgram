@@ -1,41 +1,43 @@
 import { Api as GramJs } from '../../../lib/gramjs';
+
 import type {
   ApiEmojiStatus,
   ApiPremiumGiftOption,
   ApiUser,
+  ApiUserFullInfo,
   ApiUserStatus,
   ApiUserType,
 } from '../../types';
-import { buildApiPeerId } from './peers';
+
 import { buildApiBotInfo } from './bots';
 import { buildApiPhoto, buildApiUsernames } from './common';
+import { buildApiPeerId } from './peers';
 
-export function buildApiUserFromFull(mtpUserFull: GramJs.users.UserFull): ApiUser {
+export function buildApiUserFullInfo(mtpUserFull: GramJs.users.UserFull): ApiUserFullInfo {
   const {
     fullUser: {
       about, commonChatsCount, pinnedMsgId, botInfo, blocked,
       profilePhoto, voiceMessagesForbidden, premiumGifts,
-      fallbackPhoto, personalPhoto,
+      fallbackPhoto, personalPhoto, translationsDisabled, storiesPinnedAvailable,
     },
     users,
   } = mtpUserFull;
 
-  const user = buildApiUser(users[0])!;
+  const userId = buildApiPeerId(users[0].id, 'user');
 
   return {
-    ...user,
-    fullInfo: {
-      ...(profilePhoto instanceof GramJs.Photo && { profilePhoto: buildApiPhoto(profilePhoto) }),
-      ...(fallbackPhoto instanceof GramJs.Photo && { fallbackPhoto: buildApiPhoto(fallbackPhoto) }),
-      ...(personalPhoto instanceof GramJs.Photo && { personalPhoto: buildApiPhoto(personalPhoto) }),
-      bio: about,
-      commonChatsCount,
-      pinnedMessageId: pinnedMsgId,
-      isBlocked: Boolean(blocked),
-      noVoiceMessages: voiceMessagesForbidden,
-      ...(premiumGifts && { premiumGifts: premiumGifts.map((gift) => buildApiPremiumGiftOption(gift)) }),
-      ...(botInfo && { botInfo: buildApiBotInfo(botInfo, user.id) }),
-    },
+    bio: about,
+    commonChatsCount,
+    pinnedMessageId: pinnedMsgId,
+    isBlocked: Boolean(blocked),
+    noVoiceMessages: voiceMessagesForbidden,
+    hasPinnedStories: Boolean(storiesPinnedAvailable),
+    isTranslationDisabled: translationsDisabled,
+    profilePhoto: profilePhoto instanceof GramJs.Photo ? buildApiPhoto(profilePhoto) : undefined,
+    fallbackPhoto: fallbackPhoto instanceof GramJs.Photo ? buildApiPhoto(fallbackPhoto) : undefined,
+    personalPhoto: personalPhoto instanceof GramJs.Photo ? buildApiPhoto(personalPhoto) : undefined,
+    ...(premiumGifts && { premiumGifts: premiumGifts.map((gift) => buildApiPremiumGiftOption(gift)) }),
+    ...(botInfo && { botInfo: buildApiBotInfo(botInfo, userId) }),
   };
 }
 
@@ -45,7 +47,7 @@ export function buildApiUser(mtpUser: GramJs.TypeUser): ApiUser | undefined {
   }
 
   const {
-    id, firstName, lastName, fake, scam,
+    id, firstName, lastName, fake, scam, support, closeFriend, storiesUnavailable, storiesMaxId,
   } = mtpUser;
   const hasVideoAvatar = mtpUser.photo instanceof GramJs.UserProfilePhoto
     ? Boolean(mtpUser.photo.hasVideo)
@@ -64,11 +66,13 @@ export function buildApiUser(mtpUser: GramJs.TypeUser): ApiUser | undefined {
     ...(mtpUser.self && { isSelf: true }),
     isPremium: Boolean(mtpUser.premium),
     ...(mtpUser.verified && { isVerified: true }),
+    ...(closeFriend && { isCloseFriend: true }),
+    ...(support && { isSupport: true }),
     ...((mtpUser.contact || mtpUser.mutualContact) && { isContact: true }),
     type: userType,
-    ...(firstName && { firstName }),
+    firstName,
+    lastName,
     ...(userType === 'userTypeBot' && { canBeInvitedToGroup: !mtpUser.botNochats }),
-    ...(lastName && { lastName }),
     ...(usernames && { usernames }),
     phoneNumber: mtpUser.phone || '',
     noStatus: !mtpUser.status,
@@ -76,6 +80,9 @@ export function buildApiUser(mtpUser: GramJs.TypeUser): ApiUser | undefined {
     ...(avatarHash && { avatarHash }),
     emojiStatus,
     hasVideoAvatar,
+    areStoriesHidden: Boolean(mtpUser.storiesHidden),
+    maxStoryId: storiesMaxId,
+    hasStories: Boolean(storiesMaxId) && !storiesUnavailable,
     ...(mtpUser.bot && mtpUser.botInlinePlaceholder && { botPlaceholder: mtpUser.botInlinePlaceholder }),
     ...(mtpUser.bot && mtpUser.botAttachMenu && { isAttachBot: mtpUser.botAttachMenu }),
   };
@@ -122,7 +129,7 @@ export function buildApiUserEmojiStatus(mtpEmojiStatus: GramJs.TypeEmojiStatus):
 
 export function buildApiUsersAndStatuses(mtpUsers: GramJs.TypeUser[]) {
   const userStatusesById: Record<string, ApiUserStatus> = {};
-  const users: ApiUser[] = [];
+  const usersById: Record<string, ApiUser> = {};
 
   mtpUsers.forEach((mtpUser) => {
     const user = buildApiUser(mtpUser);
@@ -130,14 +137,17 @@ export function buildApiUsersAndStatuses(mtpUsers: GramJs.TypeUser[]) {
       return;
     }
 
-    users.push(user);
+    const duplicateUser = usersById[user.id];
+    if (!duplicateUser || duplicateUser.isMin) {
+      usersById[user.id] = user;
+    }
 
     if ('status' in mtpUser) {
       userStatusesById[user.id] = buildApiUserStatus(mtpUser.status);
     }
   });
 
-  return { users, userStatusesById };
+  return { users: Object.values(usersById), userStatusesById };
 }
 
 export function buildApiPremiumGiftOption(option: GramJs.TypePremiumGiftOption): ApiPremiumGiftOption {

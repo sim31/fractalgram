@@ -4,12 +4,13 @@ import { getActions } from '../global';
 import type { ApiChat, ApiUser } from '../api/types';
 import type { MenuItemContextAction } from '../components/ui/ListItem';
 
-import { IS_MULTITAB_SUPPORTED } from '../util/environment';
-import { SERVICE_NOTIFICATIONS_USER_ID } from '../config';
+import { IS_ELECTRON, SERVICE_NOTIFICATIONS_USER_ID } from '../config';
 import {
-  isChatArchived, getCanDeleteChat, isUserId, isChatChannel, isChatGroup,
+  getCanDeleteChat, isChatArchived, isChatChannel, isChatGroup,
+  isUserId,
 } from '../global/helpers';
 import { compact } from '../util/iteratees';
+import { IS_OPEN_IN_NEW_TAB_SUPPORTED } from '../util/windowEnvironment';
 import useLang from './useLang';
 
 const useChatContextActions = ({
@@ -20,6 +21,7 @@ const useChatContextActions = ({
   isMuted,
   canChangeFolder,
   handleDelete,
+  handleMute,
   handleChatFolderChange,
   handleReport,
 }: {
@@ -29,9 +31,10 @@ const useChatContextActions = ({
   isPinned?: boolean;
   isMuted?: boolean;
   canChangeFolder?: boolean;
-  handleDelete: () => void;
-  handleChatFolderChange: () => void;
-  handleReport?: () => void;
+  handleDelete?: NoneToVoidFunction;
+  handleMute?: NoneToVoidFunction;
+  handleChatFolderChange: NoneToVoidFunction;
+  handleReport?: NoneToVoidFunction;
 }, isInSearch = false) => {
   const lang = useLang();
 
@@ -51,15 +54,13 @@ const useChatContextActions = ({
       openChatInNewTab,
     } = getActions();
 
-    const actionOpenInNewTab = IS_MULTITAB_SUPPORTED && {
-      title: 'Open in new tab',
+    const actionOpenInNewTab = IS_OPEN_IN_NEW_TAB_SUPPORTED && {
+      title: IS_ELECTRON ? 'Open in new window' : 'Open in new tab',
       icon: 'open-in-new-tab',
       handler: () => {
         openChatInNewTab({ chatId: chat.id });
       },
     };
-
-    const newTabActionSeparator = actionOpenInNewTab && { isSeparator: true, key: 'newTabSeparator' };
 
     const actionAddToFolder = canChangeFolder ? {
       title: lang('ChatList.Filter.AddToFolder'),
@@ -75,8 +76,20 @@ const useChatContextActions = ({
       }
       : { title: lang('PinToTop'), icon: 'pin', handler: () => toggleChatPinned({ id: chat.id, folderId: folderId! }) };
 
+    const actionMute = isMuted
+      ? {
+        title: lang('ChatList.Unmute'),
+        icon: 'unmute',
+        handler: () => updateChatMutedState({ chatId: chat.id, isMuted: false }),
+      }
+      : {
+        title: `${lang('ChatList.Mute')}...`,
+        icon: 'mute',
+        handler: handleMute,
+      };
+
     if (isInSearch) {
-      return compact([actionOpenInNewTab, actionPin, actionAddToFolder]);
+      return compact([actionOpenInNewTab, actionPin, actionAddToFolder, actionMute]) as MenuItemContextAction[];
     }
 
     const actionMaskAsRead = (chat.unreadCount || chat.hasUnreadMark)
@@ -85,18 +98,6 @@ const useChatContextActions = ({
     const actionMarkAsUnread = !(chat.unreadCount || chat.hasUnreadMark) && !chat.isForum
       ? { title: lang('MarkAsUnread'), icon: 'unread', handler: () => toggleChatUnread({ id: chat.id }) }
       : undefined;
-
-    const actionMute = isMuted
-      ? {
-        title: lang('ChatList.Unmute'),
-        icon: 'unmute',
-        handler: () => updateChatMutedState({ chatId: chat.id, isMuted: false }),
-      }
-      : {
-        title: lang('ChatList.Mute'),
-        icon: 'mute',
-        handler: () => updateChatMutedState({ chatId: chat.id, isMuted: true }),
-      };
 
     const actionArchive = isChatArchived(chat)
       ? { title: lang('Unarchive'), icon: 'unarchive', handler: () => toggleChatArchived({ id: chat.id }) }
@@ -122,7 +123,6 @@ const useChatContextActions = ({
 
     return compact([
       actionOpenInNewTab,
-      newTabActionSeparator,
       actionAddToFolder,
       actionMaskAsRead,
       actionMarkAsUnread,
@@ -134,7 +134,7 @@ const useChatContextActions = ({
     ]) as MenuItemContextAction[];
   }, [
     chat, user, canChangeFolder, lang, handleChatFolderChange, isPinned, isInSearch, isMuted,
-    handleDelete, handleReport, folderId, isSelf, isServiceNotifications,
+    handleDelete, handleMute, handleReport, folderId, isSelf, isServiceNotifications,
   ]);
 };
 

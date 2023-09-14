@@ -5,27 +5,33 @@ import React, {
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { ApiUser } from '../../../api/types';
+import type { ApiPhoto, ApiUser } from '../../../api/types';
 import { ManagementProgress } from '../../../types';
 
 import { SERVICE_NOTIFICATIONS_USER_ID } from '../../../config';
-import {
-  selectChat, selectTabState, selectNotifyExceptions, selectNotifySettings, selectUser,
-} from '../../../global/selectors';
 import { isUserBot, selectIsChatMuted } from '../../../global/helpers';
-import useFlag from '../../../hooks/useFlag';
-import useLang from '../../../hooks/useLang';
-import useHistoryBack from '../../../hooks/useHistoryBack';
+import {
+  selectChat,
+  selectNotifyExceptions,
+  selectNotifySettings,
+  selectTabState,
+  selectUser,
+  selectUserFullInfo,
+} from '../../../global/selectors';
 
+import useFlag from '../../../hooks/useFlag';
+import useHistoryBack from '../../../hooks/useHistoryBack';
+import useLang from '../../../hooks/useLang';
+
+import Avatar from '../../common/Avatar';
+import PrivateChatInfo from '../../common/PrivateChatInfo';
+import Checkbox from '../../ui/Checkbox';
+import ConfirmDialog from '../../ui/ConfirmDialog';
+import FloatingActionButton from '../../ui/FloatingActionButton';
 import InputText from '../../ui/InputText';
 import ListItem from '../../ui/ListItem';
-import Checkbox from '../../ui/Checkbox';
-import FloatingActionButton from '../../ui/FloatingActionButton';
-import Spinner from '../../ui/Spinner';
-import PrivateChatInfo from '../../common/PrivateChatInfo';
-import ConfirmDialog from '../../ui/ConfirmDialog';
 import SelectAvatar from '../../ui/SelectAvatar';
-import Avatar from '../../common/Avatar';
+import Spinner from '../../ui/Spinner';
 
 import './Management.scss';
 
@@ -39,6 +45,8 @@ type StateProps = {
   user?: ApiUser;
   progress?: ManagementProgress;
   isMuted?: boolean;
+  personalPhoto?: ApiPhoto;
+  notPersonalPhoto?: ApiPhoto;
 };
 
 const ERROR_FIRST_NAME_MISSING = 'Please provide first name';
@@ -50,6 +58,8 @@ const ManageUser: FC<OwnProps & StateProps> = ({
   isMuted,
   onClose,
   isActive,
+  personalPhoto,
+  notPersonalPhoto,
 }) => {
   const {
     updateContact,
@@ -101,7 +111,11 @@ const ManageUser: FC<OwnProps & StateProps> = ({
   const handleFirstNameChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     setFirstName(e.target.value);
     setIsProfileFieldsTouched(true);
-  }, []);
+
+    if (error === ERROR_FIRST_NAME_MISSING) {
+      setError(undefined);
+    }
+  }, [error]);
 
   const handleLastNameChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     setLastName(e.target.value);
@@ -119,6 +133,7 @@ const ManageUser: FC<OwnProps & StateProps> = ({
 
     if (!trimmedFirstName.length) {
       setError(ERROR_FIRST_NAME_MISSING);
+      return;
     }
 
     updateContact({
@@ -166,8 +181,6 @@ const ManageUser: FC<OwnProps & StateProps> = ({
 
   const canSetPersonalPhoto = !isUserBot(user) && user.id !== SERVICE_NOTIFICATIONS_USER_ID;
   const isLoading = progress === ManagementProgress.InProgress;
-  const personalPhoto = user.fullInfo?.personalPhoto;
-  const notPersonalPhoto = user.fullInfo?.profilePhoto || user.fullInfo?.fallbackPhoto;
 
   return (
     <div className="Management">
@@ -176,7 +189,8 @@ const ManageUser: FC<OwnProps & StateProps> = ({
           <PrivateChatInfo
             userId={user.id}
             avatarSize="jumbo"
-            status="original name"
+            noStatusOrTyping
+            noEmojiStatus
             withFullInfo
           />
           <InputText
@@ -192,7 +206,7 @@ const ManageUser: FC<OwnProps & StateProps> = ({
             onChange={handleLastNameChange}
             value={lastName}
           />
-          <div className="ListItem no-selection narrow">
+          <div className="ListItem narrow">
             <Checkbox
               checked={isNotificationsEnabled}
               label={lang('Notifications')}
@@ -206,10 +220,10 @@ const ManageUser: FC<OwnProps & StateProps> = ({
         {canSetPersonalPhoto && (
           <div className="section">
             <ListItem icon="camera-add" ripple onClick={handleSuggestPhoto}>
-              {lang('UserInfo.SuggestPhoto', user.firstName)}
+              <span className="list-item-ellipsis">{lang('UserInfo.SuggestPhoto', user.firstName)}</span>
             </ListItem>
             <ListItem icon="camera-add" ripple onClick={handleSetPersonalPhoto}>
-              {lang('UserInfo.SetCustomPhoto', user.firstName)}
+              <span className="list-item-ellipsis">{lang('UserInfo.SetCustomPhoto', user.firstName)}</span>
             </ListItem>
             {personalPhoto && (
               <ListItem
@@ -217,7 +231,7 @@ const ManageUser: FC<OwnProps & StateProps> = ({
                   <Avatar
                     photo={notPersonalPhoto}
                     noPersonalPhoto
-                    user={user}
+                    peer={user}
                     size="mini"
                     className="personal-photo"
                   />
@@ -246,7 +260,7 @@ const ManageUser: FC<OwnProps & StateProps> = ({
         {isLoading ? (
           <Spinner color="white" />
         ) : (
-          <i className="icon-check" />
+          <i className="icon icon-check" />
         )}
       </FloatingActionButton>
       <ConfirmDialog
@@ -277,11 +291,14 @@ export default memo(withGlobal<OwnProps>(
   (global, { userId }): StateProps => {
     const user = selectUser(global, userId);
     const chat = selectChat(global, userId);
+    const userFullInfo = selectUserFullInfo(global, userId);
     const { progress } = selectTabState(global).management;
     const isMuted = chat && selectIsChatMuted(chat, selectNotifySettings(global), selectNotifyExceptions(global));
+    const personalPhoto = userFullInfo?.personalPhoto;
+    const notPersonalPhoto = userFullInfo?.profilePhoto || userFullInfo?.fallbackPhoto;
 
     return {
-      user, progress, isMuted,
+      user, progress, isMuted, personalPhoto, notPersonalPhoto,
     };
   },
 )(ManageUser));

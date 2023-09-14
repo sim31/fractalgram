@@ -1,63 +1,85 @@
 import type { RefObject } from 'react';
-import type { FC } from '../../lib/teact/teact';
-import React, { useLayoutEffect, useRef } from '../../lib/teact/teact';
+import React, { useEffect, useLayoutEffect, useRef } from '../../lib/teact/teact';
+import {
+  addExtraClass, removeExtraClass, setExtraStyles, toggleExtraClass,
+} from '../../lib/teact/teact-dom';
 import { getGlobal } from '../../global';
-import type { GlobalState } from '../../global/types';
 
-import { ANIMATION_LEVEL_MIN } from '../../config';
+import { requestForcedReflow, requestMutation } from '../../lib/fasterdom/fasterdom';
+import { selectCanAnimateInterface } from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
-import forceReflow from '../../util/forceReflow';
 import { waitForAnimationEnd, waitForTransitionEnd } from '../../util/cssAnimationEndListeners';
+import forceReflow from '../../util/forceReflow';
+
 import useForceUpdate from '../../hooks/useForceUpdate';
-import usePrevious from '../../hooks/usePrevious';
 import { dispatchHeavyAnimationEvent } from '../../hooks/useHeavyAnimationCheck';
+import usePrevious from '../../hooks/usePrevious';
 
 import './Transition.scss';
 
+type AnimationName = (
+  'none' | 'slide' | 'slideRtl' | 'slideFade' | 'zoomFade' | 'slideLayers'
+  | 'fade' | 'pushSlide' | 'reveal' | 'slideOptimized' | 'slideOptimizedRtl' | 'semiFade'
+  | 'slideVertical' | 'slideVerticalFade'
+);
 export type ChildrenFn = (isActive: boolean, isFrom: boolean, currentKey: number) => React.ReactNode;
 export type TransitionProps = {
   ref?: RefObject<HTMLDivElement>;
   activeKey: number;
-  name: (
-    'none' | 'slide' | 'slide-rtl' | 'mv-slide' | 'slide-fade' | 'zoom-fade' | 'slide-layers'
-    | 'fade' | 'push-slide' | 'reveal' | 'slide-optimized' | 'slide-optimized-rtl'
-  );
+  nextKey?: number;
+  name: AnimationName;
   direction?: 'auto' | 'inverse' | 1 | -1;
   renderCount?: number;
   shouldRestoreHeight?: boolean;
   shouldCleanup?: boolean;
   cleanupExceptionKey?: number;
-  isDisabled?: boolean;
+  // Used by async components which are usually remounted during first animation
+  shouldWrap?: boolean;
+  wrapExceptionKey?: number;
   id?: string;
   className?: string;
+  slideClassName?: string;
   onStart?: NoneToVoidFunction;
   onStop?: NoneToVoidFunction;
   children: React.ReactNode | ChildrenFn;
 };
 
-const classNames = {
-  active: 'Transition__slide--active',
-};
 const FALLBACK_ANIMATION_END = 1000;
+const CLASSES = {
+  slide: 'Transition_slide',
+  active: 'Transition_slide-active',
+  from: 'Transition_slide-from',
+  to: 'Transition_slide-to',
+  inactive: 'Transition_slide-inactive',
+};
+const DISABLEABLE_ANIMATIONS = new Set<AnimationName>([
+  'slide', 'slideRtl', 'slideFade', 'zoomFade', 'slideLayers', 'pushSlide', 'reveal',
+  'slideOptimized', 'slideOptimizedRtl', 'slideVertical', 'slideVerticalFade',
+]);
 
-const Transition: FC<TransitionProps> = ({
+function Transition({
   ref,
   activeKey,
+  nextKey,
   name,
   direction = 'auto',
   renderCount,
   shouldRestoreHeight,
   shouldCleanup,
   cleanupExceptionKey,
+  shouldWrap,
+  wrapExceptionKey,
   id,
   className,
+  slideClassName,
   onStart,
   onStop,
   children,
-}) => {
-  // No need for a container to update on change
-  const { animationLevel } = getGlobal().settings.byKey;
+}: TransitionProps) {
   const currentKeyRef = useRef<number>();
+  // No need for a container to update on change
+  const shouldDisableAnimation = DISABLEABLE_ANIMATIONS.has(name)
+    && !selectCanAnimateInterface(getGlobal());
 
   // eslint-disable-next-line no-null/no-null
   let containerRef = useRef<HTMLDivElement>(null);
@@ -76,6 +98,15 @@ const Transition: FC<TransitionProps> = ({
   }
 
   rendersRef.current[activeKey] = children;
+  if (nextKey) {
+    rendersRef.current[nextKey] = children;
+  }
+
+  const isBackwards = (
+    direction === -1
+    || (direction === 'auto' && prevActiveKey > activeKey)
+    || (direction === 'inverse' && prevActiveKey < activeKey)
+  );
 
   useLayoutEffect(() => {
     function cleanup() {
@@ -90,65 +121,79 @@ const Transition: FC<TransitionProps> = ({
       forceUpdate();
     }
 
+    const isSlideOptimized = name === 'slideOptimized' || name === 'slideOptimizedRtl';
     const container = containerRef.current!;
+    const keys = Object.keys(rendersRef.current).map(Number);
+    const prevActiveIndex = renderCount ? prevActiveKey : keys.indexOf(prevActiveKey);
+    const activeIndex = renderCount ? activeKey : keys.indexOf(activeKey);
 
-    const childElements = container.children;
-    if (childElements.length === 1 && !activeKeyChanged) {
-      if (name.startsWith('slide-optimized')) {
-        (childElements[0] as HTMLElement).style.transition = 'none';
-        (childElements[0] as HTMLElement).style.transform = 'translate3d(0, 0, 0)';
-      }
-
-      childElements[0].classList.add(classNames.active);
-
+    const childNodes = Array.from(container.childNodes);
+    if (!childNodes.length) {
       return;
     }
 
-    const childNodes = Array.from(container.childNodes);
+    const childElements = Array.from(container.children) as HTMLElement[];
+    childElements.forEach((el) => {
+      addExtraClass(el, CLASSES.slide);
 
-    if (!activeKeyChanged || !childNodes.length) {
+      if (slideClassName) {
+        addExtraClass(el, slideClassName);
+      }
+    });
+
+    if (!activeKeyChanged) {
+      if (childElements.length === 1 || (nextKey !== undefined && childElements.length === 2)) {
+        const firstChild = childNodes[activeIndex] as HTMLElement;
+
+        addExtraClass(firstChild, CLASSES.active);
+
+        if (isSlideOptimized) {
+          setExtraStyles(firstChild, {
+            transition: 'none',
+            transform: 'translate3d(0, 0, 0)',
+          });
+        }
+
+        if (childElements.length === 2) {
+          const nextChild = childElements[0] === firstChild ? childElements[1] : childElements[0];
+          addExtraClass(nextChild, CLASSES.inactive);
+        }
+      }
+
       return;
     }
 
     currentKeyRef.current = activeKey;
 
-    const isBackwards = (
-      direction === -1
-      || (direction === 'auto' && prevActiveKey > activeKey)
-      || (direction === 'inverse' && prevActiveKey < activeKey)
-    );
-
-    const keys = Object.keys(rendersRef.current).map(Number);
-    const prevActiveIndex = renderCount ? prevActiveKey : keys.indexOf(prevActiveKey);
-    const activeIndex = renderCount ? activeKey : keys.indexOf(activeKey);
-
-    if (name === 'slide-optimized' || name === 'slide-optimized-rtl') {
+    if (isSlideOptimized) {
+      if (!childNodes[activeIndex]) {
+        return;
+      }
       performSlideOptimized(
-        animationLevel,
+        shouldDisableAnimation,
         name,
         isBackwards,
         cleanup,
         activeKey,
         currentKeyRef,
         container,
+        childNodes[activeIndex],
+        childNodes[prevActiveIndex],
         shouldRestoreHeight,
         onStart,
         onStop,
-        childNodes[activeIndex] as HTMLElement,
-        childNodes[prevActiveIndex] as HTMLElement,
       );
 
       return;
     }
 
-    container.classList.remove('animating');
-    container.classList.toggle('backwards', isBackwards);
-
-    if (name === 'none' || animationLevel === ANIMATION_LEVEL_MIN) {
+    if (name === 'none' || shouldDisableAnimation) {
       childNodes.forEach((node, i) => {
         if (node instanceof HTMLElement) {
-          node.classList.remove('from', 'through', 'to');
-          node.classList.toggle(classNames.active, i === activeIndex);
+          removeExtraClass(node, CLASSES.from);
+          removeExtraClass(node, CLASSES.to);
+          toggleExtraClass(node, CLASSES.active, i === activeIndex);
+          toggleExtraClass(node, CLASSES.inactive, i !== activeIndex);
         }
       });
 
@@ -159,96 +204,108 @@ const Transition: FC<TransitionProps> = ({
 
     childNodes.forEach((node, i) => {
       if (node instanceof HTMLElement) {
-        node.classList.remove(classNames.active);
-        node.classList.toggle('from', i === prevActiveIndex);
-        node.classList.toggle('through', (
-          (i > prevActiveIndex && i < activeIndex) || (i < prevActiveIndex && i > activeIndex)
-        ));
-        node.classList.toggle('to', i === activeIndex);
+        removeExtraClass(node, CLASSES.active);
+        toggleExtraClass(node, CLASSES.from, i === prevActiveIndex);
+        toggleExtraClass(node, CLASSES.to, i === activeIndex);
+        toggleExtraClass(node, CLASSES.inactive, i !== prevActiveIndex && i !== activeIndex);
       }
     });
 
     const dispatchHeavyAnimationStop = dispatchHeavyAnimationEvent();
+    onStart?.();
 
-    requestAnimationFrame(() => {
-      container.classList.add('animating');
+    toggleExtraClass(container, `Transition-${name}`, !isBackwards);
+    toggleExtraClass(container, `Transition-${name}Backwards`, isBackwards);
 
-      onStart?.();
+    function onAnimationEnd() {
+      const activeElement = container.querySelector<HTMLDivElement>(`.${CLASSES.active}`);
+      const { clientHeight } = activeElement || {};
 
-      function onAnimationEnd() {
-        requestAnimationFrame(() => {
-          if (activeKey !== currentKeyRef.current) {
-            return;
+      requestMutation(() => {
+        if (activeKey !== currentKeyRef.current) {
+          return;
+        }
+
+        removeExtraClass(container, `Transition-${name}`);
+        removeExtraClass(container, `Transition-${name}Backwards`);
+
+        childNodes.forEach((node, i) => {
+          if (node instanceof HTMLElement) {
+            removeExtraClass(node, CLASSES.from);
+            removeExtraClass(node, CLASSES.to);
+            toggleExtraClass(node, CLASSES.active, i === activeIndex);
+            toggleExtraClass(node, CLASSES.inactive, i !== activeIndex);
           }
-
-          container.classList.remove('animating', 'backwards');
-
-          childNodes.forEach((node, i) => {
-            if (node instanceof HTMLElement) {
-              node.classList.remove('from', 'through', 'to');
-              node.classList.toggle(classNames.active, i === activeIndex);
-            }
-          });
-
-          if (shouldRestoreHeight) {
-            const activeElement = container.querySelector<HTMLDivElement>(`.${classNames.active}`);
-
-            if (activeElement) {
-              activeElement.style.height = 'auto';
-              container.style.height = `${activeElement.clientHeight}px`;
-            }
-          }
-
-          onStop?.();
-          dispatchHeavyAnimationStop();
-          cleanup();
         });
-      }
 
-      const watchedNode = name === 'mv-slide'
-        ? childNodes[activeIndex]?.firstChild
-        : name === 'reveal' && isBackwards
-          ? childNodes[prevActiveIndex]
-          : childNodes[activeIndex];
+        if (shouldRestoreHeight) {
+          if (activeElement) {
+            setExtraStyles(activeElement, { height: 'auto' });
+            setExtraStyles(container, { height: `${clientHeight}px` });
+          }
+        }
 
-      if (watchedNode) {
-        waitForAnimationEnd(watchedNode, onAnimationEnd, undefined, FALLBACK_ANIMATION_END);
-      } else {
-        onAnimationEnd();
-      }
-    });
+        onStop?.();
+        dispatchHeavyAnimationStop();
+
+        cleanup();
+      });
+    }
+
+    const watchedNode = name === 'reveal' && isBackwards
+      ? childNodes[prevActiveIndex]
+      : childNodes[activeIndex];
+
+    if (watchedNode) {
+      waitForAnimationEnd(watchedNode, onAnimationEnd, undefined, FALLBACK_ANIMATION_END);
+    } else {
+      onAnimationEnd();
+    }
   }, [
     activeKey,
+    nextKey,
     prevActiveKey,
     activeKeyChanged,
-    direction,
+    isBackwards,
     name,
     onStart,
     onStop,
     renderCount,
     shouldRestoreHeight,
     shouldCleanup,
+    slideClassName,
     cleanupExceptionKey,
-    animationLevel,
+    shouldDisableAnimation,
     forceUpdate,
   ]);
 
-  useLayoutEffect(() => {
-    if (shouldRestoreHeight) {
-      const container = containerRef.current!;
-      const activeElement = container.querySelector<HTMLDivElement>(`.${classNames.active}`)
-        || container.querySelector<HTMLDivElement>('.from');
-      const clientHeight = activeElement?.clientHeight;
-      if (!clientHeight) {
-        return;
-      }
-
-      activeElement.style.height = 'auto';
-      container.style.height = `${clientHeight}px`;
-      container.style.flexBasis = `${clientHeight}px`;
+  useEffect(() => {
+    if (!shouldRestoreHeight) {
+      return;
     }
+
+    const container = containerRef.current!;
+    const activeElement = container.querySelector<HTMLDivElement>(`.${CLASSES.active}`)
+      || container.querySelector<HTMLDivElement>(`.${CLASSES.from}`);
+    if (!activeElement) {
+      return;
+    }
+
+    const { clientHeight } = activeElement || {};
+    if (!clientHeight) {
+      return;
+    }
+
+    requestMutation(() => {
+      setExtraStyles(activeElement, { height: 'auto' });
+      setExtraStyles(container, {
+        height: `${clientHeight}px`,
+        flexBasis: `${clientHeight}px`,
+      });
+    });
   }, [shouldRestoreHeight, children]);
 
+  const asFastList = !renderCount;
   const renders = rendersRef.current;
   const renderKeys = Object.keys(renderCount ? new Array(renderCount).fill(undefined) : renders).map(Number);
   const contents = renderKeys.map((key) => {
@@ -257,99 +314,135 @@ const Transition: FC<TransitionProps> = ({
       return undefined;
     }
 
-    return (
-      <div key={key} teactOrderKey={key}>{
-        typeof render === 'function'
-          ? render(key === activeKey, key === prevActiveKey, activeKey)
-          : render
-      }
-      </div>
-    );
+    const rendered = typeof render === 'function'
+      ? render(key === activeKey, key === prevActiveKey, activeKey)
+      : render;
+
+    return (shouldWrap && key !== wrapExceptionKey) || asFastList
+      ? <div key={key} teactOrderKey={key}>{rendered}</div>
+      : rendered;
   });
 
   return (
     <div
       ref={containerRef}
       id={id}
-      className={buildClassName('Transition', className, name)}
-      teactFastList={!renderCount}
+      className={buildClassName('Transition', className)}
+      teactFastList={asFastList}
     >
       {contents}
     </div>
   );
-};
+}
 
 export default Transition;
 
 function performSlideOptimized(
-  animationLevel: GlobalState['settings']['byKey']['animationLevel'],
-  name: 'slide-optimized' | 'slide-optimized-rtl',
+  shouldDisableAnimation: boolean,
+  name: 'slideOptimized' | 'slideOptimizedRtl',
   isBackwards: boolean,
   cleanup: NoneToVoidFunction,
   activeKey: number,
   currentKeyRef: { current: number | undefined },
   container: HTMLElement,
+  toSlide: ChildNode,
+  fromSlide?: ChildNode,
   shouldRestoreHeight?: boolean,
   onStart?: NoneToVoidFunction,
   onStop?: NoneToVoidFunction,
-  toSlide?: HTMLElement,
-  fromSlide?: HTMLElement,
 ) {
-  if (!fromSlide || !toSlide) {
-    return;
-  }
+  if (shouldDisableAnimation) {
+    toggleExtraClass(container, `Transition-${name}`, !isBackwards);
+    toggleExtraClass(container, `Transition-${name}Backwards`, isBackwards);
 
-  if (animationLevel === ANIMATION_LEVEL_MIN) {
-    fromSlide.style.transition = 'none';
-    fromSlide.style.transform = '';
-    fromSlide.classList.remove(classNames.active);
+    if (fromSlide instanceof HTMLElement) {
+      removeExtraClass(fromSlide, CLASSES.active);
+      setExtraStyles(fromSlide, {
+        transition: 'none',
+        transform: '',
+      });
+    }
 
-    toSlide.style.transition = 'none';
-    toSlide.style.transform = 'translate3d(0, 0, 0)';
-    toSlide.classList.add(classNames.active);
+    if (toSlide instanceof HTMLElement) {
+      addExtraClass(toSlide, CLASSES.active);
+      setExtraStyles(toSlide, {
+        transition: 'none',
+        transform: 'translate3d(0, 0, 0)',
+      });
+    }
 
     cleanup();
 
     return;
   }
 
-  if (name === 'slide-optimized-rtl') {
+  if (name === 'slideOptimizedRtl') {
     isBackwards = !isBackwards;
   }
 
   const dispatchHeavyAnimationStop = dispatchHeavyAnimationEvent();
 
-  requestAnimationFrame(() => {
-    onStart?.();
+  onStart?.();
 
-    fromSlide.style.transition = 'none';
-    fromSlide.style.transform = 'translate3d(0, 0, 0)';
+  toggleExtraClass(container, `Transition-${name}`, !isBackwards);
+  toggleExtraClass(container, `Transition-${name}Backwards`, isBackwards);
 
-    toSlide.style.transition = 'none';
-    toSlide.style.transform = `translate3d(${isBackwards ? '-' : ''}100%, 0, 0)`;
+  if (fromSlide instanceof HTMLElement) {
+    setExtraStyles(fromSlide, {
+      transition: 'none',
+      transform: 'translate3d(0, 0, 0)',
+    });
+  }
 
-    forceReflow(toSlide);
+  if (toSlide instanceof HTMLElement) {
+    setExtraStyles(toSlide, {
+      transition: 'none',
+      transform: `translate3d(${isBackwards ? '-' : ''}100%, 0, 0)`,
+    });
+  }
 
-    fromSlide.style.transition = '';
-    fromSlide.style.transform = `translate3d(${isBackwards ? '' : '-'}100%, 0, 0)`;
+  requestForcedReflow(() => {
+    if (toSlide instanceof HTMLElement) {
+      forceReflow(toSlide);
+    }
 
-    toSlide.style.transition = '';
-    toSlide.style.transform = 'translate3d(0, 0, 0)';
+    return () => {
+      if (fromSlide instanceof HTMLElement) {
+        removeExtraClass(fromSlide, CLASSES.active);
+        setExtraStyles(fromSlide, {
+          transition: '',
+          transform: `translate3d(${isBackwards ? '' : '-'}100%, 0, 0)`,
+        });
+      }
 
-    fromSlide.classList.remove(classNames.active);
-    toSlide.classList.add(classNames.active);
+      if (toSlide instanceof HTMLElement) {
+        addExtraClass(toSlide, CLASSES.active);
+        setExtraStyles(toSlide, {
+          transition: '',
+          transform: 'translate3d(0, 0, 0)',
+        });
+      }
+    };
+  });
 
-    waitForTransitionEnd(fromSlide, () => {
+  waitForTransitionEnd(toSlide, () => {
+    const clientHeight = toSlide instanceof HTMLElement ? toSlide.clientHeight : undefined;
+
+    requestMutation(() => {
       if (activeKey !== currentKeyRef.current) {
         return;
       }
 
-      fromSlide.style.transition = 'none';
-      fromSlide.style.transform = '';
+      if (fromSlide instanceof HTMLElement) {
+        setExtraStyles(fromSlide, {
+          transition: 'none',
+          transform: '',
+        });
+      }
 
-      if (shouldRestoreHeight) {
-        toSlide.style.height = 'auto';
-        container.style.height = `${toSlide.clientHeight}px`;
+      if (shouldRestoreHeight && clientHeight && toSlide instanceof HTMLElement) {
+        setExtraStyles(toSlide, { height: 'auto' });
+        setExtraStyles(container, { height: `${clientHeight}px` });
       }
 
       onStop?.();

@@ -1,12 +1,14 @@
+import type { FC } from '../../../lib/teact/teact';
 import React, { memo, useMemo } from '../../../lib/teact/teact';
 
-import type { FC } from '../../../lib/teact/teact';
 import type { ApiAvailableReaction, ApiMessage, ApiStickerSet } from '../../../api/types';
 import type { ActiveReaction } from '../../../global/types';
 import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
 
 import { getReactionUniqueKey } from '../../../global/helpers';
 import buildClassName from '../../../util/buildClassName';
+
+import useLang from '../../../hooks/useLang';
 
 import ReactionButton from './ReactionButton';
 
@@ -22,6 +24,7 @@ type OwnProps = {
   genericEffects?: ApiStickerSet;
   observeIntersection?: ObserveFn;
   noRecentReactors?: boolean;
+  withEffects?: boolean;
 };
 
 const MAX_RECENT_AVATARS = 3;
@@ -36,7 +39,10 @@ const Reactions: FC<OwnProps> = ({
   genericEffects,
   observeIntersection,
   noRecentReactors,
+  withEffects,
 }) => {
+  const lang = useLang();
+
   const totalCount = useMemo(() => (
     message.reactions!.results.reduce((acc, reaction) => acc + reaction.count, 0)
   ), [message]);
@@ -45,6 +51,7 @@ const Reactions: FC<OwnProps> = ({
     <div
       className={buildClassName('Reactions', isOutside && 'is-outside')}
       style={maxWidth ? `max-width: ${maxWidth}px` : undefined}
+      dir={lang.isRtl ? 'rtl' : 'ltr'}
     >
       {message.reactions!.results.map((reaction) => (
         <ReactionButton
@@ -56,6 +63,7 @@ const Reactions: FC<OwnProps> = ({
           withRecentReactors={totalCount <= MAX_RECENT_AVATARS && !noRecentReactors}
           genericEffects={genericEffects}
           observeIntersection={observeIntersection}
+          withEffects={withEffects}
         />
       ))}
       {metaChildren}

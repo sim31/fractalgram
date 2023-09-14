@@ -1,10 +1,12 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo } from '../../../lib/teact/teact';
-import { Bundles } from '../../../util/moduleLoader';
+import React from '../../../lib/teact/teact';
 
 import type { OwnProps } from './NewChat';
 
+import { Bundles } from '../../../util/moduleLoader';
+
 import useModuleLoader from '../../../hooks/useModuleLoader';
+
 import Loading from '../../ui/Loading';
 
 const NewChatAsync: FC<OwnProps> = (props) => {
@@ -14,4 +16,4 @@ const NewChatAsync: FC<OwnProps> = (props) => {
   return NewChat ? <NewChat {...props} /> : <Loading />;
 };
 
-export default memo(NewChatAsync);
+export default NewChatAsync;

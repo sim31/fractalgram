@@ -1,38 +1,49 @@
 import BigInt from 'big-integer';
 import { Api as GramJs } from '../../../lib/gramjs';
-
-import type { ApiPrivacyKey } from '../../../types';
-
 import { generateRandomBytes, readBigIntFromBuffer } from '../../../lib/gramjs/Helpers';
+
+import type { ApiPrivacyKey, PrivacyVisibility } from '../../../types';
 import type {
+  ApiBotApp,
   ApiChatAdminRights,
   ApiChatBannedRights,
   ApiChatFolder,
+  ApiChatReactions,
+  ApiFormattedText,
   ApiGroupCall,
   ApiMessageEntity,
   ApiNewPoll,
-  ApiPhoto,
   ApiPhoneCall,
+  ApiPhoto,
+  ApiPoll,
+  ApiReaction,
   ApiReportReason,
+  ApiRequestInputInvoice,
   ApiSendMessageAction,
   ApiSticker,
-  ApiVideo,
+  ApiStory,
+  ApiStorySkipped,
   ApiThemeParameters,
-  ApiPoll,
-  ApiRequestInputInvoice,
-  ApiChatReactions,
-  ApiReaction,
-  ApiFormattedText,
+  ApiTypeReplyTo,
+  ApiUser,
+  ApiVideo,
 } from '../../types';
 import {
   ApiMessageEntityTypes,
 } from '../../types';
-import localDb from '../localDb';
+
+import { DEFAULT_STATUS_ICON_ID } from '../../../config';
 import { pick } from '../../../util/iteratees';
 import { deserializeBytes } from '../helpers';
-import { DEFAULT_STATUS_ICON_ID } from '../../../config';
+import localDb from '../localDb';
 
 const CHANNEL_ID_MIN_LENGTH = 11; // Example: -1000000000
+
+function checkIfChannelId(id: string) {
+  // HOTFIX New group id range starts with -4
+  if (id.length === CHANNEL_ID_MIN_LENGTH && id.startsWith('-4')) return false;
+  return id.length >= CHANNEL_ID_MIN_LENGTH;
+}
 
 export function getEntityTypeById(chatOrUserId: string) {
   if (typeof chatOrUserId === 'number') {
@@ -41,7 +52,7 @@ export function getEntityTypeById(chatOrUserId: string) {
 
   if (!chatOrUserId.startsWith('-')) {
     return 'user';
-  } else if (chatOrUserId.length >= CHANNEL_ID_MIN_LENGTH) {
+  } else if (checkIfChannelId(chatOrUserId)) {
     return 'channel';
   } else {
     return 'chat';
@@ -224,7 +235,7 @@ export function buildInputPollFromExisting(poll: ApiPoll, shouldClose = false) {
   });
 }
 
-export function buildFilterFromApiFolder(folder: ApiChatFolder): GramJs.DialogFilter {
+export function buildFilterFromApiFolder(folder: ApiChatFolder): GramJs.DialogFilter | GramJs.DialogFilterChatlist {
   const {
     emoticon,
     contacts,
@@ -252,6 +263,17 @@ export function buildFilterFromApiFolder(folder: ApiChatFolder): GramJs.DialogFi
     ? excludedChatIds.map(buildInputPeerFromLocalDb).filter(Boolean)
     : [];
 
+  if (folder.isChatList) {
+    return new GramJs.DialogFilterChatlist({
+      id: folder.id,
+      title: folder.title,
+      emoticon: emoticon || undefined,
+      pinnedPeers,
+      includePeers,
+      hasMyInvites: folder.hasMyInvites,
+    });
+  }
+
   return new GramJs.DialogFilter({
     id: folder.id,
     title: folder.title,
@@ -267,6 +289,14 @@ export function buildFilterFromApiFolder(folder: ApiChatFolder): GramJs.DialogFi
     pinnedPeers,
     includePeers,
     excludePeers,
+  });
+}
+
+export function buildInputStory(story: ApiStory | ApiStorySkipped) {
+  const user = localDb.users[story.userId];
+  return new GramJs.InputMediaStory({
+    userId: new GramJs.InputUser({ userId: BigInt(user!.id), accessHash: user!.accessHash! }),
+    id: story.id,
   });
 }
 
@@ -605,4 +635,93 @@ export function buildInputTextWithEntities(formatted: ApiFormattedText) {
     text: formatted.text,
     entities: formatted.entities?.map(buildMtpMessageEntity) || [],
   });
+}
+
+export function buildInputBotApp(app: ApiBotApp) {
+  return new GramJs.InputBotAppID({
+    id: BigInt(app.id),
+    accessHash: BigInt(app.accessHash),
+  });
+}
+
+export function buildInputReplyToMessage(replyToMsgId: number, topMsgId?: number) {
+  return new GramJs.InputReplyToMessage({
+    replyToMsgId,
+    topMsgId,
+  });
+}
+
+export function buildInputReplyToStory(userId: string, storyId: number) {
+  return new GramJs.InputReplyToStory({
+    userId: buildInputPeerFromLocalDb(userId)!,
+    storyId,
+  });
+}
+
+export function buildInputReplyTo(replyingTo: ApiTypeReplyTo) {
+  return 'replyingTo' in replyingTo
+    ? buildInputReplyToMessage(replyingTo.replyingTo, replyingTo.replyingToTopId)
+    : buildInputReplyToStory(replyingTo.userId, replyingTo.storyId);
+}
+
+export function buildInputPrivacyRules(
+  visibility: PrivacyVisibility,
+  allowedUserList?: ApiUser[],
+  deniedUserList?: ApiUser[],
+) {
+  const rules: GramJs.TypeInputPrivacyRule[] = [];
+
+  switch (visibility) {
+    case 'everybody':
+    case 'contacts': {
+      if (visibility === 'contacts') {
+        rules.push(new GramJs.InputPrivacyValueAllowContacts());
+      }
+
+      if (visibility === 'everybody') {
+        rules.push(new GramJs.InputPrivacyValueAllowAll());
+      }
+
+      const users = deniedUserList?.reduce<GramJs.InputUser[]>((acc, { id, accessHash }) => {
+        acc.push(new GramJs.InputPeerUser({
+          userId: buildMtpPeerId(id, 'user'),
+          accessHash: BigInt(accessHash!),
+        }));
+        return acc;
+      }, []);
+
+      if (users?.length) {
+        rules.push(new GramJs.InputPrivacyValueDisallowUsers({ users }));
+      }
+      break;
+    }
+
+    case 'closeFriends':
+      rules.push(new GramJs.InputPrivacyValueAllowCloseFriends());
+      break;
+
+    case 'nonContacts':
+      rules.push(new GramJs.InputPrivacyValueDisallowContacts());
+      break;
+
+    case 'selectedContacts': {
+      const users = (allowedUserList || []).reduce<GramJs.InputUser[]>((acc, { id, accessHash }) => {
+        acc.push(new GramJs.InputPeerUser({
+          userId: buildMtpPeerId(id, 'user'),
+          accessHash: BigInt(accessHash!),
+        }));
+
+        return acc;
+      }, []);
+
+      rules.push(new GramJs.InputPrivacyValueAllowUsers({ users }));
+      break;
+    }
+
+    case 'nobody':
+      rules.push(new GramJs.InputPrivacyValueDisallowAll());
+      break;
+  }
+
+  return rules;
 }

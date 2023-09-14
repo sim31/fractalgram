@@ -1,36 +1,37 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback } from '../../../lib/teact/teact';
+import React, { memo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type {
-  ApiChat, ApiUser, ApiMessage, ApiMessageOutgoingStatus,
+  ApiChat, ApiMessage, ApiMessageOutgoingStatus,
+  ApiUser,
 } from '../../../api/types';
-import type { AnimationLevel } from '../../../types';
 import type { LangFn } from '../../../hooks/useLang';
 
 import {
-  getPrivateChatUserId,
+  getMessageIsSpoiler,
   getMessageMediaHash,
   getMessageMediaThumbDataUri,
-  getMessageVideo,
   getMessageRoundVideo,
   getMessageSticker,
-  getMessageIsSpoiler,
+  getMessageVideo,
+  getPrivateChatUserId,
 } from '../../../global/helpers';
 import { selectChat, selectUser } from '../../../global/selectors';
 import buildClassName from '../../../util/buildClassName';
 import { formatPastTimeShort } from '../../../util/dateFormat';
 import { renderMessageSummary } from '../../common/helpers/renderMessageText';
 
-import useMedia from '../../../hooks/useMedia';
-import useLang from '../../../hooks/useLang';
-import useSelectWithEnter from '../../../hooks/useSelectWithEnter';
 import useAppLayout from '../../../hooks/useAppLayout';
+import useLang from '../../../hooks/useLang';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useMedia from '../../../hooks/useMedia';
+import useSelectWithEnter from '../../../hooks/useSelectWithEnter';
 
 import Avatar from '../../common/Avatar';
-import ListItem from '../../ui/ListItem';
-import Link from '../../ui/Link';
 import FullNameTitle from '../../common/FullNameTitle';
+import Link from '../../ui/Link';
+import ListItem from '../../ui/ListItem';
 
 import './ChatMessage.scss';
 
@@ -44,8 +45,6 @@ type StateProps = {
   chat?: ApiChat;
   privateChatUser?: ApiUser;
   lastMessageOutgoingStatus?: ApiMessageOutgoingStatus;
-  lastSyncTime?: number;
-  animationLevel?: AnimationLevel;
 };
 
 const ChatMessage: FC<OwnProps & StateProps> = ({
@@ -54,8 +53,6 @@ const ChatMessage: FC<OwnProps & StateProps> = ({
   chatId,
   chat,
   privateChatUser,
-  animationLevel,
-  lastSyncTime,
 }) => {
   const { focusMessage } = getActions();
 
@@ -64,9 +61,9 @@ const ChatMessage: FC<OwnProps & StateProps> = ({
   const mediaBlobUrl = useMedia(getMessageMediaHash(message, 'micro'));
   const isRoundVideo = Boolean(getMessageRoundVideo(message));
 
-  const handleClick = useCallback(() => {
+  const handleClick = useLastCallback(() => {
     focusMessage({ chatId, messageId: message.id, shouldReplaceHistory: true });
-  }, [chatId, focusMessage, message.id]);
+  });
 
   const lang = useLang();
 
@@ -76,6 +73,8 @@ const ChatMessage: FC<OwnProps & StateProps> = ({
     return undefined;
   }
 
+  const peer = privateChatUser || chat;
+
   return (
     <ListItem
       className="ChatMessage chat-item-clickable"
@@ -84,17 +83,13 @@ const ChatMessage: FC<OwnProps & StateProps> = ({
       buttonRef={buttonRef}
     >
       <Avatar
-        chat={chat}
-        user={privateChatUser}
+        peer={peer}
         isSavedMessages={privateChatUser?.isSelf}
-        lastSyncTime={lastSyncTime}
-        withVideo
-        animationLevel={animationLevel}
       />
       <div className="info">
         <div className="info-row">
           <FullNameTitle
-            peer={privateChatUser || chat}
+            peer={peer}
             withEmojiStatus
             isSavedMessages={chatId === privateChatUser?.id && privateChatUser?.isSelf}
           />
@@ -133,7 +128,7 @@ function renderSummary(
           buildClassName('media-preview--image', isRoundVideo && 'round', isSpoiler && 'media-preview-spoiler')
         }
       />
-      {getMessageVideo(message) && <i className="icon-play" />}
+      {getMessageVideo(message) && <i className="icon icon-play" />}
       {renderMessageSummary(lang, message, true, searchQuery)}
     </span>
   );
@@ -147,12 +142,11 @@ export default memo(withGlobal<OwnProps>(
     }
 
     const privateChatUserId = getPrivateChatUserId(chat);
+    const privateChatUser = privateChatUserId ? selectUser(global, privateChatUserId) : undefined;
 
     return {
       chat,
-      lastSyncTime: global.lastSyncTime,
-      animationLevel: global.settings.byKey.animationLevel,
-      ...(privateChatUserId && { privateChatUser: selectUser(global, privateChatUserId) }),
+      ...(privateChatUserId && { privateChatUser }),
     };
   },
 )(ChatMessage));

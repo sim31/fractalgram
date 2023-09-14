@@ -11,6 +11,8 @@
   }
 
   :global(.Avatar) {
+    --radius: 0;
+
     position: absolute;
     top: 0;
     left: 0;
@@ -55,6 +57,10 @@
   :global(.Button) {
     color: #fff;
   }
+
+  :global(body.is-electron) .root.single-column & {
+    padding-left: 5rem;
+  }
 }
 
 .close-button {
@@ -82,7 +88,7 @@
 .emojis {
   user-select: none;
   pointer-events: auto;
-  cursor: pointer;
+  cursor: var(--custom-cursor, pointer);
   margin-top: 1rem;
   height: 3rem;
   transition: 0.25s ease-in-out transform;

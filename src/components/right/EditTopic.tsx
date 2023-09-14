@@ -1,9 +1,9 @@
+import type { FC } from '../../lib/teact/teact';
 import React, {
   memo, useCallback, useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { FC } from '../../lib/teact/teact';
 import type { ApiChat, ApiSticker, ApiTopic } from '../../api/types';
 import type { TabState } from '../../global/types';
 
@@ -12,15 +12,15 @@ import { selectChat, selectIsCurrentUserPremium, selectTabState } from '../../gl
 import buildClassName from '../../util/buildClassName';
 import { REM } from '../common/helpers/mediaDimensions';
 
-import useLang from '../../hooks/useLang';
 import useHistoryBack from '../../hooks/useHistoryBack';
+import useLang from '../../hooks/useLang';
 
+import CustomEmojiPicker from '../common/CustomEmojiPicker';
 import TopicIcon from '../common/TopicIcon';
-import InputText from '../ui/InputText';
 import FloatingActionButton from '../ui/FloatingActionButton';
-import Spinner from '../ui/Spinner';
+import InputText from '../ui/InputText';
 import Loading from '../ui/Loading';
-import CustomEmojiPicker from '../middle/composer/CustomEmojiPicker';
+import Spinner from '../ui/Spinner';
 import Transition from '../ui/Transition';
 
 import styles from './ManageTopic.module.scss';
@@ -60,6 +60,13 @@ const EditTopic: FC<OwnProps & StateProps> = ({
     isActive,
     onBack: onClose,
   });
+
+  useEffect(() => {
+    if (!isActive) {
+      setTitle('');
+      setIconEmojiId(undefined);
+    }
+  }, [isActive]);
 
   useEffect(() => {
     if (topic?.title || topic?.iconEmojiId) {
@@ -118,10 +125,10 @@ const EditTopic: FC<OwnProps & StateProps> = ({
         {!topic && <Loading />}
         {topic && (
           <>
-            <div className={buildClassName(styles.section, styles.top)}>
-              <span className={styles.heading}>{lang('CreateTopicTitle')}</span>
+            <div className={buildClassName(styles.section, styles.top, isGeneral && styles.general)}>
+              <span className={styles.heading}>{lang(isGeneral ? 'CreateGeneralTopicTitle' : 'CreateTopicTitle')}</span>
               <Transition
-                name="zoom-fade"
+                name="zoomFade"
                 activeKey={Number(dummyTopic.iconEmojiId) || 0}
                 shouldCleanup
                 direction={1}
@@ -146,9 +153,11 @@ const EditTopic: FC<OwnProps & StateProps> = ({
               <div className={buildClassName(styles.section, styles.bottom)}>
                 <CustomEmojiPicker
                   idPrefix="edit-topic-icons-set-"
+                  isHidden={!isActive}
                   loadAndPlay={isActive}
                   onCustomEmojiSelect={handleCustomEmojiSelect}
                   className={styles.iconPicker}
+                  pickerListClassName="fab-padding-bottom"
                   withDefaultTopicIcons
                 />
               </div>
@@ -165,7 +174,7 @@ const EditTopic: FC<OwnProps & StateProps> = ({
         {isLoading ? (
           <Spinner color="white" />
         ) : (
-          <i className="icon-check" />
+          <i className="icon icon-check" />
         )}
       </FloatingActionButton>
     </div>
@@ -177,6 +186,7 @@ export default memo(withGlobal(
     const { editTopicPanel } = selectTabState(global);
     const chat = editTopicPanel?.chatId ? selectChat(global, editTopicPanel.chatId) : undefined;
     const topic = editTopicPanel?.topicId ? chat?.topics?.[editTopicPanel?.topicId] : undefined;
+
     return {
       chat,
       topic,

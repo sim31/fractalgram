@@ -1,29 +1,32 @@
 import type { FC } from '../../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useRef, useState,
+  memo, useEffect, useRef, useState,
 } from '../../../lib/teact/teact';
+import { getActions } from '../../../global';
 
+import type { FolderEditDispatch } from '../../../hooks/reducers/useFoldersReducer';
 import type { SettingsScreens } from '../../../types';
 import { LeftColumnContent } from '../../../types';
-import type { FolderEditDispatch } from '../../../hooks/reducers/useFoldersReducer';
 
-import { IS_TOUCH_ENV } from '../../../util/environment';
+import { IS_ELECTRON } from '../../../config';
 import buildClassName from '../../../util/buildClassName';
-import useShowTransition from '../../../hooks/useShowTransition';
-import useLang from '../../../hooks/useLang';
-import useForumPanelRender from '../../../hooks/useForumPanelRender';
+import { IS_TOUCH_ENV } from '../../../util/windowEnvironment';
 
-import Transition from '../../ui/Transition';
-import LeftMainHeader from './LeftMainHeader';
-import ChatFolders from './ChatFolders';
-import LeftSearch from '../search/LeftSearch.async';
-import ContactList from './ContactList.async';
-import NewChatButton from '../NewChatButton';
+import useForumPanelRender from '../../../hooks/useForumPanelRender';
+import useLang from '../../../hooks/useLang';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useShowTransition from '../../../hooks/useShowTransition';
+
 import Button from '../../ui/Button';
+import Transition from '../../ui/Transition';
+import NewChatButton from '../NewChatButton';
+import LeftSearch from '../search/LeftSearch.async';
+import ChatFolders from './ChatFolders';
+import ContactList from './ContactList.async';
 import ForumPanel from './ForumPanel';
+import LeftMainHeader from './LeftMainHeader';
 
 import './LeftMain.scss';
-import { getActions } from '../../../global';
 
 type OwnProps = {
   content: LeftColumnContent;
@@ -66,8 +69,12 @@ const LeftMain: FC<OwnProps> = ({
   const { closeForumPanel } = getActions();
   const [isNewChatButtonShown, setIsNewChatButtonShown] = useState(IS_TOUCH_ENV);
 
-  const { shouldRenderForumPanel, handleForumPanelAnimationEnd } = useForumPanelRender(isForumPanelOpen);
-  const isForumPanelVisible = isForumPanelOpen && content === LeftColumnContent.ChatList;
+  const {
+    shouldRenderForumPanel, handleForumPanelAnimationEnd,
+    handleForumPanelAnimationStart, isAnimationStarted,
+  } = useForumPanelRender(isForumPanelOpen);
+  const isForumPanelRendered = isForumPanelOpen && content === LeftColumnContent.ChatList;
+  const isForumPanelVisible = isForumPanelRendered && isAnimationStarted;
 
   const {
     shouldRender: shouldRenderUpdateButton,
@@ -76,15 +83,15 @@ const LeftMain: FC<OwnProps> = ({
 
   const isMouseInside = useRef(false);
 
-  const handleMouseEnter = useCallback(() => {
+  const handleMouseEnter = useLastCallback(() => {
     if (content !== LeftColumnContent.ChatList) {
       return;
     }
     isMouseInside.current = true;
     setIsNewChatButtonShown(true);
-  }, [content]);
+  });
 
-  const handleMouseLeave = useCallback(() => {
+  const handleMouseLeave = useLastCallback(() => {
     isMouseInside.current = false;
 
     if (closeTimeout) {
@@ -97,32 +104,36 @@ const LeftMain: FC<OwnProps> = ({
         setIsNewChatButtonShown(false);
       }
     }, BUTTON_CLOSE_DELAY_MS);
-  }, []);
+  });
 
-  const handleSelectSettings = useCallback(() => {
+  const handleSelectSettings = useLastCallback(() => {
     onContentChange(LeftColumnContent.Settings);
-  }, [onContentChange]);
+  });
 
-  const handleSelectContacts = useCallback(() => {
+  const handleSelectContacts = useLastCallback(() => {
     onContentChange(LeftColumnContent.Contacts);
-  }, [onContentChange]);
+  });
 
-  const handleSelectArchived = useCallback(() => {
+  const handleSelectArchived = useLastCallback(() => {
     onContentChange(LeftColumnContent.Archived);
     closeForumPanel();
-  }, [closeForumPanel, onContentChange]);
+  });
 
-  const handleUpdateClick = useCallback(() => {
-    window.location.reload();
-  }, []);
+  const handleUpdateClick = useLastCallback(() => {
+    if (IS_ELECTRON) {
+      window.electron?.installUpdate();
+    } else {
+      window.location.reload();
+    }
+  });
 
-  const handleSelectNewChannel = useCallback(() => {
+  const handleSelectNewChannel = useLastCallback(() => {
     onContentChange(LeftColumnContent.NewChannelStep1);
-  }, [onContentChange]);
+  });
 
-  const handleSelectNewGroup = useCallback(() => {
+  const handleSelectNewGroup = useLastCallback(() => {
     onContentChange(LeftColumnContent.NewGroupStep1);
-  }, [onContentChange]);
+  });
 
   useEffect(() => {
     let autoCloseTimeout: number | undefined;
@@ -163,11 +174,13 @@ const LeftMain: FC<OwnProps> = ({
         isClosingSearch={isClosingSearch}
       />
       <Transition
-        name={shouldSkipTransition ? 'none' : 'zoom-fade'}
+        name={shouldSkipTransition ? 'none' : 'zoomFade'}
         renderCount={TRANSITION_RENDER_COUNT}
         activeKey={content}
         shouldCleanup
         cleanupExceptionKey={LeftColumnContent.ChatList}
+        shouldWrap
+        wrapExceptionKey={LeftColumnContent.ChatList}
       >
         {(isActive) => {
           switch (content) {
@@ -178,6 +191,7 @@ const LeftMain: FC<OwnProps> = ({
                   onSettingsScreenSelect={onSettingsScreenSelect}
                   onLeftColumnContentChange={onContentChange}
                   foldersDispatch={foldersDispatch}
+                  isForumPanelOpen={isForumPanelVisible}
                 />
               );
             case LeftColumnContent.GlobalSearch:
@@ -209,8 +223,9 @@ const LeftMain: FC<OwnProps> = ({
       {shouldRenderForumPanel && (
         <ForumPanel
           isOpen={isForumPanelOpen}
-          isHidden={!isForumPanelVisible}
+          isHidden={!isForumPanelRendered}
           onTopicSearch={onTopicSearch}
+          onOpenAnimationStart={handleForumPanelAnimationStart}
           onCloseAnimationEnd={handleForumPanelAnimationEnd}
         />
       )}

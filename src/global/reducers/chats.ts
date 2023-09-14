@@ -1,15 +1,15 @@
-import type { GlobalState } from '../types';
 import type {
-  ApiChat, ApiChatMember, ApiTopic, ApiPhoto,
+  ApiChat, ApiChatFullInfo, ApiChatMember, ApiPhoto, ApiTopic,
 } from '../../api/types';
+import type { GlobalState } from '../types';
 
 import { ARCHIVED_FOLDER_ID } from '../../config';
+import { areDeepEqual } from '../../util/areDeepEqual';
 import {
   areSortedArraysEqual, buildCollectionByKey, omit, unique,
 } from '../../util/iteratees';
-import { selectChat, selectChatListType } from '../selectors';
+import { selectChat, selectChatFullInfo } from '../selectors';
 import { updateThread, updateThreadInfo } from './messages';
-import { areDeepEqual } from '../../util/areDeepEqual';
 
 export function replaceChatListIds<T extends GlobalState>(
   global: T,
@@ -73,6 +73,50 @@ export function updateChat<T extends GlobalState>(
   });
 }
 
+export function updateChatFullInfo<T extends GlobalState>(
+  global: T, chatId: string, fullInfoUpdate: Partial<ApiChatFullInfo>,
+): T {
+  const currentFullInfo = selectChatFullInfo(global, chatId);
+  const updatedFullInfo = {
+    ...currentFullInfo,
+    ...fullInfoUpdate,
+  };
+
+  if (areDeepEqual(currentFullInfo, updatedFullInfo)) {
+    return global;
+  }
+
+  return {
+    ...global,
+    chats: {
+      ...global.chats,
+      fullInfoById: {
+        ...global.chats.fullInfoById,
+        [chatId]: updatedFullInfo,
+      },
+    },
+  };
+}
+
+export function replaceChatFullInfo<T extends GlobalState>(global: T, chatId: string, fullInfo: ApiChatFullInfo): T {
+  const currentFullInfo = selectChatFullInfo(global, chatId);
+
+  if (areDeepEqual(currentFullInfo, fullInfo)) {
+    return global;
+  }
+
+  return {
+    ...global,
+    chats: {
+      ...global.chats,
+      fullInfoById: {
+        ...global.chats.fullInfoById,
+        [chatId]: fullInfo,
+      },
+    },
+  };
+}
+
 export function updateChats<T extends GlobalState>(global: T, newById: Record<string, ApiChat>): T {
   const updatedById = Object.keys(newById).reduce((acc: Record<string, ApiChat>, id) => {
     const updatedChat = getUpdatedChat(global, id, newById[id]);
@@ -97,15 +141,21 @@ export function addChats<T extends GlobalState>(global: T, newById: Record<strin
   let isUpdated = false;
 
   const addedById = Object.keys(newById).reduce<Record<string, ApiChat>>((acc, id) => {
-    if (!byId[id] || (byId[id].isMin && !newById[id].isMin)) {
-      const updatedChat = getUpdatedChat(global, id, newById[id]);
-      if (updatedChat) {
-        acc[id] = updatedChat;
-        if (!isUpdated) {
-          isUpdated = true;
-        }
+    const existingChat = byId[id];
+    const newChat = newById[id];
+
+    if (existingChat && !existingChat.isMin && (newChat.isMin || existingChat.accessHash === newChat.accessHash)) {
+      return acc;
+    }
+
+    const updatedChat = getUpdatedChat(global, id, newChat);
+    if (updatedChat) {
+      acc[id] = updatedChat;
+      if (!isUpdated) {
+        isUpdated = true;
       }
     }
+
     return acc;
   }, {});
 
@@ -130,15 +180,8 @@ function getUpdatedChat<T extends GlobalState>(
   const chat = byId[chatId];
   const omitProps: (keyof ApiChat)[] = [];
 
-  const shouldIgnoreUndefinedFields = chatUpdate.isMin && chat && !chat.isMin;
-  if (shouldIgnoreUndefinedFields) {
-    omitProps.push('isMin', 'accessHash');
-    Object.keys(chatUpdate).forEach((key) => {
-      const prop = key as keyof ApiChat;
-      if (chatUpdate[prop] === undefined) {
-        omitProps.push(prop);
-      }
-    });
+  if (chatUpdate.isMin && chat && !chat.isMin) {
+    return undefined; // Do not apply updates from min constructor
   }
 
   if (!noOmitUnreadReactionCount) {
@@ -153,7 +196,7 @@ function getUpdatedChat<T extends GlobalState>(
     ...chat,
     ...omit(chatUpdate, omitProps),
     ...(photo && { photos: [photo, ...(chat.photos || [])] }),
-  };
+  } as ApiChat;
 
   if (!updatedChat.id || !updatedChat.type) {
     return undefined;
@@ -231,27 +274,27 @@ export function updateChatListSecondaryInfo<T extends GlobalState>(
 }
 
 export function leaveChat<T extends GlobalState>(global: T, leftChatId: string): T {
-  const listType = selectChatListType(global, leftChatId);
-  if (!listType) {
-    return global;
-  }
-
-  const { [listType]: listIds } = global.chats.listIds;
-
-  if (listIds) {
-    global = replaceChatListIds(global, listType, listIds.filter((listId) => listId !== leftChatId));
-  }
+  global = removeChatFromChatLists(global, leftChatId);
 
   global = updateChat(global, leftChatId, { isNotJoined: true });
 
   return global;
 }
 
+export function removeChatFromChatLists<T extends GlobalState>(global: T, chatId: string): T {
+  const lists = global.chats.listIds;
+  Object.entries(lists).forEach(([listType, listIds]) => {
+    global = replaceChatListIds(global, listType as keyof typeof lists, listIds.filter((id) => id !== chatId));
+  });
+
+  return global;
+}
+
 export function addChatMembers<T extends GlobalState>(global: T, chat: ApiChat, membersToAdd: ApiChatMember[]): T {
-  const currentMembers = chat.fullInfo?.members;
+  const currentMembers = selectChatFullInfo(global, chat.id)?.members;
   const newMemberIds = new Set(membersToAdd.map((m) => m.userId));
   const updatedMembers = [
-    ...currentMembers?.filter((m) => !newMemberIds.has(m.userId)) || [],
+    ...currentMembers?.filter(({ userId }) => !newMemberIds.has(userId)) || [],
     ...membersToAdd,
   ];
   const currentIds = currentMembers?.map(({ userId }) => userId) || [];
@@ -263,12 +306,9 @@ export function addChatMembers<T extends GlobalState>(global: T, chat: ApiChat, 
 
   const adminMembers = updatedMembers.filter(({ isAdmin, isOwner }) => isAdmin || isOwner);
 
-  return updateChat(global, chat.id, {
-    fullInfo: {
-      ...chat.fullInfo,
-      members: updatedMembers,
-      adminMembersById: buildCollectionByKey(adminMembers, 'userId'),
-    },
+  return updateChatFullInfo(global, chat.id, {
+    members: updatedMembers,
+    adminMembersById: buildCollectionByKey(adminMembers, 'userId'),
   });
 }
 

@@ -1,5 +1,5 @@
-import { IS_IOS } from './environment';
 import forceReflow from './forceReflow';
+import { IS_IOS } from './windowEnvironment';
 
 const resetScroll = (container: HTMLDivElement, scrollTop?: number) => {
   if (IS_IOS) {
@@ -15,8 +15,7 @@ const resetScroll = (container: HTMLDivElement, scrollTop?: number) => {
   }
 };
 
-// Workaround for https://bugs.chromium.org/p/chromium/issues/detail?id=1264266
-export function patchChromiumScroll(element: HTMLElement) {
+export function stopScrollInertia(element: HTMLElement) {
   element.style.display = 'none';
   forceReflow(element);
   element.style.display = '';

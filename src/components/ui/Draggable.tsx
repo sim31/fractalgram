@@ -1,14 +1,14 @@
+import type { FC } from '../../lib/teact/teact';
 import React, {
   memo, useCallback, useEffect, useMemo, useRef, useState,
 } from '../../lib/teact/teact';
 
-import type { FC } from '../../lib/teact/teact';
-
 import buildClassName from '../../util/buildClassName';
+import buildStyle from '../../util/buildStyle';
+
+import useLang from '../../hooks/useLang';
 
 import styles from './Draggable.module.scss';
-import useLang from '../../hooks/useLang';
-import buildStyle from '../../util/buildStyle';
 
 type TPoint = {
   x: number;
@@ -85,16 +85,14 @@ const Draggable: FC<OwnProps> = ({
   }, [id, onDrag, state.origin.x, state.origin.y]);
 
   const handleMouseUp = useCallback(() => {
-    requestAnimationFrame(() => {
-      setState((current) => ({
-        ...current,
-        isDragging: false,
-        width: undefined,
-        height: undefined,
-      }));
+    setState((current) => ({
+      ...current,
+      isDragging: false,
+      width: undefined,
+      height: undefined,
+    }));
 
-      onDragEnd();
-    });
+    onDragEnd();
   }, [onDragEnd]);
 
   useEffect(() => {
@@ -159,12 +157,12 @@ const Draggable: FC<OwnProps> = ({
           aria-label={lang('i18n_dragToSort')}
           tabIndex={0}
           role="button"
-          className={buildClassName(styles.knob, 'draggable-knob')}
+          className={buildClassName(styles.knob, 'div-button', 'draggable-knob')}
           onMouseDown={handleMouseDown}
           onTouchStart={handleMouseDown}
           style={knobStyle}
         >
-          <i className="icon-sort" aria-hidden />
+          <i className="icon icon-sort" aria-hidden />
         </div>
       )}
     </div>

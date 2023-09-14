@@ -1,33 +1,36 @@
 import type { FC } from '../../../lib/teact/teact';
 import React, {
-  useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
 import type { ApiMessage } from '../../../api/types';
+import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
 import { ApiMediaFormat } from '../../../api/types';
 
-import { ROUND_VIDEO_DIMENSIONS_PX } from '../../common/helpers/mediaDimensions';
 import { getMessageMediaFormat, getMessageMediaHash, getMessageMediaThumbDataUri } from '../../../global/helpers';
-import { formatMediaDuration } from '../../../util/dateFormat';
-import buildClassName from '../../../util/buildClassName';
 import { stopCurrentAudio } from '../../../util/audioPlayer';
+import buildClassName from '../../../util/buildClassName';
+import { formatMediaDuration } from '../../../util/dateFormat';
 import safePlay from '../../../util/safePlay';
-import { fastRaf } from '../../../util/schedulers';
-import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
-import { useIsIntersecting } from '../../../hooks/useIntersectionObserver';
-import useMediaWithLoadProgress from '../../../hooks/useMediaWithLoadProgress';
-import useShowTransition from '../../../hooks/useShowTransition';
-import useMediaTransition from '../../../hooks/useMediaTransition';
-import usePrevious from '../../../hooks/usePrevious';
+import { ROUND_VIDEO_DIMENSIONS_PX } from '../../common/helpers/mediaDimensions';
+
+import { useThrottledSignal } from '../../../hooks/useAsyncResolvers';
 import useFlag from '../../../hooks/useFlag';
+import { useIsIntersecting } from '../../../hooks/useIntersectionObserver';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useMediaTransition from '../../../hooks/useMediaTransition';
+import useMediaWithLoadProgress from '../../../hooks/useMediaWithLoadProgress';
+import usePrevious from '../../../hooks/usePrevious';
+import useShowTransition from '../../../hooks/useShowTransition';
+import useSignal from '../../../hooks/useSignal';
 import useBlurredMediaThumbRef from './hooks/useBlurredMediaThumbRef';
 
-import ProgressSpinner from '../../ui/ProgressSpinner';
 import OptimizedVideo from '../../ui/OptimizedVideo';
+import ProgressSpinner from '../../ui/ProgressSpinner';
 
 import './RoundVideo.scss';
 
@@ -35,9 +38,13 @@ type OwnProps = {
   message: ApiMessage;
   observeIntersection: ObserveFn;
   canAutoLoad?: boolean;
-  lastSyncTime?: number;
   isDownloading?: boolean;
 };
+
+const PROGRESS_CENTER = ROUND_VIDEO_DIMENSIONS_PX / 2;
+const PROGRESS_MARGIN = 6;
+const PROGRESS_CIRCUMFERENCE = (PROGRESS_CENTER - PROGRESS_MARGIN) * 2 * Math.PI;
+const PROGRESS_THROTTLE = 16; // Min period needed for `playerEl.currentTime` to update
 
 let stopPrevious: NoneToVoidFunction;
 
@@ -45,34 +52,31 @@ const RoundVideo: FC<OwnProps> = ({
   message,
   observeIntersection,
   canAutoLoad,
-  lastSyncTime,
   isDownloading,
 }) => {
   // eslint-disable-next-line no-null/no-null
   const ref = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line no-null/no-null
-  const playingProgressRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line no-null/no-null
   const playerRef = useRef<HTMLVideoElement>(null);
+  // eslint-disable-next-line no-null/no-null
+  const circleRef = useRef<SVGCircleElement>(null);
 
   const video = message.content.video!;
 
   const isIntersecting = useIsIntersecting(ref, observeIntersection);
 
   const [isLoadAllowed, setIsLoadAllowed] = useState(canAutoLoad);
-  const shouldLoad = Boolean(isLoadAllowed && isIntersecting && lastSyncTime);
+  const shouldLoad = Boolean(isLoadAllowed && isIntersecting);
   const { mediaData, loadProgress } = useMediaWithLoadProgress(
     getMessageMediaHash(message, 'inline'),
     !shouldLoad,
     getMessageMediaFormat(message, 'inline'),
-    lastSyncTime,
   );
 
   const { loadProgress: downloadProgress } = useMediaWithLoadProgress(
     getMessageMediaHash(message, 'download'),
     !isDownloading,
     ApiMediaFormat.BlobUrl,
-    lastSyncTime,
   );
 
   const [isPlayerReady, markPlayerReady] = useFlag();
@@ -89,42 +93,32 @@ const RoundVideo: FC<OwnProps> = ({
     transitionClassNames: spinnerClassNames,
   } = useShowTransition(isTransferring, undefined, wasLoadDisabled);
 
-  const [isActivated, setIsActivated] = useState<boolean>(false);
-  const [progress, setProgress] = useState<number>(0);
+  const [isActivated, setIsActivated] = useState(false);
+
+  const [getProgress, setProgress] = useSignal(0);
+  const getThrottledProgress = useThrottledSignal(getProgress, PROGRESS_THROTTLE);
 
   useEffect(() => {
     if (!isActivated) {
       return;
     }
 
-    const svgCenter = ROUND_VIDEO_DIMENSIONS_PX / 2;
-    const svgMargin = 6;
-    const circumference = (svgCenter - svgMargin) * 2 * Math.PI;
-    const strokeDashOffset = circumference - progress * circumference;
-
     const playerEl = playerRef.current!;
-    const playingProgressEl = playingProgressRef.current!;
-    const svgEl = playingProgressEl.firstElementChild;
+    setProgress(playerEl.currentTime / playerEl.duration);
+  }, [setProgress, isActivated, getThrottledProgress]);
 
-    if (!svgEl) {
-      playingProgressEl.innerHTML = `
-        <svg width="${ROUND_VIDEO_DIMENSIONS_PX}px" height="${ROUND_VIDEO_DIMENSIONS_PX}px">
-          <circle cx="${svgCenter}" cy="${svgCenter}" r="${svgCenter - svgMargin}" class="progress-circle"
-            transform="rotate(-90, ${svgCenter}, ${svgCenter})"
-            stroke-dasharray="${circumference} ${circumference}"
-            stroke-dashoffset="${circumference}"
-          />
-        </svg>`;
-    } else {
-      (svgEl.firstElementChild as SVGElement).setAttribute('stroke-dashoffset', strokeDashOffset.toString());
+  useLayoutEffect(() => {
+    if (!isActivated || !circleRef.current) {
+      return;
     }
 
-    setProgress(playerEl.currentTime / playerEl.duration);
-  }, [isActivated, progress]);
+    const strokeDashOffset = PROGRESS_CIRCUMFERENCE - getThrottledProgress() * PROGRESS_CIRCUMFERENCE;
+    circleRef.current.setAttribute('stroke-dashoffset', strokeDashOffset.toString());
+  }, [isActivated, getThrottledProgress]);
 
   const shouldPlay = Boolean(mediaData && isIntersecting);
 
-  const stopPlaying = useCallback(() => {
+  const stopPlaying = useLastCallback(() => {
     if (!playerRef.current) {
       return;
     }
@@ -132,18 +126,14 @@ const RoundVideo: FC<OwnProps> = ({
     setIsActivated(false);
     setProgress(0);
     safePlay(playerRef.current);
+  });
 
-    fastRaf(() => {
-      playingProgressRef.current!.innerHTML = '';
-    });
-  }, []);
-
-  const capturePlaying = useCallback(() => {
+  const capturePlaying = useLastCallback(() => {
     stopPrevious?.();
     stopPrevious = stopPlaying;
-  }, [stopPlaying]);
+  });
 
-  const handleClick = useCallback(() => {
+  const handleClick = useLastCallback(() => {
     if (!mediaData) {
       setIsLoadAllowed((isAllowed) => !isAllowed);
 
@@ -173,13 +163,13 @@ const RoundVideo: FC<OwnProps> = ({
 
       setIsActivated(true);
     }
-  }, [capturePlaying, isActivated, isDownloading, mediaData, message]);
+  });
 
-  const handleTimeUpdate = useCallback((e: React.UIEvent<HTMLVideoElement>) => {
+  const handleTimeUpdate = useLastCallback((e: React.UIEvent<HTMLVideoElement>) => {
     const playerEl = e.currentTarget;
 
     setProgress(playerEl.currentTime / playerEl.duration);
-  }, []);
+  });
 
   return (
     <div
@@ -212,18 +202,33 @@ const RoundVideo: FC<OwnProps> = ({
         className={buildClassName('thumbnail', thumbClassNames)}
         style={`width: ${ROUND_VIDEO_DIMENSIONS_PX}px; height: ${ROUND_VIDEO_DIMENSIONS_PX}px`}
       />
-      <div className="progress" ref={playingProgressRef} />
+      <div className="progress">
+        {isActivated && (
+          <svg width={ROUND_VIDEO_DIMENSIONS_PX} height={ROUND_VIDEO_DIMENSIONS_PX}>
+            <circle
+              ref={circleRef}
+              cx={PROGRESS_CENTER}
+              cy={PROGRESS_CENTER}
+              r={PROGRESS_CENTER - PROGRESS_MARGIN}
+              className="progress-circle"
+              transform={`rotate(-90, ${PROGRESS_CENTER}, ${PROGRESS_CENTER})`}
+              stroke-dasharray={PROGRESS_CIRCUMFERENCE}
+              stroke-dashoffset={PROGRESS_CIRCUMFERENCE}
+            />
+          </svg>
+        )}
+      </div>
       {shouldSpinnerRender && (
         <div className={`media-loading ${spinnerClassNames}`}>
           <ProgressSpinner progress={isDownloading ? downloadProgress : loadProgress} />
         </div>
       )}
       {!mediaData && !isLoadAllowed && (
-        <i className="icon-download" />
+        <i className="icon icon-download" />
       )}
       <div className="message-media-duration">
         {isActivated ? formatMediaDuration(playerRef.current!.currentTime) : formatMediaDuration(video.duration)}
-        {(!isActivated || playerRef.current!.paused) && <i className="icon-muted" />}
+        {(!isActivated || playerRef.current!.paused) && <i className="icon icon-muted" />}
       </div>
     </div>
   );

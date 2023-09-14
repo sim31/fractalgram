@@ -1,6 +1,4 @@
 .ChatOrUserPicker {
-  z-index: var(--z-media-viewer);
-
   .modal-dialog {
     height: 70%;
     max-width: 25rem;
@@ -8,6 +6,11 @@
     @media (max-width: 600px) {
       height: 90%;
     }
+  }
+
+  &_slide {
+    display: flex;
+    flex-direction: column;
   }
 
   .modal-header {
@@ -52,6 +55,15 @@
       overflow-x: hidden;
       overflow-y: auto;
       padding: 0 0.5rem;
+
+      body.is-ios &,
+      body.is-android & {
+        padding: 0;
+      }
+
+      @media (max-width: 600px) {
+        padding: 0;
+      }
     }
   }
 

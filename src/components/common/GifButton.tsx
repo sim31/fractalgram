@@ -1,29 +1,30 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useRef, useState,
+  memo, useEffect, useRef, useState,
 } from '../../lib/teact/teact';
 
 import type { ApiVideo } from '../../api/types';
+import type { ObserveFn } from '../../hooks/useIntersectionObserver';
 import { ApiMediaFormat } from '../../api/types';
 
-import { IS_TOUCH_ENV } from '../../util/environment';
 import buildClassName from '../../util/buildClassName';
-import type { ObserveFn } from '../../hooks/useIntersectionObserver';
-import { useIsIntersecting } from '../../hooks/useIntersectionObserver';
+import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
 import { preventMessageInputBlurWithBubbling } from '../middle/helpers/preventMessageInputBlur';
 
-import useMedia from '../../hooks/useMedia';
 import useBuffering from '../../hooks/useBuffering';
 import useCanvasBlur from '../../hooks/useCanvasBlur';
-import useLang from '../../hooks/useLang';
-import useContextMenuPosition from '../../hooks/useContextMenuPosition';
 import useContextMenuHandlers from '../../hooks/useContextMenuHandlers';
+import { useIsIntersecting } from '../../hooks/useIntersectionObserver';
+import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
+import useMedia from '../../hooks/useMedia';
+import useMenuPosition from '../../hooks/useMenuPosition';
 
-import Spinner from '../ui/Spinner';
 import Button from '../ui/Button';
 import Menu from '../ui/Menu';
 import MenuItem from '../ui/MenuItem';
 import OptimizedVideo from '../ui/OptimizedVideo';
+import Spinner from '../ui/Spinner';
 
 import './GifButton.scss';
 
@@ -69,63 +70,55 @@ const GifButton: FC<OwnProps> = ({
     handleContextMenuClose, handleContextMenuHide,
   } = useContextMenuHandlers(ref);
 
-  const getTriggerElement = useCallback(() => ref.current, []);
-
-  const getRootElement = useCallback(
-    () => ref.current!.closest('.custom-scroll, .no-scrollbar'),
-    [],
-  );
-
-  const getMenuElement = useCallback(
-    () => ref.current!.querySelector('.gif-context-menu .bubble'),
-    [],
-  );
+  const getTriggerElement = useLastCallback(() => ref.current);
+  const getRootElement = useLastCallback(() => ref.current!.closest('.custom-scroll, .no-scrollbar'));
+  const getMenuElement = useLastCallback(() => ref.current!.querySelector('.gif-context-menu .bubble'));
 
   const {
     positionX, positionY, transformOriginX, transformOriginY, style: menuStyle,
-  } = useContextMenuPosition(
+  } = useMenuPosition(
     contextMenuPosition,
     getTriggerElement,
     getRootElement,
     getMenuElement,
   );
 
-  const handleClick = useCallback(() => {
+  const handleClick = useLastCallback(() => {
     if (isContextMenuOpen || !onClick) return;
     onClick({
       ...gif,
       blobUrl: videoData,
     });
-  }, [isContextMenuOpen, onClick, gif, videoData]);
+  });
 
-  const handleUnsaveClick = useCallback((e: React.MouseEvent) => {
+  const handleUnsaveClick = useLastCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
     onUnsaveClick!(gif);
-  }, [onUnsaveClick, gif]);
+  });
 
-  const handleContextDelete = useCallback(() => {
+  const handleContextDelete = useLastCallback(() => {
     onUnsaveClick?.(gif);
-  }, [gif, onUnsaveClick]);
+  });
 
-  const handleSendQuiet = useCallback(() => {
+  const handleSendQuiet = useLastCallback(() => {
     onClick!({
       ...gif,
       blobUrl: videoData,
     }, true);
-  }, [gif, onClick, videoData]);
+  });
 
-  const handleSendScheduled = useCallback(() => {
+  const handleSendScheduled = useLastCallback(() => {
     onClick!({
       ...gif,
       blobUrl: videoData,
     }, undefined, true);
-  }, [gif, onClick, videoData]);
+  });
 
-  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLElement>) => {
+  const handleMouseDown = useLastCallback((e: React.MouseEvent<HTMLElement>) => {
     preventMessageInputBlurWithBubbling(e);
     handleBeforeContextMenu(e);
-  }, [handleBeforeContextMenu]);
+  });
 
   useEffect(() => {
     if (isDisabled) handleContextMenuClose();
@@ -152,9 +145,10 @@ const GifButton: FC<OwnProps> = ({
           className="gif-unsave-button"
           color="dark"
           pill
+          noFastClick
           onClick={handleUnsaveClick}
         >
-          <i className="icon-close gif-unsave-button-icon" />
+          <i className="icon icon-close gif-unsave-button-icon" />
         </Button>
       )}
       {withThumb && (

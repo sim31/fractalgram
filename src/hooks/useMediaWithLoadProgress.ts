@@ -2,10 +2,11 @@ import {
   useEffect, useMemo, useRef, useState,
 } from '../lib/teact/teact';
 
-import { IS_PROGRESSIVE_SUPPORTED } from '../util/environment';
 import { ApiMediaFormat } from '../api/types';
-import { throttle } from '../util/schedulers';
+
 import * as mediaLoader from '../util/mediaLoader';
+import { throttle } from '../util/schedulers';
+import { IS_PROGRESSIVE_SUPPORTED } from '../util/windowEnvironment';
 import useForceUpdate from './useForceUpdate';
 import useUniqueId from './useUniqueId';
 
@@ -17,14 +18,11 @@ export default function useMediaWithLoadProgress(
   mediaHash: string | undefined,
   noLoad = false,
   mediaFormat = ApiMediaFormat.BlobUrl,
-  cacheBuster?: number,
   delay?: number | false,
   isHtmlAllowed = false,
 ) {
   const mediaData = mediaHash ? mediaLoader.getFromMemory(mediaHash) : undefined;
-  const isStreaming = mediaFormat === ApiMediaFormat.Stream || (
-    IS_PROGRESSIVE_SUPPORTED && mediaFormat === ApiMediaFormat.Progressive
-  );
+  const isStreaming = IS_PROGRESSIVE_SUPPORTED && mediaFormat === ApiMediaFormat.Progressive;
   const forceUpdate = useForceUpdate();
   const id = useUniqueId();
   const [loadProgress, setLoadProgress] = useState(mediaData && !isStreaming ? 1 : 0);
@@ -66,8 +64,7 @@ export default function useMediaWithLoadProgress(
       }
     }
   }, [
-    noLoad, mediaHash, mediaData, mediaFormat, cacheBuster, forceUpdate, isStreaming, delay, handleProgress,
-    isHtmlAllowed, id,
+    noLoad, mediaHash, mediaData, mediaFormat, forceUpdate, isStreaming, delay, handleProgress, isHtmlAllowed, id,
   ]);
 
   useEffect(() => {

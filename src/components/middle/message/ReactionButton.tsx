@@ -1,21 +1,23 @@
-import React, { memo, useCallback, useMemo } from '../../../lib/teact/teact';
+import type { FC } from '../../../lib/teact/teact';
+import React, { memo, useMemo } from '../../../lib/teact/teact';
 import { getActions, getGlobal } from '../../../global';
 
-import type { FC } from '../../../lib/teact/teact';
-import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
 import type {
-  ApiAvailableReaction, ApiMessage, ApiReactionCount, ApiStickerSet, ApiUser,
+  ApiAvailableReaction, ApiChat, ApiMessage, ApiReactionCount, ApiStickerSet, ApiUser,
 } from '../../../api/types';
 import type { ActiveReaction } from '../../../global/types';
+import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
 
+import { isReactionChosen, isSameReaction } from '../../../global/helpers';
 import buildClassName from '../../../util/buildClassName';
 import { formatIntegerCompact } from '../../../util/textFormat';
-import { isSameReaction, isReactionChosen } from '../../../global/helpers';
 
-import Button from '../../ui/Button';
-import Avatar from '../../common/Avatar';
-import ReactionAnimatedEmoji from './ReactionAnimatedEmoji';
+import useLastCallback from '../../../hooks/useLastCallback';
+
 import AnimatedCounter from '../../common/AnimatedCounter';
+import AvatarList from '../../common/AvatarList';
+import Button from '../../ui/Button';
+import ReactionAnimatedEmoji from './ReactionAnimatedEmoji';
 
 import './Reactions.scss';
 
@@ -25,6 +27,7 @@ const ReactionButton: FC<{
   activeReactions?: ActiveReaction[];
   availableReactions?: ApiAvailableReaction[];
   withRecentReactors?: boolean;
+  withEffects?: boolean;
   genericEffects?: ApiStickerSet;
   observeIntersection?: ObserveFn;
 }> = ({
@@ -33,6 +36,7 @@ const ReactionButton: FC<{
   activeReactions,
   availableReactions,
   withRecentReactors,
+  withEffects,
   genericEffects,
   observeIntersection,
 }) => {
@@ -44,22 +48,23 @@ const ReactionButton: FC<{
       return undefined;
     }
 
-    // No need for expensive global updates on users, so we avoid them
+    // No need for expensive global updates on chats or users, so we avoid them
+    const chatsById = getGlobal().chats.byId;
     const usersById = getGlobal().users.byId;
 
     return recentReactions
       .filter((recentReaction) => isSameReaction(recentReaction.reaction, reaction.reaction))
-      .map((recentReaction) => usersById[recentReaction.userId])
-      .filter(Boolean) as ApiUser[];
+      .map((recentReaction) => usersById[recentReaction.peerId] || chatsById[recentReaction.peerId])
+      .filter(Boolean) as (ApiChat | ApiUser)[];
   }, [reaction.reaction, recentReactions, withRecentReactors]);
 
-  const handleClick = useCallback(() => {
+  const handleClick = useLastCallback(() => {
     toggleReaction({
       reaction: reaction.reaction,
       chatId: message.chatId,
       messageId: message.id,
     });
-  }, [message, reaction, toggleReaction]);
+  });
 
   return (
     <Button
@@ -73,12 +78,11 @@ const ReactionButton: FC<{
         availableReactions={availableReactions}
         genericEffects={genericEffects}
         observeIntersection={observeIntersection}
+        withEffects={withEffects}
       />
       {recentReactors?.length ? (
-        <div className="avatars">
-          {recentReactors.map((user) => <Avatar user={user} size="micro" />)}
-        </div>
-      ) : <AnimatedCounter text={formatIntegerCompact(reaction.count)} />}
+        <AvatarList size="mini" peers={recentReactors} />
+      ) : <AnimatedCounter text={formatIntegerCompact(reaction.count)} className="counter" />}
     </Button>
   );
 };

@@ -1,28 +1,29 @@
+import type { FC } from '../../lib/teact/teact';
 import React, {
-  useEffect, useRef, memo, useCallback,
+  memo, useCallback, useEffect, useLayoutEffect, useRef,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { FC } from '../../lib/teact/teact';
 import type { GlobalState } from '../../global/types';
 import type { LangCode } from '../../types';
 
 import { DEFAULT_LANG_CODE } from '../../config';
-import { LOCAL_TGS_URLS } from '../common/helpers/animatedAssets';
-import { setLanguage } from '../../util/langProvider';
+import { disableStrict, enableStrict } from '../../lib/fasterdom/stricterdom';
 import buildClassName from '../../util/buildClassName';
+import { setLanguage } from '../../util/langProvider';
+import { LOCAL_TGS_URLS } from '../common/helpers/animatedAssets';
 import renderText from '../common/helpers/renderText';
 import { getSuggestedLanguage } from './helpers/getSuggestedLanguage';
 
-import useLangString from '../../hooks/useLangString';
+import useAsync from '../../hooks/useAsync';
 import useFlag from '../../hooks/useFlag';
 import useLang from '../../hooks/useLang';
+import useLangString from '../../hooks/useLangString';
 import useMediaTransition from '../../hooks/useMediaTransition';
-import useAsync from '../../hooks/useAsync';
 
-import Loading from '../ui/Loading';
-import Button from '../ui/Button';
 import AnimatedIcon from '../common/AnimatedIcon';
+import Button from '../ui/Button';
+import Loading from '../ui/Loading';
 
 import blankUrl from '../../assets/blank.png';
 
@@ -33,6 +34,7 @@ type StateProps =
 const DATA_PREFIX = 'tg://login?token=';
 const QR_SIZE = 280;
 const QR_PLANE_SIZE = 54;
+const QR_CODE_MUTATION_DURATION = 50; // The library is asynchronous and we need to wait for its mutation code
 
 let qrCodeStylingPromise: Promise<typeof import('qr-code-styling')>;
 
@@ -58,7 +60,9 @@ const AuthCode: FC<StateProps> = ({
   const lang = useLang();
   // eslint-disable-next-line no-null/no-null
   const qrCodeRef = useRef<HTMLDivElement>(null);
-  const continueText = useLangString(suggestedLanguage, 'ContinueOnThisLanguage');
+
+  const isConnected = connectionState === 'connectionStateReady';
+  const continueText = useLangString(isConnected ? suggestedLanguage : undefined, 'ContinueOnThisLanguage', true);
   const [isLoading, markIsLoading, unmarkIsLoading] = useFlag();
   const [isQrMounted, markQrMounted, unmarkQrMounted] = useFlag();
 
@@ -88,19 +92,21 @@ const AuthCode: FC<StateProps> = ({
 
   const transitionClassNames = useMediaTransition(isQrMounted);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!authQrCode || !qrCode) {
       return () => {
         unmarkQrMounted();
       };
     }
 
-    if (connectionState !== 'connectionStateReady') {
+    if (!isConnected) {
       return undefined;
     }
 
     const container = qrCodeRef.current!;
     const data = `${DATA_PREFIX}${authQrCode.token}`;
+
+    disableStrict();
 
     qrCode.update({
       data,
@@ -110,14 +116,19 @@ const AuthCode: FC<StateProps> = ({
       qrCode.append(container);
       markQrMounted();
     }
+
+    setTimeout(() => {
+      enableStrict();
+    }, QR_CODE_MUTATION_DURATION);
+
     return undefined;
-  }, [connectionState, authQrCode, isQrMounted, markQrMounted, unmarkQrMounted, qrCode]);
+  }, [isConnected, authQrCode, isQrMounted, markQrMounted, unmarkQrMounted, qrCode]);
 
   useEffect(() => {
-    if (connectionState === 'connectionStateReady') {
+    if (isConnected) {
       void setLanguage(DEFAULT_LANG_CODE);
     }
-  }, [connectionState]);
+  }, [isConnected]);
 
   const handleLangChange = useCallback(() => {
     markIsLoading();

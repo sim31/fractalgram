@@ -1,16 +1,16 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  useCallback, memo, useRef, useEffect, useState,
+  memo, useEffect, useRef, useState,
 } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
 import type { ApiMessage } from '../../api/types';
+import type { ObserveFn } from '../../hooks/useIntersectionObserver';
 
 import {
   SUPPORTED_IMAGE_CONTENT_TYPES,
   SUPPORTED_VIDEO_CONTENT_TYPES,
 } from '../../config';
-import { getDocumentExtension, getDocumentHasPreview } from './helpers/documentInfo';
 import {
   getMediaTransferState,
   getMessageMediaFormat,
@@ -18,11 +18,13 @@ import {
   getMessageMediaThumbDataUri,
   isMessageDocumentVideo,
 } from '../../global/helpers';
-import type { ObserveFn } from '../../hooks/useIntersectionObserver';
-import { useIsIntersecting } from '../../hooks/useIntersectionObserver';
-import useMediaWithLoadProgress from '../../hooks/useMediaWithLoadProgress';
-import useMedia from '../../hooks/useMedia';
+import { getDocumentExtension, getDocumentHasPreview } from './helpers/documentInfo';
+
 import useFlag from '../../hooks/useFlag';
+import { useIsIntersecting } from '../../hooks/useIntersectionObserver';
+import useLastCallback from '../../hooks/useLastCallback';
+import useMedia from '../../hooks/useMedia';
+import useMediaWithLoadProgress from '../../hooks/useMediaWithLoadProgress';
 
 import File from './File';
 
@@ -39,7 +41,7 @@ type OwnProps = {
   className?: string;
   sender?: string;
   autoLoadFileMaxSizeMb?: number;
-  isDownloading: boolean;
+  isDownloading?: boolean;
   onCancelUpload?: () => void;
   onMediaClick?: () => void;
   onDateClick?: (messageId: number, chatId: string) => void;
@@ -91,7 +93,7 @@ const Document: FC<OwnProps> = ({
 
   const documentHash = getMessageMediaHash(message, 'download');
   const { loadProgress: downloadProgress, mediaData } = useMediaWithLoadProgress(
-    documentHash, !shouldDownload, getMessageMediaFormat(message, 'download'), undefined, undefined, true,
+    documentHash, !shouldDownload, getMessageMediaFormat(message, 'download'), undefined, true,
   );
   const isLoaded = Boolean(mediaData);
 
@@ -108,7 +110,7 @@ const Document: FC<OwnProps> = ({
     SUPPORTED_VIDEO_CONTENT_TYPES.has(document.mimeType) || SUPPORTED_IMAGE_CONTENT_TYPES.has(document.mimeType)
   );
 
-  const handleClick = useCallback(() => {
+  const handleClick = useLastCallback(() => {
     if (isUploading) {
       if (onCancelUpload) {
         onCancelUpload();
@@ -131,13 +133,11 @@ const Document: FC<OwnProps> = ({
     } else {
       dispatch.downloadMessageMedia({ message });
     }
-  }, [
-    isUploading, isDownloading, isTransferring, withMediaViewer, onCancelUpload, dispatch, message, onMediaClick,
-  ]);
+  });
 
-  const handleDateClick = useCallback(() => {
+  const handleDateClick = useLastCallback(() => {
     onDateClick!(message.id, message.chatId);
-  }, [onDateClick, message.id, message.chatId]);
+  });
 
   return (
     <File
@@ -156,7 +156,7 @@ const Document: FC<OwnProps> = ({
       sender={sender}
       isSelectable={isSelectable}
       isSelected={isSelected}
-      actionIcon={withMediaViewer ? (isMessageDocumentVideo(message) ? 'icon-play' : 'icon-eye') : 'icon-download'}
+      actionIcon={withMediaViewer ? (isMessageDocumentVideo(message) ? 'play' : 'eye') : 'download'}
       onClick={handleClick}
       onDateClick={onDateClick ? handleDateClick : undefined}
     />

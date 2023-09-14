@@ -1,8 +1,8 @@
-import { useCallback } from '../../../lib/teact/teact';
+import { requestMutation } from '../../../lib/fasterdom/fasterdom';
 
-import { fastRaf } from '../../../util/schedulers';
-import useRunDebounced from '../../../hooks/useRunDebounced';
 import useFlag from '../../../hooks/useFlag';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useRunDebounced from '../../../hooks/useRunDebounced';
 
 const DEBOUNCE = 1000;
 const STICKY_TOP = 10;
@@ -15,31 +15,33 @@ export default function useStickyDates() {
 
   const runDebounced = useRunDebounced(DEBOUNCE, true);
 
-  const updateStickyDates = useCallback((container: HTMLDivElement, hasTools?: boolean) => {
+  const updateStickyDates = useLastCallback((container: HTMLDivElement, hasTools?: boolean) => {
     markIsScrolled();
 
     if (!document.body.classList.contains('is-scrolling-messages')) {
-      fastRaf(() => {
+      requestMutation(() => {
         document.body.classList.add('is-scrolling-messages');
       });
     }
 
     runDebounced(() => {
-      fastRaf(() => {
+      const stuckDateEl = findStuckDate(container, hasTools);
+      if (stuckDateEl) {
+        requestMutation(() => {
+          stuckDateEl.classList.add('stuck');
+        });
+      }
+
+      requestMutation(() => {
         const currentStuck = document.querySelector('.stuck');
         if (currentStuck) {
           currentStuck.classList.remove('stuck');
         }
 
-        const stuckDateEl = findStuckDate(container, hasTools);
-        if (stuckDateEl) {
-          stuckDateEl.classList.add('stuck');
-        }
-
         document.body.classList.remove('is-scrolling-messages');
       });
     });
-  }, [markIsScrolled, runDebounced]);
+  });
 
   return {
     isScrolled,

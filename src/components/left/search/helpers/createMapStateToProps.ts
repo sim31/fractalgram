@@ -1,7 +1,7 @@
-import type { GlobalState } from '../../../../global/types';
 import type {
   ApiChat, ApiGlobalMessageSearchType, ApiMessage, ApiUser,
 } from '../../../../api/types';
+import type { GlobalState, TabState } from '../../../../global/types';
 import type { ISettings } from '../../../../types';
 
 import { selectChat, selectTabState, selectTheme } from '../../../../global/selectors';
@@ -13,9 +13,8 @@ export type StateProps = {
   usersById: Record<string, ApiUser>;
   globalMessagesByChatId?: Record<string, { byId: Record<number, ApiMessage> }>;
   foundIds?: string[];
-  lastSyncTime?: number;
   searchChatId?: string;
-  activeDownloads: Record<string, number[]>;
+  activeDownloads: TabState['activeDownloads']['byChatId'];
   isChatProtected?: boolean;
 };
 
@@ -49,7 +48,6 @@ export function createMapStateToProps(type: ApiGlobalMessageSearchType) {
       searchChatId: chatId,
       activeDownloads,
       isChatProtected: chatId ? selectChat(global, chatId)?.isProtected : undefined,
-      lastSyncTime: global.lastSyncTime,
     };
   };
 }

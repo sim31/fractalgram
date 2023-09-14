@@ -1,28 +1,35 @@
-import { addActionHandler, getGlobal, setGlobal } from '../../index';
-
-import type { ApiUpdateChat } from '../../../api/types';
+import type { ApiMessage, ApiUpdateChat } from '../../../api/types';
+import type { ActionReturnType } from '../../types';
 import { MAIN_THREAD_ID } from '../../../api/types';
 
 import { ARCHIVED_FOLDER_ID, MAX_ACTIVE_PINNED_CHATS } from '../../../config';
-import { buildCollectionByKey, omit, pick } from '../../../util/iteratees';
+import { buildCollectionByKey, omit } from '../../../util/iteratees';
 import { closeMessageNotifications, notifyAboutMessage } from '../../../util/notifications';
 import {
+  addActionHandler, getGlobal, setGlobal,
+} from '../../index';
+import {
+  leaveChat,
+  replaceThreadParam,
   updateChat,
+  updateChatFullInfo,
   updateChatListIds,
   updateChatListType,
-  replaceThreadParam,
-  leaveChat, updateTopic,
+  updateTopic,
 } from '../../reducers';
+import { updateUnreadReactions } from '../../reducers/reactions';
+import { updateTabState } from '../../reducers/tabs';
 import {
   selectChat,
-  selectCommonBoxChatId,
-  selectIsChatListed,
+  selectChatFullInfo,
   selectChatListType,
+  selectCommonBoxChatId,
   selectCurrentMessageList,
+  selectIsChatListed,
+  selectTabState,
   selectThreadParam,
+  selectTopicFromMessage,
 } from '../../selectors';
-import { updateUnreadReactions } from '../../reducers/reactions';
-import type { ActionReturnType } from '../../types';
 
 const TYPING_STATUS_CLEAR_DELAY = 6000; // 6 seconds
 
@@ -138,6 +145,13 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
         });
       }
 
+      const topic = chat.isForum ? selectTopicFromMessage(global, message as ApiMessage) : undefined;
+      if (topic) {
+        global = updateTopic(global, update.chatId, topic.id, {
+          unreadCount: topic.unreadCount ? topic.unreadCount + 1 : 1,
+        });
+      }
+
       setGlobal(global);
 
       notifyAboutMessage({
@@ -178,18 +192,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
     }
 
     case 'updateChatFullInfo': {
-      const { fullInfo } = update;
-      const targetChat = global.chats.byId[update.id];
-      if (!targetChat) {
-        return undefined;
-      }
-
-      return updateChat(global, update.id, {
-        fullInfo: {
-          ...targetChat.fullInfo,
-          ...fullInfo,
-        },
-      });
+      return updateChatFullInfo(global, update.id, update.fullInfo);
     }
 
     case 'updatePinnedChatIds': {
@@ -255,16 +258,21 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       const { id, folder } = update;
       const { byId: chatFoldersById, orderedIds } = global.chatFolders;
 
-      const newChatFoldersById = folder
-        ? { ...chatFoldersById, [id]: folder }
-        : pick(
-          chatFoldersById,
-          Object.keys(chatFoldersById).map(Number).filter((folderId) => folderId !== id),
-        );
+      const isDeleted = folder === undefined;
 
-      const newOrderedIds = folder
-        ? orderedIds && orderedIds.includes(id) ? orderedIds : [...(orderedIds || []), id]
-        : orderedIds ? orderedIds.filter((orderedId) => orderedId !== id) : undefined;
+      Object.values(global.byTabId).forEach(({ id: tabId }) => {
+        const tabState = selectTabState(global, tabId);
+        const isFolderActive = Object.values(chatFoldersById)[tabState.activeChatFolder - 1]?.id === id;
+
+        if (isFolderActive) {
+          global = updateTabState(global, { activeChatFolder: 0 }, tabId);
+        }
+      });
+
+      const newChatFoldersById = !isDeleted ? { ...chatFoldersById, [id]: folder } : omit(chatFoldersById, [id]);
+      const newOrderedIds = !isDeleted
+        ? orderedIds?.includes(id) ? orderedIds : [...(orderedIds || []), id]
+        : orderedIds?.filter((orderedId) => orderedId !== id);
 
       return {
         ...global,
@@ -272,6 +280,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
           ...global.chatFolders,
           byId: newChatFoldersById,
           orderedIds: newOrderedIds,
+          invites: omit(global.chatFolders.invites, [id]),
         },
       };
     }
@@ -301,15 +310,15 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
     }
 
     case 'updateChatMembers': {
-      const targetChat = global.chats.byId[update.id];
+      const targetChatFullInfo = selectChatFullInfo(global, update.id);
       const { replacedMembers, addedMember, deletedMemberId } = update;
-      if (!targetChat) {
+      if (!targetChatFullInfo) {
         return undefined;
       }
 
       let shouldUpdate = false;
-      let members = targetChat.fullInfo?.members
-        ? [...targetChat.fullInfo.members]
+      let members = targetChatFullInfo?.members
+        ? [...targetChatFullInfo.members]
         : [];
 
       if (replacedMembers) {
@@ -335,14 +344,13 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
         const adminMembers = members.filter(({ isOwner, isAdmin }) => isOwner || isAdmin);
         // TODO Kicked members?
 
-        return updateChat(global, update.id, {
-          membersCount: members.length,
-          fullInfo: {
-            ...targetChat.fullInfo,
-            members,
-            adminMembersById: buildCollectionByKey(adminMembers, 'userId'),
-          },
+        global = updateChat(global, update.id, { membersCount: members.length });
+        global = updateChatFullInfo(global, update.id, {
+          members,
+          adminMembersById: buildCollectionByKey(adminMembers, 'userId'),
         });
+
+        return global;
       }
 
       return undefined;
@@ -393,12 +401,9 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
         return undefined;
       }
 
-      global = updateChat(global, chatId, {
-        fullInfo: {
-          ...chat.fullInfo,
-          requestsPending,
-          recentRequesterIds,
-        },
+      global = updateChatFullInfo(global, chatId, {
+        requestsPending,
+        recentRequesterIds,
       });
       setGlobal(global);
 

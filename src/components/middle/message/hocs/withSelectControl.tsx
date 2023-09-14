@@ -1,20 +1,18 @@
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { FC } from '../../../../lib/teact/teact';
-import React, {
-  useCallback,
-  useMemo,
-  memo,
-} from '../../../../lib/teact/teact';
+import React, { memo, useMemo } from '../../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../../global';
 
 import type { OwnProps as PhotoProps } from '../Photo';
 import type { OwnProps as VideoProps } from '../Video';
 
-import buildClassName from '../../../../util/buildClassName';
 import {
   selectIsInSelectMode,
   selectIsMessageSelected,
 } from '../../../../global/selectors';
+import buildClassName from '../../../../util/buildClassName';
+
+import useLastCallback from '../../../../hooks/useLastCallback';
 
 type OwnProps =
   PhotoProps
@@ -35,10 +33,10 @@ export default function withSelectControl(WrappedComponent: FC) {
     } = props;
     const { toggleMessageSelection } = getActions();
 
-    const handleMessageSelect = useCallback((e: ReactMouseEvent<HTMLDivElement, MouseEvent>) => {
+    const handleMessageSelect = useLastCallback((e: ReactMouseEvent<HTMLDivElement, MouseEvent>) => {
       e.stopPropagation();
       toggleMessageSelection({ messageId: message.id, withShift: e?.shiftKey });
-    }, [toggleMessageSelection, message]);
+    });
 
     const newProps = useMemo(() => {
       const { dimensions: dims, onClick } = props;
@@ -64,7 +62,7 @@ export default function withSelectControl(WrappedComponent: FC) {
         {isInSelectMode && (
           <div className="message-select-control">
             {isSelected && (
-              <i className="icon-select" />
+              <i className="icon icon-select" />
             )}
           </div>
         )}

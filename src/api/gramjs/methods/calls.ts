@@ -1,24 +1,25 @@
 import BigInt from 'big-integer';
-import type { JoinGroupCallPayload } from '../../../lib/secret-sauce';
-import type {
-  ApiChat, ApiUser, OnApiUpdate, ApiGroupCall, ApiPhoneCall,
-} from '../../types';
 import { Api as GramJs } from '../../../lib/gramjs';
 
-import { invokeRequest } from './client';
+import type { JoinGroupCallPayload } from '../../../lib/secret-sauce';
+import type {
+  ApiChat, ApiGroupCall, ApiPhoneCall,
+  ApiUser, OnApiUpdate,
+} from '../../types';
+
+import { GROUP_CALL_PARTICIPANTS_LIMIT } from '../../../config';
+import {
+  buildApiGroupCall,
+  buildApiGroupCallParticipant, buildCallProtocol,
+  buildPhoneCall,
+} from '../apiBuilders/calls';
+import { buildApiChatFromPreview } from '../apiBuilders/chats';
+import { buildApiUser } from '../apiBuilders/users';
 import {
   buildInputGroupCall, buildInputPeer, buildInputPhoneCall, generateRandomInt,
 } from '../gramjsBuilders';
-import {
-  buildCallProtocol,
-  buildApiGroupCall,
-  buildApiGroupCallParticipant, buildPhoneCall,
-
-} from '../apiBuilders/calls';
-import { buildApiUser } from '../apiBuilders/users';
-import { buildApiChatFromPreview } from '../apiBuilders/chats';
-import { addEntitiesWithPhotosToLocalDb } from '../helpers';
-import { GROUP_CALL_PARTICIPANTS_LIMIT } from '../../../config';
+import { addEntitiesToLocalDb } from '../helpers';
+import { invokeRequest, invokeRequestBeacon } from './client';
 
 let onUpdate: OnApiUpdate;
 
@@ -39,8 +40,8 @@ export async function getGroupCall({
     return undefined;
   }
 
-  addEntitiesWithPhotosToLocalDb(result.users);
-  addEntitiesWithPhotosToLocalDb(result.chats);
+  addEntitiesToLocalDb(result.users);
+  addEntitiesToLocalDb(result.chats);
 
   const users = result.users.map(buildApiUser).filter(Boolean);
   const chats = result.chats.map((c) => buildApiChatFromPreview(c)).filter(Boolean);
@@ -59,7 +60,9 @@ export function discardGroupCall({
 }) {
   return invokeRequest(new GramJs.phone.DiscardGroupCall({
     call: buildInputGroupCall(call),
-  }), true);
+  }), {
+    shouldReturnTrue: true,
+  });
 }
 
 export function editGroupCallParticipant({
@@ -78,7 +81,9 @@ export function editGroupCallParticipant({
     ...(presentationPaused !== undefined && { presentationPaused }),
     ...(raiseHand !== undefined && { raiseHand }),
     ...(volume !== undefined && { volume }),
-  }), true);
+  }), {
+    shouldReturnTrue: true,
+  });
 }
 
 export function editGroupCallTitle({
@@ -89,7 +94,9 @@ export function editGroupCallTitle({
   return invokeRequest(new GramJs.phone.EditGroupCallTitle({
     title,
     call: buildInputGroupCall(groupCall),
-  }), true);
+  }), {
+    shouldReturnTrue: true,
+  });
 }
 
 export async function exportGroupCallInvite({
@@ -126,8 +133,8 @@ export async function fetchGroupCallParticipants({
     return undefined;
   }
 
-  addEntitiesWithPhotosToLocalDb(result.users);
-  addEntitiesWithPhotosToLocalDb(result.chats);
+  addEntitiesToLocalDb(result.users);
+  addEntitiesToLocalDb(result.chats);
 
   const users = result.users.map(buildApiUser).filter(Boolean);
   const chats = result.chats.map((c) => buildApiChatFromPreview(c)).filter(Boolean);
@@ -145,13 +152,22 @@ export async function fetchGroupCallParticipants({
 }
 
 export function leaveGroupCall({
-  call,
+  call, isPageUnload,
 }: {
-  call: ApiGroupCall;
+  call: ApiGroupCall; isPageUnload?: boolean;
 }) {
-  return invokeRequest(new GramJs.phone.LeaveGroupCall({
+  const request = new GramJs.phone.LeaveGroupCall({
     call: buildInputGroupCall(call),
-  }), true);
+  });
+
+  if (isPageUnload) {
+    invokeRequestBeacon(request);
+    return;
+  }
+
+  invokeRequest(request, {
+    shouldReturnTrue: true,
+  });
 }
 
 export async function joinGroupCall({
@@ -168,7 +184,10 @@ export async function joinGroupCall({
       data: JSON.stringify(params),
     }),
     inviteHash,
-  }));
+  }), {
+    shouldRetryOnTimeout: true,
+    abortControllerGroup: 'call',
+  });
 
   if (!result) return undefined;
 
@@ -215,7 +234,9 @@ export function joinGroupCallPresentation({
     params: new GramJs.DataJSON({
       data: JSON.stringify(params),
     }),
-  }), true);
+  }), {
+    shouldReturnTrue: true,
+  });
 }
 
 export function toggleGroupCallStartSubscription({
@@ -226,7 +247,10 @@ export function toggleGroupCallStartSubscription({
   return invokeRequest(new GramJs.phone.ToggleGroupCallStartSubscription({
     call: buildInputGroupCall(call),
     subscribed,
-  }), true, undefined, undefined, undefined, true);
+  }), {
+    shouldReturnTrue: true,
+    shouldIgnoreErrors: true,
+  });
 }
 
 export function leaveGroupCallPresentation({
@@ -236,7 +260,9 @@ export function leaveGroupCallPresentation({
 }) {
   return invokeRequest(new GramJs.phone.LeaveGroupCallPresentation({
     call: buildInputGroupCall(call),
-  }), true);
+  }), {
+    shouldReturnTrue: true,
+  });
 }
 
 export async function getDhConfig() {
@@ -252,14 +278,23 @@ export async function getDhConfig() {
 }
 
 export function discardCall({
-  call, isBusy,
+  call, isBusy, isPageUnload,
 }: {
-  call: ApiPhoneCall; isBusy?: boolean;
+  call: ApiPhoneCall; isBusy?: boolean; isPageUnload?: boolean;
 }) {
-  return invokeRequest(new GramJs.phone.DiscardCall({
+  const request = new GramJs.phone.DiscardCall({
     peer: buildInputPhoneCall(call),
     reason: isBusy ? new GramJs.PhoneCallDiscardReasonBusy() : new GramJs.PhoneCallDiscardReasonHangup(),
-  }), true);
+  });
+
+  if (isPageUnload) {
+    invokeRequestBeacon(request);
+    return;
+  }
+
+  invokeRequest(request, {
+    shouldReturnTrue: true,
+  });
 }
 
 export async function requestCall({
@@ -286,7 +321,7 @@ export async function requestCall({
     call,
   });
 
-  addEntitiesWithPhotosToLocalDb(result.users);
+  addEntitiesToLocalDb(result.users);
 
   return {
     users: result.users.map(buildApiUser).filter(Boolean),
@@ -302,7 +337,9 @@ export function setCallRating({
     rating,
     peer: buildInputPhoneCall(call),
     comment,
-  }), true);
+  }), {
+    shouldReturnTrue: true,
+  });
 }
 
 export function receivedCall({
@@ -337,7 +374,7 @@ export async function acceptCall({
     call,
   });
 
-  addEntitiesWithPhotosToLocalDb(result.users);
+  addEntitiesToLocalDb(result.users);
 
   return {
     users: result.users.map(buildApiUser).filter(Boolean),
@@ -367,7 +404,7 @@ export async function confirmCall({
     call,
   });
 
-  addEntitiesWithPhotosToLocalDb(result.users);
+  addEntitiesToLocalDb(result.users);
 
   return {
     users: result.users.map(buildApiUser).filter(Boolean),

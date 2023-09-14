@@ -1,49 +1,58 @@
 import type { FC } from '../../lib/teact/teact';
 import React, {
-  useEffect, useRef, useCallback, useMemo,
+  memo, useEffect, useLayoutEffect,
+  useMemo,
 } from '../../lib/teact/teact';
 
+import type { ApiDimensions } from '../../api/types';
 import type { BufferedRange } from '../../hooks/useBuffering';
 
-import { IS_IOS, IS_TOUCH_ENV } from '../../util/environment';
 import buildClassName from '../../util/buildClassName';
 import { formatMediaDuration } from '../../util/dateFormat';
 import { formatFileSize } from '../../util/textFormat';
-import { captureEvents } from '../../util/captureEvents';
-import useLang from '../../hooks/useLang';
-import useFlag from '../../hooks/useFlag';
+import { IS_IOS, IS_TOUCH_ENV } from '../../util/windowEnvironment';
+
 import useAppLayout from '../../hooks/useAppLayout';
+import useCurrentTimeSignal from '../../hooks/useCurrentTimeSignal';
+import useDerivedState from '../../hooks/useDerivedState';
+import useFlag from '../../hooks/useFlag';
+import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
+import useSignal from '../../hooks/useSignal';
+import useControlsSignal from './hooks/useControlsSignal';
 
 import Button from '../ui/Button';
-import RangeSlider from '../ui/RangeSlider';
 import Menu from '../ui/Menu';
 import MenuItem from '../ui/MenuItem';
+import RangeSlider from '../ui/RangeSlider';
+import SeekLine from './SeekLine';
 
 import './VideoPlayerControls.scss';
 
 type OwnProps = {
+  url?: string;
   bufferedRanges: BufferedRange[];
   bufferedProgress: number;
-  currentTime: number;
   duration: number;
+  isReady: boolean;
   fileSize: number;
   isForceMobileVersion?: boolean;
   isPlaying: boolean;
   isFullscreenSupported: boolean;
   isPictureInPictureSupported: boolean;
   isFullscreen: boolean;
-  isVisible: boolean;
+  isPreviewDisabled?: boolean;
   isBuffered: boolean;
   volume: number;
   isMuted: boolean;
   playbackRate: number;
+  posterSize?: ApiDimensions;
   onChangeFullscreen: (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => void;
-  onPictureInPictureChange?: () => void ;
+  onPictureInPictureChange?: () => void;
   onVolumeClick: () => void;
   onVolumeChange: (volume: number) => void;
   onPlaybackRateChange: (playbackRate: number) => void;
   onPlayPause: (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => void;
-  setVisibility: (isVisible: boolean) => void;
   onSeek: (position: number) => void;
 };
 
@@ -61,20 +70,22 @@ const PLAYBACK_RATES = [
 const HIDE_CONTROLS_TIMEOUT_MS = 3000;
 
 const VideoPlayerControls: FC<OwnProps> = ({
+  url,
   bufferedRanges,
   bufferedProgress,
-  currentTime,
   duration,
+  isReady,
   fileSize,
   isForceMobileVersion,
   isPlaying,
   isFullscreenSupported,
   isFullscreen,
-  isVisible,
   isBuffered,
+  isPreviewDisabled,
   volume,
   isMuted,
   playbackRate,
+  posterSize,
   onChangeFullscreen,
   onVolumeClick,
   onVolumeChange,
@@ -82,21 +93,21 @@ const VideoPlayerControls: FC<OwnProps> = ({
   isPictureInPictureSupported,
   onPictureInPictureChange,
   onPlayPause,
-  setVisibility,
   onSeek,
 }) => {
   const [isPlaybackMenuOpen, openPlaybackMenu, closePlaybackMenu] = useFlag();
-  // eslint-disable-next-line no-null/no-null
-  const seekerRef = useRef<HTMLDivElement>(null);
-  const isSeekingRef = useRef<boolean>(false);
-  const isSeeking = isSeekingRef.current;
+  const [getCurrentTime] = useCurrentTimeSignal();
+  const currentTime = useDerivedState(() => Math.trunc(getCurrentTime()), [getCurrentTime]);
+  const [getIsSeeking, setIsSeeking] = useSignal(false);
 
   const { isMobile } = useAppLayout();
+  const [getIsVisible, setVisibility] = useControlsSignal();
+  const isVisible = useDerivedState(getIsVisible);
 
   useEffect(() => {
-    if (!IS_TOUCH_ENV) return undefined;
+    if (!IS_TOUCH_ENV && !isForceMobileVersion) return undefined;
     let timeout: number | undefined;
-    if (!isVisible || !isPlaying || isSeeking || isPlaybackMenuOpen) {
+    if (!isVisible || !isPlaying || isPlaybackMenuOpen || getIsSeeking()) {
       if (timeout) window.clearTimeout(timeout);
       return undefined;
     }
@@ -106,9 +117,9 @@ const VideoPlayerControls: FC<OwnProps> = ({
     return () => {
       if (timeout) window.clearTimeout(timeout);
     };
-  }, [isPlaying, isVisible, isSeeking, setVisibility, isPlaybackMenuOpen]);
+  }, [isPlaying, isVisible, setVisibility, isPlaybackMenuOpen, getIsSeeking, isForceMobileVersion]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (isVisible) {
       document.body.classList.add('video-controls-visible');
     } else {
@@ -127,35 +138,14 @@ const VideoPlayerControls: FC<OwnProps> = ({
 
   const lang = useLang();
 
-  const handleSeek = useCallback((e: MouseEvent | TouchEvent) => {
-    if (isSeekingRef.current && seekerRef.current) {
-      const {
-        width,
-        left,
-      } = seekerRef.current.getBoundingClientRect();
-      const clientX = e instanceof MouseEvent ? e.clientX : e.targetTouches[0].clientX;
-      onSeek(Math.max(Math.min(duration * ((clientX - left) / width), duration), 0));
-    }
-  }, [duration, onSeek]);
+  const handleSeek = useLastCallback((position: number) => {
+    setIsSeeking(false);
+    onSeek(position);
+  });
 
-  const handleStartSeek = useCallback((e: MouseEvent | TouchEvent) => {
-    isSeekingRef.current = true;
-    handleSeek(e);
-  }, [handleSeek]);
-
-  const handleStopSeek = useCallback(() => {
-    isSeekingRef.current = false;
-  }, []);
-
-  useEffect(() => {
-    if (!seekerRef.current || !isVisible) return undefined;
-    return captureEvents(seekerRef.current, {
-      onCapture: handleStartSeek,
-      onRelease: handleStopSeek,
-      onClick: handleStopSeek,
-      onDrag: handleSeek,
-    });
-  }, [isVisible, handleStartSeek, handleSeek, handleStopSeek]);
+  const handleSeekStart = useLastCallback(() => {
+    setIsSeeking(true);
+  });
 
   const volumeIcon = useMemo(() => {
     if (volume === 0 || isMuted) return 'icon-muted';
@@ -169,7 +159,19 @@ const VideoPlayerControls: FC<OwnProps> = ({
       className={buildClassName('VideoPlayerControls', isForceMobileVersion && 'mobile', isVisible && 'active')}
       onClick={stopEvent}
     >
-      {renderSeekLine(currentTime, duration, bufferedRanges, seekerRef)}
+      <SeekLine
+        url={url}
+        duration={duration}
+        isReady={isReady}
+        isPlaying={isPlaying}
+        isPreviewDisabled={isPreviewDisabled}
+        posterSize={posterSize}
+        bufferedRanges={bufferedRanges}
+        playbackRate={playbackRate}
+        onSeek={handleSeek}
+        onSeekStart={handleSeekStart}
+        isActive={isVisible}
+      />
       <div className="buttons">
         <Button
           ariaLabel={lang('AccActionPlay')}
@@ -180,7 +182,7 @@ const VideoPlayerControls: FC<OwnProps> = ({
           round
           onClick={onPlayPause}
         >
-          <i className={isPlaying ? 'icon-pause' : 'icon-play'} />
+          <i className={buildClassName('icon', isPlaying ? 'icon-pause' : 'icon-play')} />
         </Button>
         <Button
           ariaLabel="Volume"
@@ -190,7 +192,7 @@ const VideoPlayerControls: FC<OwnProps> = ({
           round
           onClick={onVolumeClick}
         >
-          <i className={volumeIcon} />
+          <i className={buildClassName('icon', volumeIcon)} />
         </Button>
         {!IS_IOS && (
           <RangeSlider bold className="volume-slider" value={isMuted ? 0 : volume * 100} onChange={onVolumeChange} />
@@ -221,7 +223,7 @@ const VideoPlayerControls: FC<OwnProps> = ({
             round
             onClick={onPictureInPictureChange}
           >
-            <i className="icon-pip" />
+            <i className="icon icon-pip" />
           </Button>
         )}
         {isFullscreenSupported && (
@@ -233,7 +235,7 @@ const VideoPlayerControls: FC<OwnProps> = ({
             round
             onClick={onChangeFullscreen}
           >
-            <i className={isFullscreen ? 'icon-smallscreen' : 'icon-fullscreen'} />
+            <i className={buildClassName('icon ', isFullscreen ? 'icon-smallscreen' : 'icon-fullscreen')} />
           </Button>
         )}
       </div>
@@ -268,27 +270,4 @@ function renderTime(currentTime: number, duration: number) {
   );
 }
 
-function renderSeekLine(
-  currentTime: number, duration: number, bufferedRanges: BufferedRange[], seekerRef: React.RefObject<HTMLDivElement>,
-) {
-  const percentagePlayed = (currentTime / duration) * 100;
-
-  return (
-    <div className="player-seekline" ref={seekerRef}>
-      <div className="player-seekline-track">
-        {bufferedRanges.map(({ start, end }) => (
-          <div
-            className="player-seekline-buffered"
-            style={`left: ${start * 100}%; right: ${100 - end * 100}%`}
-          />
-        ))}
-        <div
-          className="player-seekline-played"
-          style={`width: ${percentagePlayed || 0}%`}
-        />
-      </div>
-    </div>
-  );
-}
-
-export default VideoPlayerControls;
+export default memo(VideoPlayerControls);

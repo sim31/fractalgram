@@ -1,38 +1,41 @@
+import { useMemo } from '../../../lib/teact/teact';
+
 import type {
-  ApiMessage, ApiChat, ApiUser, ApiDimensions,
+  ApiChat, ApiMessage, ApiUser,
 } from '../../../api/types';
 import { ApiMediaFormat } from '../../../api/types';
+import { MediaViewerOrigin } from '../../../types';
+
 import {
-  getVideoAvatarMediaHash,
   getChatAvatarHash,
+  getMessageActionPhoto,
+  getMessageDocument,
+  getMessageFileName,
+  getMessageFileSize,
+  getMessageMediaFormat,
   getMessageMediaHash,
+  getMessageMediaThumbDataUri,
   getMessagePhoto,
   getMessageVideo,
   getMessageWebPagePhoto,
   getMessageWebPageVideo,
+  getPhotoFullDimensions,
+  getVideoAvatarMediaHash,
+  getVideoDimensions,
   isMessageDocumentPhoto,
   isMessageDocumentVideo,
-  getMessageMediaFormat,
-  getMessageMediaThumbDataUri,
-  getMessageFileName,
-  getMessageDocument,
-  getPhotoFullDimensions,
-  getVideoDimensions,
-  getMessageFileSize, getMessageActionPhoto,
 } from '../../../global/helpers';
-import { useMemo } from '../../../lib/teact/teact';
+import { AVATAR_FULL_DIMENSIONS, VIDEO_AVATAR_FULL_DIMENSIONS } from '../../common/helpers/mediaDimensions';
+
+import useBlurSync from '../../../hooks/useBlurSync';
 import useMedia from '../../../hooks/useMedia';
 import useMediaWithLoadProgress from '../../../hooks/useMediaWithLoadProgress';
-import useBlurSync from '../../../hooks/useBlurSync';
-import { MediaViewerOrigin } from '../../../types';
-import { VIDEO_AVATAR_FULL_DIMENSIONS, AVATAR_FULL_DIMENSIONS } from '../../common/helpers/mediaDimensions';
 
 type UseMediaProps = {
   mediaId?: number;
   message?: ApiMessage;
   avatarOwner?: ApiChat | ApiUser;
   origin?: MediaViewerOrigin;
-  lastSyncTime?: number;
   delay: number | false;
 };
 
@@ -87,7 +90,6 @@ export const useMediaProps = ({
     && getMessageMediaHash(message, 'pictogram'),
     undefined,
     ApiMediaFormat.BlobUrl,
-    undefined,
     delay,
   );
   const previewMediaHash = getMediaHash();
@@ -95,7 +97,6 @@ export const useMediaProps = ({
     previewMediaHash,
     undefined,
     ApiMediaFormat.BlobUrl,
-    undefined,
     delay,
   );
   const {
@@ -105,7 +106,6 @@ export const useMediaProps = ({
     getMediaHash(true),
     undefined,
     message && getMessageMediaFormat(message, 'full'),
-    undefined,
     delay,
   );
 
@@ -121,25 +121,37 @@ export const useMediaProps = ({
   const bestData = localBlobUrl || fullMediaBlobUrl || (
     !isVideo ? previewBlobUrl || pictogramBlobUrl || bestImageData : undefined
   );
-
+  const isLocal = Boolean(localBlobUrl);
   const fileName = message
     ? getMessageFileName(message)
     : avatarOwner
       ? `avatar${avatarOwner!.id}.${avatarOwner?.hasVideoAvatar ? 'mp4' : 'jpg'}`
       : undefined;
 
-  let dimensions!: ApiDimensions;
-  if (message) {
-    if (isDocumentPhoto || isDocumentVideo) {
-      dimensions = getMessageDocument(message)!.mediaSize!;
-    } else if (photo || webPagePhoto || actionPhoto) {
-      dimensions = getPhotoFullDimensions((photo || webPagePhoto || actionPhoto)!)!;
-    } else if (video || webPageVideo) {
-      dimensions = getVideoDimensions((video || webPageVideo)!)!;
+  const dimensions = useMemo(() => {
+    if (message) {
+      if (isDocumentPhoto || isDocumentVideo) {
+        return getMessageDocument(message)!.mediaSize!;
+      } else if (photo || webPagePhoto || actionPhoto) {
+        return getPhotoFullDimensions((photo || webPagePhoto || actionPhoto)!)!;
+      } else if (video || webPageVideo) {
+        return getVideoDimensions((video || webPageVideo)!)!;
+      }
+    } else {
+      return isVideoAvatar ? VIDEO_AVATAR_FULL_DIMENSIONS : AVATAR_FULL_DIMENSIONS;
     }
-  } else {
-    dimensions = isVideoAvatar ? VIDEO_AVATAR_FULL_DIMENSIONS : AVATAR_FULL_DIMENSIONS;
-  }
+    return undefined;
+  }, [
+    isDocumentPhoto,
+    isDocumentVideo,
+    isVideoAvatar,
+    message,
+    photo,
+    video,
+    actionPhoto,
+    webPagePhoto,
+    webPageVideo,
+  ]);
 
   return {
     getMediaHash,
@@ -160,6 +172,7 @@ export const useMediaProps = ({
     isFromSharedMedia,
     avatarPhoto: avatarMedia,
     isVideoAvatar,
+    isLocal,
     loadProgress,
     videoSize,
   };

@@ -22,32 +22,23 @@
   --call-header-height: 2rem;
 
   #LeftColumn, #MiddleColumn, #RightColumn-wrapper {
-    height: calc(100% - 2rem);
-    margin-top: 2rem;
+    height: calc(100% - var(--call-header-height));
+    margin-top: var(--call-header-height);
   }
 }
 
 #LeftColumn {
-  width: 33vw;
-
   --left-column-min-width: 16rem;
   --left-column-max-width: 26.5rem;
 
+  width: 33vw;
   min-width: var(--left-column-min-width);
   max-width: var(--left-column-max-width);
-
   height: 100%;
+  overflow: hidden;
   position: relative;
+
   background-color: var(--color-background);
-
-  & > div {
-    height: 100%;
-    overflow: hidden;
-  }
-
-  @media (max-width: 600px) {
-    height: calc(var(--vh, 1vh) * 100);
-  }
 
   @media (min-width: 926px) {
     --left-column-max-width: 40vw;
@@ -68,7 +59,7 @@
     transform: translate3d(-5rem, 0, 0);
     transition: transform var(--layer-transition);
 
-    body.animation-level-0 & {
+    body.no-page-transitions & {
       transition: none;
     }
 
@@ -86,7 +77,7 @@
       z-index: 1;
       pointer-events: none;
 
-      body.animation-level-0 & {
+      body.no-page-transitions & {
         transition: none;
       }
 
@@ -95,7 +86,8 @@
         display: none;
       }
 
-      body.is-android #Main.left-column-animating &, body.is-android #Main:not(.left-column-open) & {
+      body.is-android #Main.left-column-animating &,
+      body.is-android #Main:not(.left-column-open) & {
         display: block;
       }
 
@@ -119,6 +111,7 @@
   }
 
   @media (max-width: 600px) {
+    height: calc(var(--vh, 1vh) * 100);
     max-width: none;
     --left-column-max-width: calc(100vw - env(safe-area-inset-left));
     transform: translate3d(-20vw, 0, 0);
@@ -129,6 +122,18 @@
     @supports not (left: env(safe-area-inset-left)) {
       left: 0 !important;
       width: 100vw !important;
+    }
+
+    // Fix: when opening the SymbolMenu, the chat list flashes in the background
+    body.is-symbol-menu-open &::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      background: var(--color-background);
+      z-index: 1;
     }
   }
 }
@@ -165,12 +170,17 @@
     transform: translate3d(0, 0, 0);
     transition: transform var(--layer-transition);
 
-    body.animation-level-0 & {
+    body.no-page-transitions & {
       transition: none;
     }
 
     #Main.left-column-open & {
       transform: translate3d(26.5rem, 0, 0);
+    }
+
+    body.no-right-column-animations #Main.right-column-open &,
+    body.no-right-column-animations #Main.right-column-shown & {
+      transition: none;
     }
   }
 
@@ -191,55 +201,6 @@
 
     &:after {
       transition: none;
-    }
-  }
-}
-
-body.is-android.animation-level-1 {
-  --layer-transition: 250ms ease-in-out;
-
-  #LeftColumn, #MiddleColumn, #RightColumn {
-    transition: transform var(--layer-transition), opacity var(--layer-transition);
-  }
-
-  #Main.left-column-open:not(.left-column-animating) {
-    #MiddleColumn {
-      display: none;
-    }
-  }
-
-  #Main.left-column-open {
-    #MiddleColumn {
-      transform: translate3d(10vw, 0, 0);
-      opacity: 0;
-    }
-  }
-
-  #Main:not(.left-column-open) {
-    #LeftColumn {
-      transform: translate3d(0, 0, 0);
-      opacity: 0;
-    }
-  }
-
-  // @optimization
-  #Main:not(.right-column-open):not(.right-column-animating) {
-    #RightColumn {
-      display: none;
-    }
-  }
-
-  #Main:not(.right-column-open) {
-    #RightColumn {
-      transform: translate3d(10vw, 0, 0);
-      opacity: 0;
-    }
-  }
-
-  #Main.right-column-open {
-    #MiddleColumn {
-      transform: translate3d(0, 0, 0);
-      opacity: 0;
     }
   }
 }

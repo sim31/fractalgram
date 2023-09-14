@@ -1,18 +1,30 @@
 import type { RefObject } from 'react';
 import type { FC } from '../../lib/teact/teact';
-
 import React, {
-  useEffect, useRef, memo, useCallback, useState, useMemo,
+  memo, useEffect, useRef, useState,
 } from '../../lib/teact/teact';
 
-import { fastRaf } from '../../util/schedulers';
+import type RLottieInstance from '../../lib/rlottie/RLottie';
+
+import { IS_ELECTRON } from '../../config';
+import { requestMeasure } from '../../lib/fasterdom/fasterdom';
+import { ensureRLottie, getRLottie } from '../../lib/rlottie/RLottie.async';
 import buildClassName from '../../util/buildClassName';
 import buildStyle from '../../util/buildStyle';
-import generateIdFor from '../../util/generateIdFor';
+import generateUniqueId from '../../util/generateUniqueId';
+import { hexToRgb } from '../../util/switchTheme';
 
-import useHeavyAnimationCheck from '../../hooks/useHeavyAnimationCheck';
-import useBackgroundMode from '../../hooks/useBackgroundMode';
+import useColorFilter from '../../hooks/stickers/useColorFilter';
+import useBackgroundMode, { isBackgroundModeActive } from '../../hooks/useBackgroundMode';
+import useEffectWithPrevDeps from '../../hooks/useEffectWithPrevDeps';
+import useHeavyAnimationCheck, { isHeavyAnimating } from '../../hooks/useHeavyAnimationCheck';
+import useLastCallback from '../../hooks/useLastCallback';
+import usePriorityPlaybackCheck, { isPriorityPlaybackActive } from '../../hooks/usePriorityPlaybackCheck';
+import useSharedIntersectionObserver from '../../hooks/useSharedIntersectionObserver';
+import { useStateRef } from '../../hooks/useStateRef';
 import useSyncEffect from '../../hooks/useSyncEffect';
+import useThrottledCallback from '../../hooks/useThrottledCallback';
+import useUniqueId from '../../hooks/useUniqueId';
 
 export type OwnProps = {
   ref?: RefObject<HTMLDivElement>;
@@ -26,8 +38,9 @@ export type OwnProps = {
   noLoop?: boolean;
   size: number;
   quality?: number;
-  color?: [number, number, number];
+  color?: string;
   isLowPriority?: boolean;
+  forceAlways?: boolean;
   forceOnHeavyAnimation?: boolean;
   sharedCanvas?: HTMLCanvasElement;
   sharedCanvasCoords?: { x: number; y: number };
@@ -37,26 +50,7 @@ export type OwnProps = {
   onLoop?: NoneToVoidFunction;
 };
 
-type RLottieClass = typeof import('../../lib/rlottie/RLottie').default;
-type RLottieInstance = import('../../lib/rlottie/RLottie').default;
-let lottiePromise: Promise<RLottieClass>;
-let RLottie: RLottieClass;
-
-// Time for the main interface to completely load
-const LOTTIE_LOAD_DELAY = 3000;
-const ID_STORE = {};
-const ANIMATION_END_TIMEOUT = 500;
-
-async function ensureLottie() {
-  if (!lottiePromise) {
-    lottiePromise = import('../../lib/rlottie/RLottie') as unknown as Promise<RLottieClass>;
-    RLottie = (await lottiePromise as any).default;
-  }
-
-  return lottiePromise;
-}
-
-setTimeout(ensureLottie, LOTTIE_LOAD_DELAY);
+const THROTTLE_MS = 150;
 
 const AnimatedSticker: FC<OwnProps> = ({
   ref,
@@ -72,6 +66,7 @@ const AnimatedSticker: FC<OwnProps> = ({
   quality,
   isLowPriority,
   color,
+  forceAlways,
   forceOnHeavyAnimation,
   sharedCanvas,
   sharedCanvasCoords,
@@ -86,93 +81,93 @@ const AnimatedSticker: FC<OwnProps> = ({
     containerRef = ref;
   }
 
-  const viewId = useMemo(() => generateIdFor(ID_STORE, true), []);
+  const viewId = useUniqueId();
 
   const [animation, setAnimation] = useState<RLottieInstance>();
   const animationRef = useRef<RLottieInstance>();
-  const wasPlaying = useRef(false);
-  const isFrozen = useRef(false);
   const isFirstRender = useRef(true);
 
-  const playRef = useRef();
-  playRef.current = play;
-  const playSegmentRef = useRef<[number, number]>();
-  playSegmentRef.current = playSegment;
+  const shouldUseColorFilter = !sharedCanvas && color;
+  const colorFilter = useColorFilter(shouldUseColorFilter ? color : undefined);
 
-  const isUnmountedRef = useRef();
+  const playKey = play || (play === false ? false : playSegment);
+  const playRef = useStateRef(play);
+  const playSegmentRef = useStateRef(playSegment);
+
+  const rgbColor = useRef<[number, number, number] | undefined>();
+
+  useSyncEffect(() => {
+    if (color && !shouldUseColorFilter) {
+      const { r, g, b } = hexToRgb(color);
+      rgbColor.current = [r, g, b];
+    } else {
+      rgbColor.current = undefined;
+    }
+  }, [color, shouldUseColorFilter]);
+
+  const isUnmountedRef = useRef(false);
   useEffect(() => {
     return () => {
       isUnmountedRef.current = true;
     };
   }, []);
 
-  useEffect(() => {
-    if (animation || !tgsUrl || (sharedCanvas && !sharedCanvasCoords)) {
+  const init = useLastCallback(() => {
+    if (
+      animationRef.current
+      || isUnmountedRef.current
+      || !tgsUrl
+      || (sharedCanvas && (!sharedCanvasCoords || !sharedCanvas.offsetWidth || !sharedCanvas.offsetHeight))
+    ) {
       return;
     }
 
-    const exec = () => {
-      if (isUnmountedRef.current) {
-        return;
-      }
-
-      const container = containerRef.current || sharedCanvas;
-      if (!container) {
-        return;
-      }
-
-      // Wait until element is properly mounted
-      if (sharedCanvas && !sharedCanvas.offsetParent) {
-        setTimeout(exec, ANIMATION_END_TIMEOUT);
-        return;
-      }
-
-      const newAnimation = RLottie.init(
-        tgsUrl,
-        container,
-        renderId || generateIdFor(ID_STORE, true),
-        viewId,
-        {
-          noLoop,
-          size,
-          quality,
-          isLowPriority,
-          coords: sharedCanvasCoords,
-        },
-        color,
-        onLoad,
-        onEnded,
-        onLoop,
-      );
-
-      if (speed) {
-        newAnimation.setSpeed(speed);
-      }
-
-      setAnimation(newAnimation);
-      animationRef.current = newAnimation;
-    };
-
-    if (RLottie) {
-      exec();
-    } else {
-      ensureLottie().then(() => {
-        fastRaf(() => {
-          if (containerRef.current) {
-            exec();
-          }
-        });
-      });
+    const container = containerRef.current || sharedCanvas;
+    if (!container) {
+      return;
     }
-  }, [
-    animation, renderId, tgsUrl, color, isLowPriority, noLoop, onLoad, quality, size, speed, onEnded, onLoop,
-    viewId, sharedCanvas, sharedCanvasCoords,
-  ]);
+
+    const newAnimation = getRLottie().init(
+      tgsUrl,
+      container,
+      renderId || generateUniqueId(),
+      {
+        size,
+        noLoop,
+        quality,
+        isLowPriority,
+        coords: sharedCanvasCoords,
+      },
+      viewId,
+      rgbColor.current,
+      onLoad,
+      onEnded,
+      onLoop,
+    );
+
+    if (speed) {
+      newAnimation.setSpeed(speed);
+    }
+
+    setAnimation(newAnimation);
+    animationRef.current = newAnimation;
+  });
+
+  useEffect(() => {
+    if (getRLottie()) {
+      init();
+    } else {
+      ensureRLottie().then(init);
+    }
+  }, [init, tgsUrl, sharedCanvas, sharedCanvasCoords]);
+
+  const throttledInit = useThrottledCallback(init, [init], THROTTLE_MS);
+  useSharedIntersectionObserver(sharedCanvas, throttledInit);
 
   useEffect(() => {
     if (!animation) return;
 
-    animation.setColor(color);
+    animation.setColor(rgbColor.current);
   }, [color, animation]);
 
   useEffect(() => {
@@ -181,58 +176,39 @@ const AnimatedSticker: FC<OwnProps> = ({
     };
   }, [viewId]);
 
-  const playAnimation = useCallback((shouldRestart = false) => {
-    if (animation && (playRef.current || playSegmentRef.current)) {
-      if (playSegmentRef.current) {
-        animation.playSegment(playSegmentRef.current);
-      } else {
-        animation.play(shouldRestart, viewId);
-      }
-    }
-  }, [animation, viewId]);
-
-  const pauseAnimation = useCallback(() => {
-    if (!animation) {
+  const playAnimation = useLastCallback((shouldRestart = false) => {
+    if (
+      !animation
+      || !(playRef.current || playSegmentRef.current)
+      || isFrozen(forceAlways)
+    ) {
       return;
     }
 
-    animation.pause(viewId);
-  }, [animation, viewId]);
-
-  const freezeAnimation = useCallback(() => {
-    isFrozen.current = true;
-
-    if (!animation) {
-      return;
+    if (playSegmentRef.current) {
+      animation.playSegment(playSegmentRef.current, shouldRestart, viewId);
+    } else {
+      animation.play(shouldRestart, viewId);
     }
+  });
 
-    if (!wasPlaying.current) {
-      wasPlaying.current = animation.isPlaying();
+  const playAnimationOnRaf = useLastCallback(() => {
+    requestMeasure(playAnimation);
+  });
+
+  const pauseAnimation = useLastCallback(() => {
+    if (animation?.isPlaying()) {
+      animation.pause(viewId);
     }
+  });
 
-    pauseAnimation();
-  }, [animation, pauseAnimation]);
-
-  const unfreezeAnimation = useCallback(() => {
-    if (wasPlaying.current) {
-      playAnimation(noLoop);
-    }
-
-    wasPlaying.current = false;
-    isFrozen.current = false;
-  }, [noLoop, playAnimation]);
-
-  const unfreezeAnimationOnRaf = useCallback(() => {
-    fastRaf(unfreezeAnimation);
-  }, [unfreezeAnimation]);
-
-  useSyncEffect(([prevNoLoop]) => {
+  useEffectWithPrevDeps(([prevNoLoop]) => {
     if (prevNoLoop !== undefined && noLoop !== prevNoLoop) {
       animation?.setNoLoop(noLoop);
     }
   }, [noLoop, animation]);
 
-  useSyncEffect(([prevSharedCanvasCoords]) => {
+  useEffectWithPrevDeps(([prevSharedCanvasCoords]) => {
     if (prevSharedCanvasCoords !== undefined && sharedCanvasCoords !== prevSharedCanvasCoords) {
       animation?.setSharedCanvasCoords(viewId, sharedCanvasCoords);
     }
@@ -242,21 +218,15 @@ const AnimatedSticker: FC<OwnProps> = ({
     if (!animation) {
       return;
     }
-    if (play || playSegment) {
-      if (isFrozen.current) {
-        wasPlaying.current = true;
-      } else {
+
+    if (playKey) {
+      if (!isFrozen(forceAlways, forceOnHeavyAnimation)) {
         playAnimation(noLoop);
       }
     } else {
-      // eslint-disable-next-line no-lonely-if
-      if (isFrozen.current) {
-        wasPlaying.current = false;
-      } else {
-        pauseAnimation();
-      }
+      pauseAnimation();
     }
-  }, [animation, play, playSegment, noLoop, playAnimation, pauseAnimation]);
+  }, [animation, playKey, noLoop, playAnimation, pauseAnimation, forceAlways, forceOnHeavyAnimation]);
 
   useEffect(() => {
     if (animation) {
@@ -269,11 +239,12 @@ const AnimatedSticker: FC<OwnProps> = ({
     }
   }, [playAnimation, animation, tgsUrl]);
 
-  useHeavyAnimationCheck(freezeAnimation, unfreezeAnimation, forceOnHeavyAnimation);
+  useHeavyAnimationCheck(pauseAnimation, playAnimation, !playKey || forceAlways || forceOnHeavyAnimation);
+  usePriorityPlaybackCheck(pauseAnimation, playAnimation, !playKey || forceAlways);
   // Pausing frame may not happen in background,
   // so we need to make sure it happens right after focusing,
   // then we can play again.
-  useBackgroundMode(freezeAnimation, unfreezeAnimationOnRaf);
+  useBackgroundMode(pauseAnimation, playAnimationOnRaf, !playKey || forceAlways);
 
   if (sharedCanvas) {
     return undefined;
@@ -285,7 +256,8 @@ const AnimatedSticker: FC<OwnProps> = ({
       className={buildClassName('AnimatedSticker', className)}
       style={buildStyle(
         size !== undefined && `width: ${size}px; height: ${size}px;`,
-        onClick && 'cursor: pointer',
+        onClick && !IS_ELECTRON && 'cursor: pointer',
+        colorFilter,
         style,
       )}
       onClick={onClick}
@@ -294,3 +266,8 @@ const AnimatedSticker: FC<OwnProps> = ({
 };
 
 export default memo(AnimatedSticker);
+
+function isFrozen(forceAlways = false, forceOnHeavyAnimation = false) {
+  if (forceAlways) return false;
+  return (!forceOnHeavyAnimation && isHeavyAnimating()) || isPriorityPlaybackActive() || isBackgroundModeActive();
+}

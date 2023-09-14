@@ -1,24 +1,27 @@
 import BigInt from 'big-integer';
 import { Api as GramJs } from '../../../lib/gramjs';
-import { invokeRequest } from './client';
-import { buildInputInvoice, buildInputPeer, buildShippingInfo } from '../gramjsBuilders';
+
+import type {
+  ApiChat, ApiRequestInputInvoice,
+  OnApiUpdate,
+} from '../../types';
+
 import {
   buildApiInvoiceFromForm,
-  buildApiPremiumPromo,
   buildApiPaymentForm,
+  buildApiPremiumPromo,
   buildApiReceipt,
   buildShippingOptions,
 } from '../apiBuilders/payments';
-import type {
-  ApiChat, OnApiUpdate, ApiRequestInputInvoice,
-} from '../../types';
-import localDb from '../localDb';
+import { buildApiUser } from '../apiBuilders/users';
+import { buildInputInvoice, buildInputPeer, buildShippingInfo } from '../gramjsBuilders';
 import {
-  addEntitiesWithPhotosToLocalDb,
+  addEntitiesToLocalDb,
   deserializeBytes,
   serializeBytes,
 } from '../helpers';
-import { buildApiUser } from '../apiBuilders/users';
+import localDb from '../localDb';
+import { invokeRequest } from './client';
 import { getTemporaryPaymentPassword } from './twoFaSettings';
 
 let onUpdate: OnApiUpdate;
@@ -121,7 +124,7 @@ export async function getPaymentForm(inputInvoice: ApiRequestInputInvoice) {
     localDb.webDocuments[result.photo.url] = result.photo;
   }
 
-  addEntitiesWithPhotosToLocalDb(result.users);
+  addEntitiesToLocalDb(result.users);
 
   return {
     form: buildApiPaymentForm(result),
@@ -140,7 +143,7 @@ export async function getReceipt(chat: ApiChat, msgId: number) {
     return undefined;
   }
 
-  addEntitiesWithPhotosToLocalDb(result.users);
+  addEntitiesToLocalDb(result.users);
 
   return {
     receipt: buildApiReceipt(result),
@@ -152,7 +155,7 @@ export async function fetchPremiumPromo() {
   const result = await invokeRequest(new GramJs.help.GetPremiumPromo());
   if (!result) return undefined;
 
-  addEntitiesWithPhotosToLocalDb(result.users);
+  addEntitiesToLocalDb(result.users);
 
   const users = result.users.map(buildApiUser).filter(Boolean);
   result.videos.forEach((video) => {

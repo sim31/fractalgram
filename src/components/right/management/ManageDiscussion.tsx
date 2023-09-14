@@ -8,21 +8,22 @@ import type { ApiChat } from '../../../api/types';
 import { ManagementScreens } from '../../../types';
 
 import { STICKER_SIZE_DISCUSSION_GROUPS } from '../../../config';
-import { LOCAL_TGS_URLS } from '../../common/helpers/animatedAssets';
-import { selectChat } from '../../../global/selectors';
-import useLang from '../../../hooks/useLang';
-import useHistoryBack from '../../../hooks/useHistoryBack';
-
-import ListItem from '../../ui/ListItem';
-import NothingFound from '../../common/NothingFound';
-import GroupChatInfo from '../../common/GroupChatInfo';
-import ConfirmDialog from '../../ui/ConfirmDialog';
-import useFlag from '../../../hooks/useFlag';
-import renderText from '../../common/helpers/renderText';
-import Avatar from '../../common/Avatar';
 import { isChatChannel } from '../../../global/helpers';
+import { selectChat, selectChatFullInfo } from '../../../global/selectors';
+import { LOCAL_TGS_URLS } from '../../common/helpers/animatedAssets';
+import renderText from '../../common/helpers/renderText';
+
+import useFlag from '../../../hooks/useFlag';
+import useHistoryBack from '../../../hooks/useHistoryBack';
+import useLang from '../../../hooks/useLang';
+
 import AnimatedIcon from '../../common/AnimatedIcon';
+import Avatar from '../../common/Avatar';
+import GroupChatInfo from '../../common/GroupChatInfo';
+import NothingFound from '../../common/NothingFound';
 import Checkbox from '../../ui/Checkbox';
+import ConfirmDialog from '../../ui/ConfirmDialog';
+import ListItem from '../../ui/ListItem';
 
 type OwnProps = {
   chatId: string;
@@ -61,8 +62,8 @@ const ManageDiscussion: FC<OwnProps & StateProps> = ({
   const [linkedGroupId, setLinkedGroupId] = useState<string>();
   const [isConfirmUnlinkGroupDialogOpen, openConfirmUnlinkGroupDialog, closeConfirmUnlinkGroupDialog] = useFlag();
   const [isConfirmLinkGroupDialogOpen, openConfirmLinkGroupDialog, closeConfirmLinkGroupDialog] = useFlag();
-  const [isJoinToSend, setIsJoinToSend] = useState(linkedChat?.isJoinToSend);
-  const [isJoinRequest, setIsJoinRequest] = useState(linkedChat?.isJoinRequest);
+  const [isJoinToSend, setIsJoinToSend] = useState(Boolean(linkedChat?.isJoinToSend));
+  const [isJoinRequest, setIsJoinRequest] = useState(Boolean(linkedChat?.isJoinRequest));
   const lang = useLang();
   const linkedChatId = linkedChat?.id;
 
@@ -92,7 +93,7 @@ const ManageDiscussion: FC<OwnProps & StateProps> = ({
 
   const handleLinkGroupSessions = useCallback(() => {
     closeConfirmLinkGroupDialog();
-    linkDiscussionGroup({ channelId: chatId, chatId: linkedGroupId });
+    linkDiscussionGroup({ channelId: chatId, chatId: linkedGroupId! });
   }, [closeConfirmLinkGroupDialog, linkDiscussionGroup, chatId, linkedGroupId]);
 
   const handleJoinToSendCheck = useCallback((checked: boolean) => {
@@ -118,7 +119,7 @@ const ManageDiscussion: FC<OwnProps & StateProps> = ({
       <div className="modal-header">
         <Avatar
           size="tiny"
-          chat={linkedChat}
+          peer={linkedChat}
         />
         <div className="modal-title">
           {lang(isChannel ? 'DiscussionUnlinkGroup' : 'DiscussionUnlinkChannel')}
@@ -128,17 +129,15 @@ const ManageDiscussion: FC<OwnProps & StateProps> = ({
   }
 
   function renderLinkGroupHeader() {
+    if (!linkedGroupId) return undefined;
     const linkedGroup = chatsByIds[linkedGroupId];
-
-    if (!linkedGroup) {
-      return undefined;
-    }
+    if (!linkedGroup) return undefined;
 
     return (
       <div className="modal-header">
         <Avatar
           size="tiny"
-          chat={linkedGroup}
+          peer={linkedGroup}
         />
         <div className="modal-title">
           {lang('Channel.DiscussionGroup.LinkGroup')}
@@ -148,11 +147,9 @@ const ManageDiscussion: FC<OwnProps & StateProps> = ({
   }
 
   function renderLinkGroupConfirmText() {
+    if (!linkedGroupId) return undefined;
     const linkedGroup = chatsByIds[linkedGroupId];
-
-    if (!linkedGroup) {
-      return undefined;
-    }
+    if (!linkedGroup) return undefined;
 
     if (linkedGroup.hasPrivateLink) {
       return renderText(
@@ -212,7 +209,7 @@ const ManageDiscussion: FC<OwnProps & StateProps> = ({
             icon="group"
             ripple
             teactOrderKey={0}
-            className="not-implemented"
+            disabled
           >
             {lang('DiscussionCreateGroup')}
           </ListItem>
@@ -287,9 +284,10 @@ const ManageDiscussion: FC<OwnProps & StateProps> = ({
 export default memo(withGlobal<OwnProps>(
   (global, { chatId }): StateProps => {
     const chat = selectChat(global, chatId);
+    const { linkedChatId } = selectChatFullInfo(global, chatId) || {};
     const { forDiscussionIds, byId: chatsByIds } = global.chats;
-    const linkedChat = chat?.fullInfo?.linkedChatId
-      ? selectChat(global, chat.fullInfo.linkedChatId)
+    const linkedChat = linkedChatId
+      ? selectChat(global, linkedChatId)
       : undefined;
 
     return {

@@ -1,7 +1,7 @@
 import type { GlobalState } from '../global/types';
+import type { LangFn } from './useLang';
 
 import useBrowserOnline from './useBrowserOnline';
-import type { LangFn } from './useLang';
 
 export enum ConnectionStatus {
   waitingForNetwork,
@@ -18,7 +18,7 @@ type ConnectionStatusPosition =
 export default function useConnectionStatus(
   lang: LangFn,
   connectionState: GlobalState['connectionState'],
-  isSyncing: GlobalState['isSyncing'],
+  isSyncing: boolean | undefined,
   hasMiddleHeader: boolean,
   isMinimized?: boolean,
   isDisabled?: boolean,

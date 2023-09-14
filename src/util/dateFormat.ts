@@ -1,4 +1,6 @@
 import type { LangFn } from '../hooks/useLang';
+import type { TimeFormat } from '../types';
+
 import withCache from './withCache';
 
 const WEEKDAYS_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -119,6 +121,33 @@ export function formatLastUpdated(lang: LangFn, currentTime: number, lastUpdated
   } else {
     return lang('LiveLocationUpdated.TodayAt', formatTime(lang, lastUpdated));
   }
+}
+
+export function formatRelativeTime(lang: LangFn, currentTime: number, lastUpdated = currentTime) {
+  const seconds = currentTime - lastUpdated;
+
+  if (seconds < 60) {
+    return lang('Time.JustNow');
+  }
+
+  // within an hour
+  if (seconds < 60 * 60) {
+    return lang('Time.MinutesAgo', Math.floor(seconds / 60));
+  }
+
+  const lastUpdatedDate = new Date(lastUpdated * 1000);
+  const today = getDayStart(new Date());
+  if (lastUpdatedDate >= today) {
+    return lang('Time.TodayAt', formatTime(lang, lastUpdatedDate));
+  }
+
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (lastUpdatedDate > yesterday) {
+    return lang('Time.YesterdayAt', formatTime(lang, lastUpdatedDate));
+  }
+
+  return lang('Time.AtDate', formatFullDate(lang, lastUpdatedDate));
 }
 
 type DurationType = 'Seconds' | 'Minutes' | 'Hours' | 'Days' | 'Weeks';
@@ -290,7 +319,10 @@ export function formatDateToString(
   return formatDayToStringWithCache(dayStartAt, locale, noYear, monthFormat, noDay);
 }
 
-export function formatDateTimeToString(datetime: Date | number, locale = 'en-US', noSeconds?: boolean) {
+export function formatDateTimeToString(
+  datetime: Date | number, locale = 'en-US', noSeconds?: boolean,
+  timeFormat?: TimeFormat,
+) {
   const date = typeof datetime === 'number' ? new Date(datetime) : datetime;
   return date.toLocaleString(
     locale,
@@ -301,8 +333,34 @@ export function formatDateTimeToString(datetime: Date | number, locale = 'en-US'
       hour: 'numeric',
       minute: 'numeric',
       second: noSeconds ? undefined : 'numeric',
+      hourCycle: timeFormat === '12h' ? 'h12' : 'h23',
     },
   );
+}
+
+export function formatDateAtTime(
+  lang: LangFn,
+  datetime: number | Date,
+) {
+  const date = typeof datetime === 'number' ? new Date(datetime) : datetime;
+
+  const today = getDayStart(new Date());
+  const time = formatTime(lang, date);
+
+  if (toIsoString(date) === toIsoString(today)) {
+    return lang('Time.TodayAt', time);
+  }
+
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (toIsoString(date) === toIsoString(yesterday)) {
+    return lang('Time.YesterdayAt', time);
+  }
+
+  const noYear = date.getFullYear() === today.getFullYear();
+  const formattedDate = formatDateToString(date, lang.code, noYear);
+
+  return lang('formatDateAtTime', [formattedDate, time]);
 }
 
 function isValidDate(day: number, month: number, year = 2021): boolean {

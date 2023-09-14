@@ -1,24 +1,24 @@
+import type { FC } from '../../lib/teact/teact';
 import React, { memo, useCallback } from '../../lib/teact/teact';
 
 import type { ApiSticker, ApiStickerSet } from '../../api/types';
-import type { FC } from '../../lib/teact/teact';
+import type { ObserveFn } from '../../hooks/useIntersectionObserver';
 
 import { STICKER_SIZE_GENERAL_SETTINGS } from '../../config';
 import buildClassName from '../../util/buildClassName';
 
-import type { ObserveFn } from '../../hooks/useIntersectionObserver';
 import useLang from '../../hooks/useLang';
 
-import ListItem from '../ui/ListItem';
-import Button from '../ui/Button';
 import StickerSetCover from '../middle/composer/StickerSetCover';
+import Button from '../ui/Button';
+import ListItem from '../ui/ListItem';
 import StickerButton from './StickerButton';
 
 import './StickerSetCard.scss';
 
 type OwnProps = {
   stickerSet?: ApiStickerSet;
-  noAnimate?: boolean;
+  noPlay?: boolean;
   className?: string;
   observeIntersection: ObserveFn;
   onClick: (value: ApiSticker) => void;
@@ -26,7 +26,7 @@ type OwnProps = {
 
 const StickerSetCard: FC<OwnProps> = ({
   stickerSet,
-  noAnimate,
+  noPlay,
   className,
   observeIntersection,
   onClick,
@@ -55,7 +55,7 @@ const StickerSetCard: FC<OwnProps> = ({
           <StickerSetCover
             stickerSet={stickerSet}
             size={STICKER_SIZE_GENERAL_SETTINGS}
-            noAnimate={noAnimate}
+            noPlay={noPlay}
             observeIntersection={observeIntersection}
           />
         </Button>
@@ -66,7 +66,7 @@ const StickerSetCard: FC<OwnProps> = ({
           sticker={firstSticker}
           size={STICKER_SIZE_GENERAL_SETTINGS}
           title={stickerSet.title}
-          noAnimate={noAnimate}
+          noPlay={noPlay}
           observeIntersection={observeIntersection}
           noContextMenu
           isCurrentUserPremium

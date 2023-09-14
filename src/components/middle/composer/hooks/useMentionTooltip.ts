@@ -1,22 +1,22 @@
 import type { RefObject } from 'react';
-import {
-  useCallback, useEffect, useState,
-} from '../../../../lib/teact/teact';
+import { useEffect, useState } from '../../../../lib/teact/teact';
 import { getGlobal } from '../../../../global';
 
 import type { ApiChatMember, ApiUser } from '../../../../api/types';
 import type { Signal } from '../../../../util/signals';
-
 import { ApiMessageEntityTypes } from '../../../../api/types';
+
+import { requestNextMutation } from '../../../../lib/fasterdom/fasterdom';
 import { filterUsersByName, getMainUsername, getUserFirstOrLastName } from '../../../../global/helpers';
-import { prepareForRegExp } from '../helpers/prepareForRegExp';
 import focusEditableElement from '../../../../util/focusEditableElement';
 import { pickTruthy, unique } from '../../../../util/iteratees';
-import { getHtmlBeforeSelection } from '../../../../util/selection';
+import { getCaretPosition, getHtmlBeforeSelection, setCaretPosition } from '../../../../util/selection';
+import { prepareForRegExp } from '../helpers/prepareForRegExp';
 
-import useFlag from '../../../../hooks/useFlag';
-import useDerivedSignal from '../../../../hooks/useDerivedSignal';
 import { useThrottledResolver } from '../../../../hooks/useAsyncResolvers';
+import useDerivedSignal from '../../../../hooks/useDerivedSignal';
+import useFlag from '../../../../hooks/useFlag';
+import useLastCallback from '../../../../hooks/useLastCallback';
 
 const THROTTLE = 300;
 
@@ -90,12 +90,13 @@ export default function useMentionTooltip(
     setFilteredUsers(Object.values(pickTruthy(usersById, filteredIds)));
   }, [currentUserId, groupChatMembers, topInlineBotIds, getUsernameTag, getWithInlineBots]);
 
-  const insertMention = useCallback((user: ApiUser, forceFocus = false) => {
+  const insertMention = useLastCallback((user: ApiUser, forceFocus = false) => {
     if (!user.usernames && !getUserFirstOrLastName(user)) {
       return;
     }
 
     const mainUsername = getMainUsername(user);
+    const userFirstOrLastName = getUserFirstOrLastName(user) || '';
     const htmlToInsert = mainUsername
       ? `@${mainUsername}`
       : `<a
@@ -104,26 +105,32 @@ export default function useMentionTooltip(
           data-user-id="${user.id}"
           contenteditable="false"
           dir="auto"
-        >${getUserFirstOrLastName(user)}</a>`;
+        >${userFirstOrLastName}</a>`;
 
     const inputEl = inputRef.current!;
     const htmlBeforeSelection = getHtmlBeforeSelection(inputEl);
     const fixedHtmlBeforeSelection = cleanWebkitNewLines(htmlBeforeSelection);
     const atIndex = fixedHtmlBeforeSelection.lastIndexOf('@');
+    const shiftCaretPosition = (mainUsername ? mainUsername.length + 1 : userFirstOrLastName.length)
+      - (fixedHtmlBeforeSelection.length - atIndex);
 
     if (atIndex !== -1) {
       const newHtml = `${fixedHtmlBeforeSelection.substr(0, atIndex)}${htmlToInsert}&nbsp;`;
       const htmlAfterSelection = cleanWebkitNewLines(inputEl.innerHTML).substring(fixedHtmlBeforeSelection.length);
-
+      const caretPosition = getCaretPosition(inputEl);
       setHtml(`${newHtml}${htmlAfterSelection}`);
 
-      requestAnimationFrame(() => {
+      requestNextMutation(() => {
+        const newCaretPosition = caretPosition + shiftCaretPosition + 1;
         focusEditableElement(inputEl, forceFocus);
+        if (newCaretPosition >= 0) {
+          setCaretPosition(inputEl, newCaretPosition);
+        }
       });
     }
 
     setFilteredUsers(undefined);
-  }, [inputRef, setHtml]);
+  });
 
   useEffect(unmarkManuallyClosed, [unmarkManuallyClosed, getHtml]);
 

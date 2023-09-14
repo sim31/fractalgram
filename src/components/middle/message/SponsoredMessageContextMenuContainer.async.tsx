@@ -1,6 +1,8 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo } from '../../../lib/teact/teact';
+import React from '../../../lib/teact/teact';
+
 import type { OwnProps } from './SponsoredMessageContextMenuContainer';
+
 import { Bundles } from '../../../util/moduleLoader';
 
 import useModuleLoader from '../../../hooks/useModuleLoader';
@@ -15,4 +17,4 @@ const SponsoredMessageContextMenuContainerAsync: FC<OwnProps> = (props) => {
   return SponsoredMessageContextMenuContainer ? <SponsoredMessageContextMenuContainer {...props} /> : undefined;
 };
 
-export default memo(SponsoredMessageContextMenuContainerAsync);
+export default SponsoredMessageContextMenuContainerAsync;

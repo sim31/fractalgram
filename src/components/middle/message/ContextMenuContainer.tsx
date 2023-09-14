@@ -1,48 +1,60 @@
 import type { FC } from '../../../lib/teact/teact';
 import React, {
-  memo, useCallback, useEffect, useMemo, useState,
+  memo, useEffect, useMemo, useState,
 } from '../../../lib/teact/teact';
 import { getActions, getGlobal, withGlobal } from '../../../global';
 
-import type { MessageListType } from '../../../global/types';
 import type {
-  ApiAvailableReaction, ApiStickerSetInfo, ApiMessage, ApiStickerSet, ApiChatReactions, ApiReaction, ApiThreadInfo,
+  ApiAvailableReaction, ApiChatReactions, ApiMessage, ApiReaction, ApiStickerSet, ApiStickerSetInfo, ApiThreadInfo,
 } from '../../../api/types';
+import type { MessageListType, TabState } from '../../../global/types';
 import type { IAlbum, IAnchorPosition } from '../../../types';
 
+import { PREVIEW_AVATAR_COUNT, SERVICE_NOTIFICATIONS_USER_ID } from '../../../config';
 import {
-  selectActiveDownloadIds,
+  areReactionsEmpty,
+  getChatMessageLink,
+  getMessageVideo,
+  isActionMessage,
+  isChatChannel,
+  isChatGroup,
+  isMessageLocal,
+  isOwnMessage,
+  isUserId,
+} from '../../../global/helpers';
+import {
+  selectActiveDownloads,
   selectAllowedMessageActions,
+  selectCanPlayAnimatedEmojis,
   selectCanScheduleUntilOnline,
+  selectCanTranslateMessage,
   selectChat,
+  selectChatFullInfo,
   selectCurrentMessageList,
   selectIsCurrentUserPremium,
   selectIsMessageProtected,
   selectIsPremiumPurchaseBlocked,
+  selectIsReactionPickerOpen,
   selectMessageCustomEmojiSets,
   selectMessageTranslations,
-  selectRequestedTranslationLanguage,
+  selectRequestedChatTranslationLanguage,
+  selectRequestedMessageTranslationLanguage,
   selectStickerSet,
 } from '../../../global/selectors';
-import {
-  isActionMessage, isChatChannel,
-  isChatGroup, isOwnMessage, areReactionsEmpty, isUserId, isMessageLocal, getMessageVideo, getChatMessageLink,
-} from '../../../global/helpers';
-import { SERVICE_NOTIFICATIONS_USER_ID } from '../../../config';
-import { IS_TRANSLATION_SUPPORTED } from '../../../util/environment';
 import buildClassName from '../../../util/buildClassName';
 import { copyTextToClipboard } from '../../../util/clipboard';
 
-import useShowTransition from '../../../hooks/useShowTransition';
 import useFlag from '../../../hooks/useFlag';
 import useLang from '../../../hooks/useLang';
+import useLastCallback from '../../../hooks/useLastCallback';
 import useSchedule from '../../../hooks/useSchedule';
+import useShowTransition from '../../../hooks/useShowTransition';
 
 import DeleteMessageModal from '../../common/DeleteMessageModal';
-import ReportModal from '../../common/ReportModal';
 import PinMessageModal from '../../common/PinMessageModal';
-import MessageContextMenu from './MessageContextMenu';
+import ReportModal from '../../common/ReportModal';
 import ConfirmDialog from '../../ui/ConfirmDialog';
+import MessageContextMenu from './MessageContextMenu';
 
 export type OwnProps = {
   isOpen: boolean;
@@ -50,16 +62,18 @@ export type OwnProps = {
   message: ApiMessage;
   album?: IAlbum;
   anchor: IAnchorPosition;
+  targetHref?: string;
   messageListType: MessageListType;
   noReplies?: boolean;
   detectedLanguage?: string;
-  onClose: () => void;
-  onCloseAnimationEnd: () => void;
   repliesThreadInfo?: ApiThreadInfo;
+  onClose: NoneToVoidFunction;
+  onCloseAnimationEnd: NoneToVoidFunction;
 };
 
 type StateProps = {
   availableReactions?: ApiAvailableReaction[];
+  topReactions?: ApiReaction[];
   customEmojiSetsInfo?: ApiStickerSetInfo[];
   customEmojiSets?: ApiStickerSet[];
   noOptions?: boolean;
@@ -90,16 +104,19 @@ type StateProps = {
   canSaveGif?: boolean;
   canRevote?: boolean;
   canClosePoll?: boolean;
-  activeDownloads: number[];
+  activeDownloads?: TabState['activeDownloads']['byChatId'][number];
   canShowSeenBy?: boolean;
   enabledReactions?: ApiChatReactions;
   canScheduleUntilOnline?: boolean;
   maxUniqueReactions?: number;
   threadId?: number;
+  canPlayAnimatedEmojis?: boolean;
+  isReactionPickerOpen?: boolean;
 };
 
 const ContextMenuContainer: FC<OwnProps & StateProps> = ({
   availableReactions,
+  topReactions,
   isOpen,
   messageListType,
   chatUsername,
@@ -108,6 +125,7 @@ const ContextMenuContainer: FC<OwnProps & StateProps> = ({
   customEmojiSets,
   album,
   anchor,
+  targetHref,
   noOptions,
   canSendNow,
   hasFullInfo,
@@ -136,6 +154,7 @@ const ContextMenuContainer: FC<OwnProps & StateProps> = ({
   canSaveGif,
   canRevote,
   canClosePoll,
+  canPlayAnimatedEmojis,
   activeDownloads,
   noReplies,
   canShowSeenBy,
@@ -146,6 +165,7 @@ const ContextMenuContainer: FC<OwnProps & StateProps> = ({
   threadId,
   onClose,
   onCloseAnimationEnd,
+  isReactionPickerOpen,
 }) => {
   const {
     openChat,
@@ -173,7 +193,8 @@ const ContextMenuContainer: FC<OwnProps & StateProps> = ({
     toggleReaction,
     requestMessageTranslation,
     showOriginalMessage,
-    openMessageLanguageModal,
+    openChatLanguageModal,
+    openMessageReactionPicker,
   } = getActions();
 
   const lang = useLang();
@@ -215,87 +236,96 @@ const ContextMenuContainer: FC<OwnProps & StateProps> = ({
     }
   }, [hasFullInfo, isOpen, isPrivate, loadFullChat, message.chatId]);
 
-  const seenByRecentUsers = useMemo(() => {
+  const seenByRecentPeers = useMemo(() => {
+    // No need for expensive global updates on chats or users, so we avoid them
+    const chatsById = getGlobal().chats.byId;
+    const usersById = getGlobal().users.byId;
     if (message.reactions?.recentReactions?.length) {
-      // No need for expensive global updates on users, so we avoid them
-      const usersById = getGlobal().users.byId;
+      const uniqueReactors = new Set(message.reactions?.recentReactions?.map(
+        ({ peerId }) => usersById[peerId] || chatsById[peerId],
+      ));
 
-      const uniqueReactors = new Set(message.reactions?.recentReactions?.map(({ userId }) => usersById[userId]));
-
-      return Array.from(uniqueReactors).filter(Boolean).slice(0, 3);
+      return Array.from(uniqueReactors).filter(Boolean).slice(0, PREVIEW_AVATAR_COUNT);
     }
 
-    if (!message.seenByUserIds) {
+    if (!message.seenByDates) {
       return undefined;
     }
 
-    // No need for expensive global updates on users, so we avoid them
-    const usersById = getGlobal().users.byId;
-    return message.seenByUserIds?.slice(0, 3).map((id) => usersById[id]).filter(Boolean);
-  }, [message.reactions?.recentReactions, message.seenByUserIds]);
+    return Object.keys(message.seenByDates).slice(0, PREVIEW_AVATAR_COUNT)
+      .map((id) => usersById[id] || chatsById[id])
+      .filter(Boolean);
+  }, [message.reactions?.recentReactions, message.seenByDates]);
 
-  const isDownloading = album ? album.messages.some((msg) => activeDownloads.includes(msg.id))
-    : activeDownloads.includes(message.id);
+  const isDownloading = useMemo(() => {
+    if (album) {
+      return album.messages.some((msg) => {
+        return activeDownloads?.[message.isScheduled ? 'scheduledIds' : 'ids']?.includes(msg.id);
+      });
+    }
 
-  const handleDelete = useCallback(() => {
+    return activeDownloads?.[message.isScheduled ? 'scheduledIds' : 'ids']?.includes(message.id);
+  }, [activeDownloads, album, message]);
+
+  const handleDelete = useLastCallback(() => {
     setIsMenuOpen(false);
     setIsDeleteModalOpen(true);
-  }, []);
+  });
 
-  const handleReport = useCallback(() => {
+  const handleReport = useLastCallback(() => {
     setIsMenuOpen(false);
     setIsReportModalOpen(true);
-  }, []);
+  });
 
-  const closeMenu = useCallback(() => {
+  const closeMenu = useLastCallback(() => {
     setIsMenuOpen(false);
     onClose();
-  }, [onClose]);
+  });
 
-  const closeDeleteModal = useCallback(() => {
+  const closeDeleteModal = useLastCallback(() => {
     setIsDeleteModalOpen(false);
     onClose();
-  }, [onClose]);
+  });
 
-  const closeReportModal = useCallback(() => {
+  const closeReportModal = useLastCallback(() => {
     setIsReportModalOpen(false);
     onClose();
-  }, [onClose]);
+  });
 
-  const closePinModal = useCallback(() => {
+  const closePinModal = useLastCallback(() => {
     setIsPinModalOpen(false);
     onClose();
-  }, [onClose]);
+  });
 
-  const handleReply = useCallback(() => {
+  const handleReply = useLastCallback(() => {
     setReplyingToId({ messageId: message.id });
     closeMenu();
-  }, [setReplyingToId, message.id, closeMenu]);
+  });
 
-  const handleOpenThread = useCallback(() => {
+  const handleOpenThread = useLastCallback(() => {
     openChat({
       id: message.chatId,
       threadId: message.id,
     });
     closeMenu();
-  }, [closeMenu, message.chatId, message.id, openChat]);
+  });
 
-  const handleEdit = useCallback(() => {
+  const handleEdit = useLastCallback(() => {
     setEditingId({ messageId: message.id });
     closeMenu();
-  }, [setEditingId, message.id, closeMenu]);
+  });
 
-  const handlePin = useCallback(() => {
+  const handlePin = useLastCallback(() => {
     setIsMenuOpen(false);
     setIsPinModalOpen(true);
-  }, []);
+  });
 
-  const handleUnpin = useCallback(() => {
+  const handleUnpin = useLastCallback(() => {
     pinMessage({ messageId: message.id, isUnpin: true });
     closeMenu();
-  }, [pinMessage, message.id, closeMenu]);
+  });
 
-  const handleForward = useCallback(() => {
+  const handleForward = useLastCallback(() => {
     closeMenu();
     if (album?.messages) {
       const messageIds = album.messages.map(({ id }) => id);
@@ -303,29 +333,29 @@ const ContextMenuContainer: FC<OwnProps & StateProps> = ({
     } else {
       openForwardMenu({ fromChatId: message.chatId, messageIds: [message.id] });
     }
-  }, [openForwardMenu, message, closeMenu, album]);
+  });
 
-  const handleFaveSticker = useCallback(() => {
+  const handleFaveSticker = useLastCallback(() => {
     closeMenu();
     faveSticker({ sticker: message.content.sticker! });
-  }, [closeMenu, message.content.sticker, faveSticker]);
+  });
 
-  const handleUnfaveSticker = useCallback(() => {
+  const handleUnfaveSticker = useLastCallback(() => {
     closeMenu();
     unfaveSticker({ sticker: message.content.sticker! });
-  }, [closeMenu, message.content.sticker, unfaveSticker]);
+  });
 
-  const handleCancelVote = useCallback(() => {
+  const handleCancelVote = useLastCallback(() => {
     closeMenu();
     cancelPollVote({ chatId: message.chatId, messageId: message.id });
-  }, [closeMenu, message, cancelPollVote]);
+  });
 
-  const handlePollClose = useCallback(() => {
+  const handlePollClose = useLastCallback(() => {
     closeMenu();
     closePoll({ chatId: message.chatId, messageId: message.id });
-  }, [closeMenu, message, closePoll]);
+  });
 
-  const handleSelectMessage = useCallback(() => {
+  const handleSelectMessage = useLastCallback(() => {
     const params = album?.messages
       ? {
         messageId: message.id,
@@ -336,53 +366,53 @@ const ContextMenuContainer: FC<OwnProps & StateProps> = ({
 
     toggleMessageSelection(params);
     closeMenu();
-  }, [closeMenu, message.id, toggleMessageSelection, album]);
+  });
 
-  const handleScheduledMessageSend = useCallback(() => {
+  const handleScheduledMessageSend = useLastCallback(() => {
     sendScheduledMessages({ chatId: message.chatId, id: message.id });
     closeMenu();
-  }, [closeMenu, message.chatId, message.id, sendScheduledMessages]);
+  });
 
-  const handleRescheduleMessage = useCallback((scheduledAt: number) => {
+  const handleRescheduleMessage = useLastCallback((scheduledAt: number) => {
     rescheduleMessage({
       chatId: message.chatId,
       messageId: message.id,
       scheduledAt,
     });
     onClose();
-  }, [message.chatId, message.id, onClose, rescheduleMessage]);
+  });
 
-  const handleOpenCalendar = useCallback(() => {
+  const handleOpenCalendar = useLastCallback(() => {
     setIsMenuOpen(false);
     requestCalendar(handleRescheduleMessage);
-  }, [handleRescheduleMessage, requestCalendar]);
+  });
 
-  const handleOpenSeenByModal = useCallback(() => {
+  const handleOpenSeenByModal = useLastCallback(() => {
     closeMenu();
     openSeenByModal({ chatId: message.chatId, messageId: message.id });
-  }, [closeMenu, message.chatId, message.id, openSeenByModal]);
+  });
 
-  const handleOpenReactorListModal = useCallback(() => {
+  const handleOpenReactorListModal = useLastCallback(() => {
     closeMenu();
     openReactorListModal({ chatId: message.chatId, messageId: message.id });
-  }, [closeMenu, openReactorListModal, message.chatId, message.id]);
+  });
 
-  const handleCopyMessages = useCallback((messageIds: number[]) => {
+  const handleCopyMessages = useLastCallback((messageIds: number[]) => {
     copyMessagesByIds({ messageIds });
     closeMenu();
-  }, [closeMenu, copyMessagesByIds]);
+  });
 
-  const handleCopyLink = useCallback(() => {
+  const handleCopyLink = useLastCallback(() => {
     copyTextToClipboard(getChatMessageLink(message.chatId, chatUsername, threadId, message.id));
     closeMenu();
-  }, [chatUsername, closeMenu, message, threadId]);
+  });
 
-  const handleCopyNumber = useCallback(() => {
+  const handleCopyNumber = useLastCallback(() => {
     copyTextToClipboard(message.content.contact!.phoneNumber);
     closeMenu();
-  }, [closeMenu, message]);
+  });
 
-  const handleDownloadClick = useCallback(() => {
+  const handleDownloadClick = useLastCallback(() => {
     (album?.messages || [message]).forEach((msg) => {
       if (isDownloading) {
         cancelMessageMediaDownload({ message: msg });
@@ -391,44 +421,48 @@ const ContextMenuContainer: FC<OwnProps & StateProps> = ({
       }
     });
     closeMenu();
-  }, [album, message, closeMenu, isDownloading, cancelMessageMediaDownload, downloadMessageMedia]);
+  });
 
-  const handleSaveGif = useCallback(() => {
+  const handleSaveGif = useLastCallback(() => {
     const video = getMessageVideo(message);
     saveGif({ gif: video! });
     closeMenu();
-  }, [closeMenu, message, saveGif]);
+  });
 
-  const handleToggleReaction = useCallback((reaction: ApiReaction) => {
+  const handleToggleReaction = useLastCallback((reaction: ApiReaction) => {
     toggleReaction({
-      chatId: message.chatId, messageId: message.id, reaction,
+      chatId: message.chatId, messageId: message.id, reaction, shouldAddToRecent: true,
     });
     closeMenu();
-  }, [closeMenu, message, toggleReaction]);
+  });
 
-  const handleTranslate = useCallback(() => {
+  const handleReactionPickerOpen = useLastCallback((position: IAnchorPosition) => {
+    openMessageReactionPicker({ chatId: message.chatId, messageId: message.id, position });
+  });
+
+  const handleTranslate = useLastCallback(() => {
     requestMessageTranslation({
       chatId: message.chatId,
       id: message.id,
     });
     closeMenu();
-  }, [closeMenu, message, requestMessageTranslation]);
+  });
 
-  const handleShowOriginal = useCallback(() => {
+  const handleShowOriginal = useLastCallback(() => {
     showOriginalMessage({
       chatId: message.chatId,
       id: message.id,
     });
     closeMenu();
-  }, [closeMenu, message, showOriginalMessage]);
+  });
 
-  const handleSelectLanguage = useCallback(() => {
-    openMessageLanguageModal({
+  const handleSelectLanguage = useLastCallback(() => {
+    openChatLanguageModal({
       chatId: message.chatId,
-      id: message.id,
+      messageId: message.id,
     });
     closeMenu();
-  }, [closeMenu, message.chatId, message.id, openMessageLanguageModal]);
+  });
 
   const reportMessageIds = useMemo(() => (album ? album.messages : [message]).map(({ id }) => id), [album, message]);
 
@@ -444,7 +478,9 @@ const ContextMenuContainer: FC<OwnProps & StateProps> = ({
   return (
     <div className={buildClassName('ContextMenuContainer', transitionClassNames)}>
       <MessageContextMenu
+        isReactionPickerOpen={isReactionPickerOpen}
         availableReactions={availableReactions}
+        topReactions={topReactions}
         message={message}
         isPrivate={isPrivate}
         isCurrentUserPremium={isCurrentUserPremium}
@@ -453,6 +489,7 @@ const ContextMenuContainer: FC<OwnProps & StateProps> = ({
         enabledReactions={enabledReactions}
         maxUniqueReactions={maxUniqueReactions}
         anchor={anchor}
+        targetHref={targetHref}
         canShowReactionsCount={canShowReactionsCount}
         canShowReactionList={canShowReactionList}
         canSendNow={canSendNow}
@@ -478,10 +515,11 @@ const ContextMenuContainer: FC<OwnProps & StateProps> = ({
         canTranslate={canTranslate}
         canShowOriginal={canShowOriginal}
         canSelectLanguage={canSelectLanguage}
+        canPlayAnimatedEmojis={canPlayAnimatedEmojis}
         hasCustomEmoji={hasCustomEmoji}
         customEmojiSets={customEmojiSets}
         isDownloading={isDownloading}
-        seenByRecentUsers={seenByRecentUsers}
+        seenByRecentPeers={seenByRecentPeers}
         noReplies={noReplies}
         onOpenThread={handleOpenThread}
         onReply={handleReply}
@@ -507,6 +545,7 @@ const ContextMenuContainer: FC<OwnProps & StateProps> = ({
         onShowSeenBy={handleOpenSeenByModal}
         onToggleReaction={handleToggleReaction}
         onShowReactors={handleOpenReactorListModal}
+        onReactionPickerOpen={handleReactionPickerOpen}
         onTranslate={handleTranslate}
         onShowOriginal={handleShowOriginal}
         onSelectLanguage={handleSelectLanguage}
@@ -544,7 +583,7 @@ const ContextMenuContainer: FC<OwnProps & StateProps> = ({
 export default memo(withGlobal<OwnProps>(
   (global, { message, messageListType, detectedLanguage }): StateProps => {
     const { threadId } = selectCurrentMessageList(global) || {};
-    const activeDownloads = selectActiveDownloadIds(global, message.chatId);
+    const activeDownloads = selectActiveDownloads(global, message.chatId);
     const chat = selectChat(global, message.chatId);
     const { seenByExpiresAt, seenByMaxChatMembers, maxUniqueReactions } = global.appConfig || {};
     const {
@@ -567,12 +606,14 @@ export default memo(withGlobal<OwnProps>(
       canClosePoll,
     } = (threadId && selectAllowedMessageActions(global, message, threadId)) || {};
 
+    const isPrivate = chat && isUserId(chat.id);
     const isOwn = isOwnMessage(message);
     const isPinned = messageListType === 'pinned';
     const isScheduled = messageListType === 'scheduled';
     const isChannel = chat && isChatChannel(chat);
     const isLocal = isMessageLocal(message);
-    const canShowSeenBy = Boolean(chat
+    const canShowSeenBy = Boolean(!isLocal
+      && chat
       && seenByMaxChatMembers
       && seenByExpiresAt
       && isChatGroup(chat)
@@ -581,8 +622,8 @@ export default memo(withGlobal<OwnProps>(
       && chat.membersCount
       && chat.membersCount <= seenByMaxChatMembers
       && message.date > Date.now() / 1000 - seenByExpiresAt);
-    const isPrivate = chat && isUserId(chat.id);
     const isAction = isActionMessage(message);
+    const chatFullInfo = !isPrivate ? selectChatFullInfo(global, message.chatId) : undefined;
     const canShowReactionsCount = !isLocal && !isChannel && !isScheduled && !isAction && !isPrivate && message.reactions
       && !areReactionsEmpty(message.reactions) && message.reactions.canSeeList;
     const isProtected = selectIsMessageProtected(global, message);
@@ -594,20 +635,16 @@ export default memo(withGlobal<OwnProps>(
     const customEmojiSets = customEmojiSetsNotFiltered?.every<ApiStickerSet>(Boolean)
       ? customEmojiSetsNotFiltered : undefined;
 
-    const translationRequestLanguage = selectRequestedTranslationLanguage(global, message.chatId, message.id);
+    const translationRequestLanguage = selectRequestedMessageTranslationLanguage(global, message.chatId, message.id);
     const hasTranslation = translationRequestLanguage
       ? Boolean(selectMessageTranslations(global, message.chatId, translationRequestLanguage)[message.id]?.text)
       : undefined;
-
-    const { canTranslate: isTranslationEnabled, language, doNotTranslate } = global.settings.byKey;
-
-    const canTranslateLanguage = !detectedLanguage
-      || (!doNotTranslate.includes(detectedLanguage) && language !== detectedLanguage);
-    const canTranslate = IS_TRANSLATION_SUPPORTED && isTranslationEnabled && message.content.text
-      && canTranslateLanguage && !isLocal && !isScheduled && !isAction && !hasTranslation && !message.emojiOnlyCount;
+    const canTranslate = !hasTranslation && selectCanTranslateMessage(global, message, detectedLanguage);
+    const isChatTranslated = selectRequestedChatTranslationLanguage(global, message.chatId);
 
     return {
       availableReactions: global.availableReactions,
+      topReactions: global.topReactions,
       noOptions,
       canSendNow: isScheduled,
       canReschedule: isScheduled,
@@ -629,11 +666,11 @@ export default memo(withGlobal<OwnProps>(
       canClosePoll: !isScheduled && canClosePoll,
       activeDownloads,
       canShowSeenBy,
-      enabledReactions: chat?.isForbidden ? undefined : chat?.fullInfo?.enabledReactions,
+      enabledReactions: chat?.isForbidden ? undefined : chatFullInfo?.enabledReactions,
       maxUniqueReactions,
       isPrivate,
       isCurrentUserPremium,
-      hasFullInfo: Boolean(chat?.fullInfo),
+      hasFullInfo: Boolean(chatFullInfo),
       canShowReactionsCount,
       canShowReactionList: !isLocal && !isAction && !isScheduled && chat?.id !== SERVICE_NOTIFICATIONS_USER_ID,
       canBuyPremium: !isCurrentUserPremium && !selectIsPremiumPurchaseBlocked(global),
@@ -642,8 +679,10 @@ export default memo(withGlobal<OwnProps>(
       canScheduleUntilOnline: selectCanScheduleUntilOnline(global, message.chatId),
       threadId,
       canTranslate,
-      canShowOriginal: hasTranslation,
-      canSelectLanguage: hasTranslation,
+      canShowOriginal: hasTranslation && !isChatTranslated,
+      canSelectLanguage: hasTranslation && !isChatTranslated,
+      canPlayAnimatedEmojis: selectCanPlayAnimatedEmojis(global),
+      isReactionPickerOpen: selectIsReactionPickerOpen(global),
     };
   },
 )(ContextMenuContainer));

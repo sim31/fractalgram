@@ -1,28 +1,29 @@
+import type {
+  ApiUpdateAuthorizationError,
+  ApiUpdateAuthorizationState,
+  ApiUpdateConnectionState,
+  ApiUpdateCurrentUser,
+  ApiUpdateServerTimeOffset,
+  ApiUpdateSession,
+} from '../../../api/types';
 import type { RequiredGlobalActions } from '../../index';
+import type { ActionReturnType, GlobalState } from '../../types';
+
+import { SESSION_USER_KEY } from '../../../config';
+import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import { getShippingError, shouldClosePaymentModal } from '../../../util/getReadableErrorText';
+import { unique } from '../../../util/iteratees';
+import { setLanguage } from '../../../util/langProvider';
+import { clearWebTokenAuth } from '../../../util/routing';
+import { setServerTimeOffset } from '../../../util/serverTime';
+import { forceWebsync } from '../../../util/websync';
+import { isChatChannel, isChatSuperGroup } from '../../helpers';
 import {
   addActionHandler, getGlobal, setGlobal,
 } from '../../index';
-
-import type { ActionReturnType, GlobalState } from '../../types';
-
-import type {
-  ApiUpdateAuthorizationState,
-  ApiUpdateAuthorizationError,
-  ApiUpdateConnectionState,
-  ApiUpdateSession,
-  ApiUpdateCurrentUser, ApiUpdateServerTimeOffset,
-} from '../../../api/types';
-import { SESSION_USER_KEY } from '../../../config';
-import { subscribe } from '../../../util/notifications';
-import { updateUser } from '../../reducers';
-import { setLanguage } from '../../../util/langProvider';
-import { selectTabState, selectNotifySettings } from '../../selectors';
-import { forceWebsync } from '../../../util/websync';
-import { getShippingError, shouldClosePaymentModal } from '../../../util/getReadableErrorText';
-import { clearWebTokenAuth } from '../../../util/routing';
-import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import { updateUser, updateUserFullInfo } from '../../reducers';
 import { updateTabState } from '../../reducers/tabs';
-import { setServerTimeOffset } from '../../../util/serverTime';
+import { selectTabState } from '../../selectors';
 
 addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
   switch (update['@type']) {
@@ -58,11 +59,27 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       onUpdateCurrentUser(global, update);
       break;
 
-    case 'error': {
-      if (update.error.message === 'SESSION_REVOKED') {
-        actions.signOut({ forceInitApi: true });
-      }
+    case 'requestReconnectApi':
+      global = { ...global, isSynced: false };
+      setGlobal(global);
 
+      onUpdateConnectionState(global, actions, {
+        '@type': 'updateConnectionState',
+        connectionState: 'connectionStateConnecting',
+      });
+      actions.initApi();
+      break;
+
+    case 'requestSync':
+      actions.sync();
+      break;
+
+    case 'updateFetchingDifference':
+      global = { ...global, isFetchingDifference: update.isFetching };
+      setGlobal(global);
+      break;
+
+    case 'error': {
       Object.values(global.byTabId).forEach(({ id: tabId }) => {
         const paymentShippingError = getShippingError(update.error);
         if (paymentShippingError) {
@@ -80,10 +97,6 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
 });
 
 function onUpdateApiReady<T extends GlobalState>(global: T) {
-  const { hasWebNotifications, hasPushNotifications } = selectNotifySettings(global);
-  if (hasWebNotifications && hasPushNotifications) {
-    void subscribe();
-  }
   void setLanguage(global.settings.byKey.language);
 }
 
@@ -208,6 +221,21 @@ function onUpdateConnectionState<T extends GlobalState>(
   };
   setGlobal(global);
 
+  if (global.isSynced) {
+    const channelStackIds = Object.values(global.byTabId)
+      .flatMap((tab) => tab.messageLists)
+      .map((messageList) => messageList.chatId)
+      .filter((chatId) => {
+        const chat = global.chats.byId[chatId];
+        return chat && (isChatChannel(chat) || isChatSuperGroup(chat));
+      });
+    if (connectionState === 'connectionStateReady' && channelStackIds.length) {
+      unique(channelStackIds).forEach((chatId) => {
+        actions.requestChannelDifference({ chatId });
+      });
+    }
+  }
+
   if (connectionState === 'connectionStateBroken') {
     actions.signOut({ forceInitApi: true });
   }
@@ -231,12 +259,13 @@ function onUpdateServerTimeOffset(update: ApiUpdateServerTimeOffset) {
 }
 
 function onUpdateCurrentUser<T extends GlobalState>(global: T, update: ApiUpdateCurrentUser) {
-  const { currentUser } = update;
+  const { currentUser, currentUserFullInfo } = update;
 
   global = {
     ...updateUser(global, currentUser.id, currentUser),
     currentUserId: currentUser.id,
   };
+  global = updateUserFullInfo(global, currentUser.id, currentUserFullInfo);
   setGlobal(global);
 
   updateSessionUserId(currentUser.id);

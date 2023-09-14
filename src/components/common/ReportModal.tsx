@@ -1,26 +1,28 @@
 import type { ChangeEvent } from 'react';
-
 import type { FC } from '../../lib/teact/teact';
-import React, {
-  memo, useCallback, useMemo, useState,
-} from '../../lib/teact/teact';
+import React, { memo, useMemo, useState } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
 import type { ApiPhoto, ApiReportReason } from '../../api/types';
 
-import useLang from '../../hooks/useLang';
+import buildClassName from '../../util/buildClassName';
 
-import Modal from '../ui/Modal';
+import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
+
 import Button from '../ui/Button';
-import RadioGroup from '../ui/RadioGroup';
 import InputText from '../ui/InputText';
+import Modal from '../ui/Modal';
+import RadioGroup from '../ui/RadioGroup';
 
 export type OwnProps = {
   isOpen: boolean;
-  subject?: 'peer' | 'messages' | 'media';
+  subject?: 'peer' | 'messages' | 'media' | 'story';
   chatId?: string;
+  userId?: string;
   photo?: ApiPhoto;
   messageIds?: number[];
+  storyId?: number;
   onClose: () => void;
   onCloseAnimationEnd?: () => void;
 };
@@ -29,8 +31,10 @@ const ReportModal: FC<OwnProps> = ({
   isOpen,
   subject = 'messages',
   chatId,
+  userId,
   photo,
   messageIds,
+  storyId,
   onClose,
   onCloseAnimationEnd,
 }) => {
@@ -38,13 +42,14 @@ const ReportModal: FC<OwnProps> = ({
     reportMessages,
     reportPeer,
     reportProfilePhoto,
+    reportStory,
     exitMessageSelectMode,
   } = getActions();
 
   const [selectedReason, setSelectedReason] = useState<ApiReportReason>('spam');
   const [description, setDescription] = useState('');
 
-  const handleReport = useCallback(() => {
+  const handleReport = useLastCallback(() => {
     switch (subject) {
       case 'messages':
         reportMessages({ messageIds: messageIds!, reason: selectedReason, description });
@@ -58,29 +63,21 @@ const ReportModal: FC<OwnProps> = ({
           chatId, photo, reason: selectedReason, description,
         });
         break;
+      case 'story':
+        reportStory({
+          userId: userId!, storyId: storyId!, reason: selectedReason, description,
+        });
     }
     onClose();
-  }, [
-    description,
-    exitMessageSelectMode,
-    messageIds,
-    photo,
-    onClose,
-    reportMessages,
-    selectedReason,
-    chatId,
-    reportProfilePhoto,
-    reportPeer,
-    subject,
-  ]);
+  });
 
-  const handleSelectReason = useCallback((value: string) => {
+  const handleSelectReason = useLastCallback((value: string) => {
     setSelectedReason(value as ApiReportReason);
-  }, []);
+  });
 
-  const handleDescriptionChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+  const handleDescriptionChange = useLastCallback((e: ChangeEvent<HTMLInputElement>) => {
     setDescription(e.target.value);
-  }, []);
+  });
 
   const lang = useLang();
 
@@ -99,6 +96,7 @@ const ReportModal: FC<OwnProps> = ({
     (subject === 'messages' && !messageIds)
     || (subject === 'peer' && !chatId)
     || (subject === 'media' && (!chatId || !photo))
+    || (subject === 'story' && (!storyId || !userId))
   ) {
     return undefined;
   }
@@ -113,7 +111,7 @@ const ReportModal: FC<OwnProps> = ({
       onClose={onClose}
       onEnter={isOpen ? handleReport : undefined}
       onCloseAnimationEnd={onCloseAnimationEnd}
-      className="narrow"
+      className={buildClassName('narrow', subject === 'story' && 'component-theme-dark')}
       title={title}
     >
       <RadioGroup
