@@ -11,16 +11,13 @@ import type {
   ApiMessage,
   ApiMessageOutgoingStatus,
   ApiReaction,
-  ApiStickerSet,
   ApiThreadInfo,
   ApiTopic,
   ApiTypeStory,
   ApiUser,
-  ApiUsername,
 } from '../../../api/types';
 import type {
   ActiveEmojiInteraction,
-  ActiveReaction,
   ChatTranslatedMessages,
   MessageListType,
 } from '../../../global/types';
@@ -31,17 +28,18 @@ import type { PinnedIntersectionChangedCallback } from '../hooks/usePinnedMessag
 import { MAIN_THREAD_ID } from '../../../api/types';
 import { AudioOrigin } from '../../../types';
 
-import { EMOJI_STATUS_LOOP_LIMIT, GENERAL_TOPIC_ID, IS_ELECTRON } from '../../../config';
+import { EMOJI_STATUS_LOOP_LIMIT, GENERAL_TOPIC_ID } from '../../../config';
 import {
   areReactionsEmpty,
   getMessageContent,
   getMessageCustomShape,
   getMessageHtmlId,
+  getMessageKey,
   getMessageLocation,
   getMessageSingleCustomEmoji,
   getMessageSingleRegularEmoji,
+  getPeerColorKey,
   getSenderTitle,
-  getUserColorKey,
   hasMessageText,
   isAnonymousOwnMessage,
   isChatChannel,
@@ -96,7 +94,7 @@ import {
 import { isAnimatingScroll } from '../../../util/animateScroll';
 import buildClassName from '../../../util/buildClassName';
 import { isElementInViewport } from '../../../util/isElementInViewport';
-import { IS_ANDROID, IS_TRANSLATION_SUPPORTED } from '../../../util/windowEnvironment';
+import { IS_ANDROID, IS_ELECTRON, IS_TRANSLATION_SUPPORTED } from '../../../util/windowEnvironment';
 import {
   calculateDimensionsForMessageMedia,
   getStickerDimensions,
@@ -193,15 +191,14 @@ type OwnProps =
     appearanceOrder: number;
     isJustAdded: boolean;
     memoFirstUnreadIdRef: { current: number | undefined };
-    onPinnedIntersectionChange: PinnedIntersectionChangedCallback;
     getIsMessageListReady: Signal<boolean>;
+    onPinnedIntersectionChange: PinnedIntersectionChangedCallback;
   }
   & MessagePositionProperties;
 
 type StateProps = {
   theme: ISettings['theme'];
   forceSenderName?: boolean;
-  chatUsernames?: ApiUsername[];
   sender?: ApiUser | ApiChat;
   canShowSender: boolean;
   originSender?: ApiUser | ApiChat;
@@ -230,7 +227,7 @@ type StateProps = {
   highlight?: string;
   animatedEmoji?: string;
   animatedCustomEmoji?: string;
-  genericEffects?: ApiStickerSet;
+  hasActiveReactions?: boolean;
   isInSelectMode?: boolean;
   isSelected?: boolean;
   isGroupSelected?: boolean;
@@ -247,7 +244,6 @@ type StateProps = {
   reactionMessage?: ApiMessage;
   availableReactions?: ApiAvailableReaction[];
   defaultReaction?: ApiReaction;
-  activeReactions?: ActiveReaction[];
   activeEmojiInteractions?: ActiveEmojiInteraction[];
   hasUnreadReaction?: boolean;
   isTranscribing?: boolean;
@@ -262,10 +258,10 @@ type StateProps = {
   shouldDetectChatLanguage?: boolean;
   requestedTranslationLanguage?: string;
   requestedChatTranslationLanguage?: string;
-  withReactionEffects?: boolean;
   withStickerEffects?: boolean;
   webPageStory?: ApiTypeStory;
   isConnected: boolean;
+  shouldWarnAboutSvg?: boolean;
 };
 
 type MetaPosition =
@@ -291,7 +287,6 @@ const RESIZE_ANIMATION_DURATION = 400;
 
 const Message: FC<OwnProps & StateProps> = ({
   message,
-  chatUsernames,
   observeIntersectionForBottom,
   observeIntersectionForLoading,
   observeIntersectionForPlaying,
@@ -341,7 +336,7 @@ const Message: FC<OwnProps & StateProps> = ({
   highlight,
   animatedEmoji,
   animatedCustomEmoji,
-  genericEffects,
+  hasActiveReactions,
   hasLinkedChat,
   isInSelectMode,
   isSelected,
@@ -350,7 +345,6 @@ const Message: FC<OwnProps & StateProps> = ({
   reactionMessage,
   availableReactions,
   defaultReaction,
-  activeReactions,
   activeEmojiInteractions,
   messageListType,
   isPinnedList,
@@ -371,12 +365,12 @@ const Message: FC<OwnProps & StateProps> = ({
   shouldDetectChatLanguage,
   requestedTranslationLanguage,
   requestedChatTranslationLanguage,
-  withReactionEffects,
   withStickerEffects,
   webPageStory,
   isConnected,
-  onPinnedIntersectionChange,
   getIsMessageListReady,
+  shouldWarnAboutSvg,
+  onPinnedIntersectionChange,
 }) => {
   const {
     toggleMessageSelection,
@@ -611,7 +605,7 @@ const Message: FC<OwnProps & StateProps> = ({
     isSwiped && 'is-swiped',
     transitionClassNames,
     isJustAdded && 'is-just-added',
-    (Boolean(activeReactions) || hasActiveStickerEffect) && 'has-active-reaction',
+    (hasActiveReactions || hasActiveStickerEffect) && 'has-active-reaction',
     isStoryMention && 'is-story-mention',
   );
 
@@ -864,7 +858,7 @@ const Message: FC<OwnProps & StateProps> = ({
 
     return (
       <div
-        className={buildClassName('quick-reaction', isQuickReactionVisible && !activeReactions && 'visible')}
+        className={buildClassName('quick-reaction', isQuickReactionVisible && !hasActiveReactions && 'visible')}
         onClick={handleSendQuickReaction}
         ref={quickReactionRef}
       >
@@ -877,7 +871,7 @@ const Message: FC<OwnProps & StateProps> = ({
       </div>
     );
   }, [
-    activeReactions, availableReactions, defaultReaction, handleSendQuickReaction, isQuickReactionVisible,
+    hasActiveReactions, availableReactions, defaultReaction, handleSendQuickReaction, isQuickReactionVisible,
     observeIntersectionForPlaying,
   ]);
 
@@ -908,14 +902,10 @@ const Message: FC<OwnProps & StateProps> = ({
 
     return (
       <Reactions
-        activeReactions={activeReactions}
         message={reactionMessage!}
         metaChildren={meta}
-        availableReactions={availableReactions}
-        genericEffects={genericEffects}
         observeIntersection={observeIntersectionForPlaying}
         noRecentReactors={isChannel}
-        withEffects={withReactionEffects}
       />
     );
   }
@@ -1106,6 +1096,7 @@ const Message: FC<OwnProps & StateProps> = ({
             onMediaClick={handleMediaClick}
             onCancelUpload={handleCancelUpload}
             isDownloading={isDownloading}
+            shouldWarnAboutSvg={shouldWarnAboutSvg}
           />
         )}
         {storyData && !isStoryMention && (
@@ -1218,7 +1209,7 @@ const Message: FC<OwnProps & StateProps> = ({
       senderTitle = getSenderTitle(lang, senderPeer);
 
       if (!asForwarded && !isOwn) {
-        senderColor = `color-${getUserColorKey(senderPeer)}`;
+        senderColor = `color-${getPeerColorKey(senderPeer)}`;
       }
     } else if (forwardInfo?.hiddenUserName) {
       senderTitle = forwardInfo.hiddenUserName;
@@ -1287,7 +1278,6 @@ const Message: FC<OwnProps & StateProps> = ({
   }
 
   const forwardAuthor = isGroup && asForwarded ? message.postAuthorTitle : undefined;
-  const chatUsername = useMemo(() => chatUsernames?.find((c) => c.isActive), [chatUsernames]);
 
   return (
     <div
@@ -1381,12 +1371,8 @@ const Message: FC<OwnProps & StateProps> = ({
             message={reactionMessage!}
             isOutside
             maxWidth={reactionsMaxWidth}
-            activeReactions={activeReactions}
-            availableReactions={availableReactions}
-            genericEffects={genericEffects}
             observeIntersection={observeIntersectionForPlaying}
             noRecentReactors={isChannel}
-            withEffects={withReactionEffects}
           />
         )}
       </div>
@@ -1397,7 +1383,6 @@ const Message: FC<OwnProps & StateProps> = ({
           targetHref={contextMenuTarget?.matches('a[href]') ? (contextMenuTarget as HTMLAnchorElement).href : undefined}
           message={message}
           album={album}
-          chatUsername={chatUsername?.username}
           messageListType={messageListType}
           onClose={handleContextMenuClose}
           onCloseAnimationEnd={handleContextMenuHide}
@@ -1437,7 +1422,7 @@ function MessageAppendix({ isOwn } : { isOwn: boolean }) {
 export default memo(withGlobal<OwnProps>(
   (global, ownProps): StateProps => {
     const {
-      focusedMessage, forwardMessages, activeReactions, activeEmojiInteractions,
+      focusedMessage, forwardMessages, activeEmojiInteractions, activeReactions,
     } = selectTabState(global);
     const {
       message, album, withSenderName, withAvatar, threadId, messageListType, isLastInDocumentGroup, isFirstInGroup,
@@ -1452,7 +1437,6 @@ export default memo(withGlobal<OwnProps>(
     const isRepliesChat = isChatWithRepliesBot(chatId);
     const isChannel = chat && isChatChannel(chat);
     const isGroup = chat && isChatGroup(chat);
-    const chatUsernames = chat?.usernames;
     const chatFullInfo = !isUserId(chatId) ? selectChatFullInfo(global, chatId) : undefined;
     const webPageStoryData = message.content.webPage?.story;
     const webPageStory = webPageStoryData
@@ -1538,9 +1522,10 @@ export default memo(withGlobal<OwnProps>(
 
     const isConnected = global.connectionState === 'connectionStateReady';
 
+    const hasActiveReactions = Boolean(reactionMessage && activeReactions[getMessageKey(reactionMessage)]?.length);
+
     return {
       theme: selectTheme(global),
-      chatUsernames,
       forceSenderName,
       canShowSender,
       originSender,
@@ -1584,7 +1569,7 @@ export default memo(withGlobal<OwnProps>(
       availableReactions: global.availableReactions,
       defaultReaction: isMessageLocal(message) || messageListType === 'scheduled'
         ? undefined : selectDefaultReaction(global, chatId),
-      activeReactions: reactionMessage && activeReactions[reactionMessage.id],
+      hasActiveReactions,
       activeEmojiInteractions,
       hasUnreadReaction,
       isTranscribing: transcriptionId !== undefined && global.transcriptions[transcriptionId]?.isPending,
@@ -1592,7 +1577,6 @@ export default memo(withGlobal<OwnProps>(
       isPremium: selectIsCurrentUserPremium(global),
       senderAdminMember,
       messageTopic,
-      genericEffects: global.genericEmojiEffects,
       hasTopicChip,
       chatTranslations,
       areTranslationsEnabled,
@@ -1600,10 +1584,10 @@ export default memo(withGlobal<OwnProps>(
       requestedTranslationLanguage,
       requestedChatTranslationLanguage,
       hasLinkedChat: Boolean(chatFullInfo?.linkedChatId),
-      withReactionEffects: selectPerformanceSettingsValue(global, 'reactionEffects'),
       withStickerEffects: selectPerformanceSettingsValue(global, 'stickerEffects'),
       webPageStory,
       isConnected,
+      shouldWarnAboutSvg: global.settings.byKey.shouldWarnAboutSvg,
       ...((canShowSender || isLocation) && { sender }),
       ...(isOutgoing && { outgoingStatus: selectOutgoingStatus(global, message, messageListType === 'scheduled') }),
       ...(typeof uploadProgress === 'number' && { uploadProgress }),

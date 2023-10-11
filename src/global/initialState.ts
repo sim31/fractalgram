@@ -29,6 +29,7 @@ export const INITIAL_PERFORMANCE_STATE_MAX: PerformanceType = {
   reactionEffects: true,
   rightColumnAnimations: true,
   stickerEffects: true,
+  storyRibbonAnimations: true,
 };
 
 export const INITIAL_PERFORMANCE_STATE_MID: PerformanceType = {
@@ -45,6 +46,7 @@ export const INITIAL_PERFORMANCE_STATE_MID: PerformanceType = {
   reactionEffects: true,
   rightColumnAnimations: false,
   stickerEffects: false,
+  storyRibbonAnimations: false,
 };
 
 export const INITIAL_PERFORMANCE_STATE_MIN: PerformanceType = {
@@ -61,13 +63,15 @@ export const INITIAL_PERFORMANCE_STATE_MIN: PerformanceType = {
   reactionEffects: false,
   rightColumnAnimations: false,
   stickerEffects: false,
+  storyRibbonAnimations: false,
 };
 
 export const INITIAL_GLOBAL_STATE: GlobalState = {
   attachMenu: { bots: {} },
   passcode: {},
   twoFaSettings: {},
-  isUpdateAvailable: false,
+  isAppUpdateAvailable: false,
+  isElectronUpdateAvailable: false,
   shouldShowContextMenuHint: true,
 
   audioPlayer: {
@@ -237,6 +241,7 @@ export const INITIAL_GLOBAL_STATE: GlobalState = {
       doNotTranslate: [],
       canDisplayChatInTitle: true,
       shouldAllowHttpTransport: true,
+      shouldWarnAboutSvg: true,
     },
     themes: {
       light: {

@@ -663,6 +663,10 @@ export type ApiRequestSync = {
   '@type': 'requestSync';
 };
 
+export type ApiUpdateAttachMenuBots = {
+  '@type': 'updateAttachMenuBots';
+};
+
 export type ApiUpdate = (
   ApiUpdateReady | ApiUpdateSession | ApiUpdateWebAuthTokenFailed | ApiUpdateRequestUserUpdate |
   ApiUpdateAuthorizationState | ApiUpdateAuthorizationError | ApiUpdateConnectionState | ApiUpdateCurrentUser |
@@ -691,7 +695,7 @@ export type ApiUpdate = (
   ApiUpdatePinnedTopicsOrder | ApiUpdateTopic | ApiUpdateTopics | ApiUpdateRecentEmojiStatuses |
   ApiUpdateRecentReactions | ApiUpdateStory | ApiUpdateReadStories | ApiUpdateDeleteStory | ApiUpdateSentStoryReaction |
   ApiRequestReconnectApi | ApiRequestSync | ApiUpdateFetchingDifference | ApiUpdateChannelMessages |
-  ApiUpdateStealthMode
+  ApiUpdateStealthMode | ApiUpdateAttachMenuBots
 );
 
 export type OnApiUpdate = (update: ApiUpdate) => void;

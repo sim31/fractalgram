@@ -6,6 +6,7 @@ import { buildCollectionByKey } from '../../../util/iteratees';
 import { translate } from '../../../util/langProvider';
 import { getServerTime } from '../../../util/serverTime';
 import { callApi } from '../../../api/gramjs';
+import { buildApiInputPrivacyRules, getStoryKey } from '../../helpers';
 import { addActionHandler, getGlobal, setGlobal } from '../../index';
 import {
   addStories,
@@ -377,13 +378,19 @@ addActionHandler('editStoryPrivacy', (global, actions, payload): ActionReturnTyp
     privacy,
   } = payload;
 
-  const allowedUserList = privacy.allowUserIds?.map((userId) => selectUser(global, userId)).filter(Boolean);
-  const deniedUserList = privacy.blockUserIds?.map((userId) => selectUser(global, userId)).filter(Boolean);
+  const allowedIds = [...privacy.allowUserIds, ...privacy.allowChatIds];
+  const blockedIds = [...privacy.blockUserIds, ...privacy.blockChatIds];
+
+  const inputPrivacy = buildApiInputPrivacyRules(global, {
+    visibility: privacy.visibility,
+    isUnspecified: privacy.isUnspecified,
+    allowedIds,
+    blockedIds,
+  });
+
   void callApi('editStoryPrivacy', {
     id: storyId,
-    visibility: privacy.visibility,
-    allowedUserList,
-    deniedUserList,
+    privacy: inputPrivacy,
   });
 });
 
@@ -428,7 +435,7 @@ addActionHandler('loadStoriesMaxIds', async (global, actions, payload): Promise<
 
 addActionHandler('sendStoryReaction', async (global, actions, payload): Promise<void> => {
   const {
-    userId, storyId, reaction, shouldAddToRecent,
+    userId, storyId, reaction, shouldAddToRecent, tabId = getCurrentTabId(),
   } = payload;
   const user = selectUser(global, userId);
   if (!user) return;
@@ -441,6 +448,13 @@ addActionHandler('sendStoryReaction', async (global, actions, payload): Promise<
     sentReaction: reaction,
   });
   setGlobal(global);
+
+  const containerId = getStoryKey(userId, storyId);
+  if (reaction) {
+    actions.startActiveReaction({ containerId, reaction, tabId });
+  } else {
+    actions.stopActiveReaction({ containerId, tabId });
+  }
 
   const result = await callApi('sendStoryReaction', {
     user, storyId, reaction, shouldAddToRecent,

@@ -43,6 +43,7 @@ import {
 import { requestMeasure, requestNextMutation } from '../../lib/fasterdom/fasterdom';
 import {
   getAllowedAttachmentOptions,
+  getStoryKey,
   isChatAdmin,
   isChatChannel,
   isChatSuperGroup,
@@ -94,7 +95,6 @@ import applyIosAutoCapitalizationFix from '../middle/composer/helpers/applyIosAu
 import buildAttachment, { prepareAttachmentsToSend } from '../middle/composer/helpers/buildAttachment';
 import { buildCustomEmojiHtml } from '../middle/composer/helpers/customEmoji';
 import { isSelectionInsideInput } from '../middle/composer/helpers/selection';
-import { REM } from './helpers/mediaDimensions';
 import renderText from './helpers/renderText';
 import { getTextWithEntitiesAsHtml } from './helpers/renderTextWithEntities';
 
@@ -154,7 +154,7 @@ import ResponsiveHoverButton from '../ui/ResponsiveHoverButton';
 import Spinner from '../ui/Spinner';
 import Avatar from './Avatar';
 import DeleteMessageModal from './DeleteMessageModal.async';
-import ReactionStaticEmoji from './ReactionStaticEmoji';
+import ReactionAnimatedEmoji from './reactions/ReactionAnimatedEmoji';
 
 import './Composer.scss';
 
@@ -269,7 +269,6 @@ const MESSAGE_MAX_LENGTH = 4096;
 const SENDING_ANIMATION_DURATION = 350;
 const MOUNT_ANIMATION_DURATION = 430;
 
-const REACTION_SIZE = 1.5 * REM;
 const HEART_REACTION: ApiReaction = {
   emoticon: '❤',
 };
@@ -1324,8 +1323,8 @@ const Composer: FC<OwnProps & StateProps> = ({
     || isMentionTooltipOpen || isInlineBotTooltipOpen || isDeleteModalOpen || isBotCommandMenuOpen || isAttachMenuOpen
     || isStickerTooltipOpen || isBotCommandTooltipOpen || isCustomEmojiTooltipOpen || isBotMenuButtonOpen
   || isCustomSendMenuOpen || Boolean(activeVoiceRecording) || attachments.length > 0 || isInputHasFocus;
-  const isReactionSelectorOpen = (isComposerHasFocus || isReactionPickerOpen)
-    && isInStoryViewer && !isAttachMenuOpen && !isSymbolMenuOpen;
+  const isReactionSelectorOpen = isComposerHasFocus && !isReactionPickerOpen && isInStoryViewer && !isAttachMenuOpen
+    && !isSymbolMenuOpen;
 
   useEffect(() => {
     if (isComposerHasFocus) {
@@ -1869,13 +1868,14 @@ const Composer: FC<OwnProps & StateProps> = ({
           ariaLabel={lang('AccDescrLike')}
           ref={storyReactionRef}
         >
-          {sentStoryReaction && !isSentStoryReactionHeart ? (
-            <ReactionStaticEmoji
+          {sentStoryReaction && (
+            <ReactionAnimatedEmoji
+              containerId={getStoryKey(chatId, storyId!)}
               reaction={sentStoryReaction}
-              availableReactions={availableReactions}
-              size={REACTION_SIZE}
+              withEffectOnly={isSentStoryReactionHeart}
             />
-          ) : (
+          )}
+          {(!sentStoryReaction || isSentStoryReactionHeart) && (
             <i
               className={buildClassName(
                 'icon',
