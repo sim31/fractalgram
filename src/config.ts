@@ -364,6 +364,13 @@ export const FRACTAL_INFO: Record<string, ExtPlatformInfo> = {
     platform: 'WAX',
     accountInfoUrl: 'https://wax.bloks.io/',
   },
+  OPFractal: {
+    displayTitle: 'Optimism Fractal',
+    fractalName: 'OPFractal',
+    submitUrl: 'https://edenfracfront.web.app',
+    platform: 'Optimism',
+    accountInfoUrl: 'https://optimistic.etherscan.io/',
+  },
 };
 export const DEFAULT_PLATFORM = FRACTAL_INFO[DEFAULT_FRACTAL_NAME].platform;
 export const FRACTAL_INFO_BY_PLATFORM: Record<string, ExtPlatformInfo> = {
@@ -379,7 +386,14 @@ export const FRACTAL_INFO_BY_PLATFORM: Record<string, ExtPlatformInfo> = {
     fractalName: 'AWFractal',
     submitUrl: 'https://awfractal.web.app/',
     platform: 'WAX',
-    accountInfoUrl: 'https://wax.bloks.io/',
+    accountInfoUrl: 'https://wax.bloks.io/account',
+  },
+  Optimism: {
+    displayTitle: 'Optimism Fractal',
+    fractalName: 'OPFractal',
+    submitUrl: 'https://edenfracfront.web.app',
+    platform: 'Optimism',
+    accountInfoUrl: 'https://optimistic.etherscan.io/address',
   },
 };
 

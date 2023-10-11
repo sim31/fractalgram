@@ -1,3 +1,6 @@
+import { isAddress as isEthAddress } from 'ethers';
+import truncateEthAddress from 'truncate-eth-address';
+
 import type { ChatConsensusMessages, ConsensusResultOption, ConsensusResults } from '../types';
 
 import {
@@ -39,6 +42,14 @@ function toSubmissionObject(results: ConsensusResults, platform: string, groupNu
   };
 }
 
+export function prettifyAccountStr(accountStr: string): string {
+  if (isEthAddress(accountStr)) {
+    return truncateEthAddress(accountStr);
+  } else {
+    return accountStr;
+  }
+}
+
 export function createConsensusResultMsg(
   results: ConsensusResults,
   submissionUrl?: string,
@@ -53,8 +64,9 @@ export function createConsensusResultMsg(
   for (const rank of ALLOWED_RANKS) {
     const winner = results.rankings[rank];
     const option = winner?.option ?? '';
+    const fullAccStr = platform ? winner?.refUser?.extAccounts[platform] : undefined;
     const votes = winner ? getVotesStr(winner) : '';
-    msg = msg.concat(`Level ${rank}: ${option} ${votes}\n`);
+    msg = msg.concat(`Level ${rank}: ${option},acc:${fullAccStr} ${votes}\n`);
   }
   msg = msg.concat('\n');
 
@@ -76,9 +88,12 @@ export function createConsensusResultMsg(
   }
 
   if (accountInfoUrl && platform) {
-    const accountReStr = `\\W([\\w.]+)@${platform}\\W`;
+    const fullAccReStr = ',acc:([\\w]+)\\W';
+    const accountReStr = `\\W([\\w.…]+)@${platform}\\)${fullAccReStr}`;
     const accountRe = new RegExp(accountReStr, 'g');
-    msg = msg.replace(accountRe, `[$&](${accountInfoUrl}/$1) `);
+    msg = msg.replace(accountRe, `[$&](${accountInfoUrl}/$2) `);
+    const fullAccRe = new RegExp(fullAccReStr, 'g');
+    msg = msg.replace(fullAccRe, '');
   }
 
   return msg;

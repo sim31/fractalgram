@@ -31,7 +31,7 @@ import { getServerTime } from '../../../util/serverTime';
 import { IS_TOUCH_ENV } from '../../../util/windowEnvironment';
 import versionNotification from '../../../versionNotification.txt';
 import { getMessageSummaryText, getSenderTitle, isChatChannel } from '../../helpers';
-import { promptStrToPlatform } from '../../helpers/consensusMessages';
+import { prettifyAccountStr, promptStrToPlatform } from '../../helpers/consensusMessages';
 import { renderMessageSummaryHtml } from '../../helpers/renderMessageSummaryHtml';
 import { addActionHandler, getGlobal, setGlobal } from '../../index';
 import {
@@ -935,7 +935,7 @@ addActionHandler('composeConsensusMessage', async (gl, actions, payload): Promis
 function constructAccountOption(user: ExtUser, platform?: string) {
   const extAccount = platform ? user.extAccounts[platform] : undefined;
   let id1 = user.id;
-  const id2 = extAccount ? `(${extAccount}@${platform})` : '';
+  const id2 = extAccount ? `(${prettifyAccountStr(extAccount)}@${platform})` : '';
   if (user.firstName) {
     id1 = user.firstName;
   } else if (user.usernames && user.usernames.length) {

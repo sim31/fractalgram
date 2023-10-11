@@ -143,6 +143,7 @@
     "big-integer": "github:painor/BigInteger.js",
     "croppie": "^2.6.5",
     "emoji-data-ios": "git+https://github.com/korenskoy/emoji-data-ios#2886b318eae174527c4bc9fcd321940ef3a85527",
+    "ethers": "^6.7.1",
     "idb-keyval": "^6.2.1",
     "lowlight": "^2.9.0",
     "mp4box": "^0.5.2",
@@ -151,6 +152,7 @@
     "pako": "^2.1.0",
     "path-browserify": "^1.0.1",
     "qr-code-styling": "github:zubiden/qr-code-styling#dbbfed0",
+    "truncate-eth-address": "^1.0.2",
     "v8-compile-cache": "^2.4.0"
   },
   "optionalDependencies": {
