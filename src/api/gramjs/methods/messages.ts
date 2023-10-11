@@ -11,6 +11,7 @@ import type {
   ApiMessageSearchType,
   ApiNewPoll,
   ApiOnProgress,
+  ApiPeer,
   ApiPoll,
   ApiReportReason,
   ApiSendMessageAction,
@@ -18,7 +19,6 @@ import type {
   ApiStory,
   ApiStorySkipped,
   ApiTypeReplyTo,
-  ApiUser,
   ApiVideo,
   OnApiUpdate,
 } from '../../types';
@@ -267,7 +267,7 @@ export function sendMessage(
     scheduledAt?: number;
     groupedId?: string;
     noWebPage?: boolean;
-    sendAs?: ApiUser | ApiChat;
+    sendAs?: ApiPeer;
     shouldUpdateStickerSetOrder?: boolean;
   },
   onProgress?: ApiOnProgress,
@@ -419,7 +419,7 @@ function sendGroupedMedia(
     groupedId: string;
     isSilent?: boolean;
     scheduledAt?: number;
-    sendAs?: ApiUser | ApiChat;
+    sendAs?: ApiPeer;
   },
   randomId: GramJs.long,
   localMessage: ApiMessage,
@@ -787,7 +787,7 @@ export async function deleteHistory({
 export async function reportMessages({
   peer, messageIds, reason, description,
 }: {
-  peer: ApiChat | ApiUser; messageIds: number[]; reason: ApiReportReason; description?: string;
+  peer: ApiPeer; messageIds: number[]; reason: ApiReportReason; description?: string;
 }) {
   const result = await invokeRequest(new GramJs.messages.Report({
     peer: buildInputPeer(peer.id, peer.accessHash),
@@ -802,7 +802,7 @@ export async function reportMessages({
 export async function sendMessageAction({
   peer, threadId, action,
 }: {
-  peer: ApiChat | ApiUser; threadId?: number; action: ApiSendMessageAction;
+  peer: ApiPeer; threadId?: number; action: ApiSendMessageAction;
 }) {
   const gramAction = buildSendMessageAction(action);
   if (!gramAction) {
@@ -1301,7 +1301,7 @@ export async function forwardMessages({
   messages: ApiMessage[];
   isSilent?: boolean;
   scheduledAt?: number;
-  sendAs?: ApiUser | ApiChat;
+  sendAs?: ApiPeer;
   withMyScore?: boolean;
   noAuthors?: boolean;
   noCaptions?: boolean;
@@ -1519,7 +1519,7 @@ export async function fetchSendAs({
 export function saveDefaultSendAs({
   sendAs, chat,
 }: {
-  sendAs: ApiChat | ApiUser; chat: ApiChat;
+  sendAs: ApiPeer; chat: ApiChat;
 }) {
   return invokeRequest(new GramJs.messages.SaveDefaultSendAs({
     peer: buildInputPeer(chat.id, chat.accessHash),

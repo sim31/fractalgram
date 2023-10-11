@@ -114,8 +114,8 @@ export const INITIAL_GLOBAL_STATE: GlobalState = {
   },
 
   stories: {
-    byUserId: {},
-    orderedUserIds: {
+    byPeerId: {},
+    orderedPeerIds: {
       archived: [],
       active: [],
     },

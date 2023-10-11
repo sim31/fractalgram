@@ -4,6 +4,7 @@ import type {
   ApiChatBannedRights,
   ApiChatFolder,
   ApiChatFullInfo,
+  ApiPeer,
   ApiTopic,
   ApiUser,
 } from '../../api/types';
@@ -34,6 +35,10 @@ export function isUserId(entityId: string) {
 
 export function isChannelId(entityId: string) {
   return entityId.length === CHANNEL_ID_LENGTH && entityId.startsWith('-100');
+}
+
+export function toChannelId(mtpId: string) {
+  return `-100${mtpId}`;
 }
 
 export function isChatGroup(chat: ApiChat) {
@@ -95,7 +100,7 @@ export function getChatLink(chat: ApiChat) {
 }
 
 export function getChatAvatarHash(
-  owner: ApiChat | ApiUser,
+  owner: ApiPeer,
   size: 'normal' | 'big' = 'normal',
   avatarHash = owner.avatarHash,
 ) {
@@ -382,7 +387,7 @@ export function getFolderDescriptionText(lang: LangFn, folder: ApiChatFolder, ch
   }
 }
 
-export function getMessageSenderName(lang: LangFn, chatId: string, sender?: ApiUser | ApiChat) {
+export function getMessageSenderName(lang: LangFn, chatId: string, sender?: ApiPeer) {
   if (!sender || isUserId(chatId)) {
     return undefined;
   }
@@ -495,7 +500,7 @@ export function getPeerIdDividend(peerId: string) {
 }
 
 // https://github.com/telegramdesktop/tdesktop/blob/371510cfe23b0bd226de8c076bc49248fbe40c26/Telegram/SourceFiles/data/data_peer.cpp#L53
-export function getPeerColorKey(peer: ApiUser | ApiChat | undefined) {
+export function getPeerColorKey(peer: ApiPeer | undefined) {
   const index = peer ? getPeerIdDividend(peer.id) % 7 : 0;
 
   return USER_COLOR_KEYS[index];

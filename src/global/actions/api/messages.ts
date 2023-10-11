@@ -5,11 +5,11 @@ import type {
   ApiMessageEntity,
   ApiNewPoll,
   ApiOnProgress,
+  ApiPeer,
   ApiSticker,
   ApiStory,
   ApiStorySkipped,
   ApiTypeReplyTo,
-  ApiUser,
   ApiVideo,
 } from '../../../api/types';
 import type { RequiredGlobalActions } from '../../index';
@@ -95,6 +95,7 @@ import {
   selectListedIds,
   selectNoWebPage,
   selectOutlyingListByMessageId,
+  selectPeerStory,
   selectPinnedIds,
   selectRealLastReadId,
   selectReplyingToId,
@@ -108,7 +109,6 @@ import {
   selectTranslationLanguage,
   selectUser,
   selectUserFullInfo,
-  selectUserStory,
   selectViewportIds,
 } from '../../selectors';
 import { deleteMessages } from '../apiUpdaters/messages';
@@ -311,8 +311,8 @@ function sendMessageImpl(
 ) {
   const { messageList, tabId = getCurrentTabId() } = payload;
 
-  const { storyId, userId: storyUserId } = selectCurrentViewedStory(global, tabId);
-  const isStoryReply = Boolean(storyId && storyUserId);
+  const { storyId, peerId: storyPeerId } = selectCurrentViewedStory(global, tabId);
+  const isStoryReply = Boolean(storyId && storyPeerId);
 
   if (!messageList && !isStoryReply) {
     return undefined;
@@ -320,7 +320,7 @@ function sendMessageImpl(
 
   let { chatId, threadId, type } = messageList || {};
   if (isStoryReply) {
-    chatId = storyUserId!;
+    chatId = storyPeerId!;
     threadId = MAIN_THREAD_ID;
     type = 'thread';
   }
@@ -342,7 +342,7 @@ function sendMessageImpl(
     : replyingToMessage?.replyToTopMessageId || replyingToMessage?.replyToMessageId;
   const replyingTo: ApiTypeReplyTo | undefined = replyingToId
     ? { replyingTo: replyingToId, replyingToTopId }
-    : (isStoryReply ? { userId: storyUserId!, storyId: storyId! } : undefined);
+    : (isStoryReply ? { userId: storyPeerId!, storyId: storyId! } : undefined);
 
   const params = {
     ...payload,
@@ -1291,7 +1291,7 @@ async function sendMessage<T extends GlobalState>(global: T, params: {
   poll?: ApiNewPoll;
   isSilent?: boolean;
   scheduledAt?: number;
-  sendAs?: ApiChat | ApiUser;
+  sendAs?: ApiPeer;
   currentThreadId: number;
   groupedId?: string;
 },
@@ -1535,7 +1535,7 @@ addActionHandler('readAllMentions', (global, actions, payload): ActionReturnType
 addActionHandler('openUrl', (global, actions, payload): ActionReturnType => {
   const { url, shouldSkipModal, tabId = getCurrentTabId() } = payload;
   const urlWithProtocol = ensureProtocol(url)!;
-  const isStoriesViewerOpen = Boolean(selectTabState(global, tabId).storyViewer.userId);
+  const isStoriesViewerOpen = Boolean(selectTabState(global, tabId).storyViewer.peerId);
 
   if (urlWithProtocol.match(RE_TME_LINK) || urlWithProtocol.match(RE_TG_LINK)) {
     if (isStoriesViewerOpen) {
@@ -1640,7 +1640,7 @@ addActionHandler('forwardStory', (global, actions, payload): ActionReturnType =>
   const fromChat = fromChatId ? selectChat(global, fromChatId) : undefined;
   const toChat = toChatId ? selectChat(global, toChatId) : undefined;
   const story = fromChatId && storyId
-    ? selectUserStory(global, fromChatId, storyId)
+    ? selectPeerStory(global, fromChatId, storyId)
     : undefined;
 
   if (!fromChat || !toChat || !story || 'isDeleted' in story) {

@@ -207,6 +207,11 @@ function unsafeMigrateCache(cached: GlobalState, initialState: GlobalState) {
   if (!cached.stories.stealthMode) {
     cached.stories.stealthMode = initialState.stories.stealthMode;
   }
+
+  if (!cached.stories.byPeerId) {
+    cached.stories.byPeerId = initialState.stories.byPeerId;
+    cached.stories.orderedPeerIds = initialState.stories.orderedPeerIds;
+  }
 }
 
 function updateCache() {
@@ -320,8 +325,8 @@ function reduceUsers<T extends GlobalState>(global: T): GlobalState['users'] {
 
   const chatStoriesUserIds = currentChatIds
     .flatMap((chatId) => Object.values(selectChatMessages(global, chatId) || {}))
-    .map((message) => message.content.storyData?.userId || message.content.webPage?.story?.userId)
-    .filter(Boolean);
+    .map((message) => message.content.storyData?.peerId || message.content.webPage?.story?.peerId)
+    .filter((id): id is string => Boolean(id) && isUserId(id));
 
   const idsToSave = unique([
     ...currentUserId ? [currentUserId] : [],
@@ -361,9 +366,15 @@ function reduceChats<T extends GlobalState>(global: T): GlobalState['chats'] {
       }),
   ).map(({ chatId }) => chatId);
 
+  const chatStoriesChannelIds = currentChatIds
+    .flatMap((chatId) => Object.values(selectChatMessages(global, chatId) || {}))
+    .map((message) => message.content.storyData?.peerId || message.content.webPage?.story?.peerId)
+    .filter((id): id is string => Boolean(id) && !isUserId(id));
+
   const idsToSave = unique([
     ...currentUserId ? [currentUserId] : [],
     ...currentChatIds,
+    ...chatStoriesChannelIds,
     ...getOrderedIds(ALL_FOLDER_ID) || [],
     ...getOrderedIds(ARCHIVED_FOLDER_ID) || [],
     ...global.recentlyFoundChatIds || [],
