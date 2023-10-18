@@ -360,19 +360,20 @@ export const FRACTAL_INFO: Record<string, ExtPlatformInfo> = {
   AWFractal: {
     displayTitle: 'Alien Worlds Fractal',
     fractalName: 'AWFractal',
-    submitUrl: 'https://awfractal.web.app/',
+    submitUrl: 'https://awfractal.web.app',
     platform: 'WAX',
-    accountInfoUrl: 'https://wax.bloks.io/',
+    accountInfoUrl: 'https://wax.bloks.io/account',
   },
   OPFractal: {
     displayTitle: 'Optimism Fractal',
     fractalName: 'OPFractal',
-    submitUrl: 'https://edenfracfront.web.app',
+    submitUrl: 'https://optimismfractal.web.app',
     platform: 'Optimism',
-    accountInfoUrl: 'https://optimistic.etherscan.io/',
+    accountInfoUrl: 'https://goerli-optimism.etherscan.io/address',
   },
 };
 export const DEFAULT_PLATFORM = FRACTAL_INFO[DEFAULT_FRACTAL_NAME].platform;
+// TODO: Make it so that you don't need to duplicate info with here with FRACTAL_INFO
 export const FRACTAL_INFO_BY_PLATFORM: Record<string, ExtPlatformInfo> = {
   EOS: {
     displayTitle: 'Eden Fractal',
@@ -384,16 +385,16 @@ export const FRACTAL_INFO_BY_PLATFORM: Record<string, ExtPlatformInfo> = {
   WAX: {
     displayTitle: 'Alien Worlds Fractal',
     fractalName: 'AWFractal',
-    submitUrl: 'https://awfractal.web.app/',
+    submitUrl: 'https://awfractal.web.app',
     platform: 'WAX',
     accountInfoUrl: 'https://wax.bloks.io/account',
   },
   Optimism: {
     displayTitle: 'Optimism Fractal',
     fractalName: 'OPFractal',
-    submitUrl: 'https://edenfracfront.web.app',
+    submitUrl: 'https://optimismfractal.web.app',
     platform: 'Optimism',
-    accountInfoUrl: 'https://optimistic.etherscan.io/address',
+    accountInfoUrl: 'https://goerli-optimism.etherscan.io/address',
   },
 };
 
