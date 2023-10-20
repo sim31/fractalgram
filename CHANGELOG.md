@@ -1,3 +1,7 @@
+## Fractalgram 1.4 (2023-10-20)
+* Added support for [Optimism Fractal](https://optimismfractal.com/)
+* Other minor fixes and improvements
+
 ## Fractalgram 1.3 (2023-09-14)
 * Integrated updates and fixes from [Telegram Web A v10.0.4](https://github.com/Ajaxy/telegram-tt/blob/master/CHANGELOG.md#1000-2023-08-14)
 

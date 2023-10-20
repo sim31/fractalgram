@@ -369,7 +369,7 @@ export const FRACTAL_INFO: Record<string, ExtPlatformInfo> = {
     fractalName: 'OPFractal',
     submitUrl: 'https://optimismfractal.web.app',
     platform: 'Optimism',
-    accountInfoUrl: 'https://goerli-optimism.etherscan.io/address',
+    accountInfoUrl: 'https://optimistic.etherscan.io/address',
   },
 };
 export const DEFAULT_PLATFORM = FRACTAL_INFO[DEFAULT_FRACTAL_NAME].platform;
@@ -394,7 +394,7 @@ export const FRACTAL_INFO_BY_PLATFORM: Record<string, ExtPlatformInfo> = {
     fractalName: 'OPFractal',
     submitUrl: 'https://optimismfractal.web.app',
     platform: 'Optimism',
-    accountInfoUrl: 'https://goerli-optimism.etherscan.io/address',
+    accountInfoUrl: 'https://optimistic.etherscan.io/address',
   },
 };
 
