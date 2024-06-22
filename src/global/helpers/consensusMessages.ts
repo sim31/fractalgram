@@ -66,7 +66,11 @@ export function createConsensusResultMsg(
     const option = winner?.option ?? '';
     const fullAccStr = platform ? winner?.refUser?.extAccounts[platform] : undefined;
     const votes = winner ? getVotesStr(winner) : '';
-    msg = msg.concat(`Level ${rank}: ${option},acc:${fullAccStr} ${votes}\n`);
+    if (fullAccStr !== undefined) {
+      msg = msg.concat(`Level ${rank}: ${option},acc:${fullAccStr} ${votes}\n`);
+    } else {
+      msg = msg.concat(`Level ${rank}: ${option} ${votes}\n`);
+    }
   }
   msg = msg.concat('\n');
 
