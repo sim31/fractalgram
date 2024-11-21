@@ -367,17 +367,17 @@ export const FRACTAL_INFO: Record<string, ExtPlatformInfo> = {
   OPFractal: {
     displayTitle: 'Optimism Fractal',
     fractalName: 'OPFractal',
-    submitUrl: 'https://optimismfractal.web.app',
-    platform: 'Optimism',
-    accountInfoUrl: 'https://optimistic.etherscan.io/address',
-  },
-  OPFractalCandidate1: {
-    displayTitle: 'Optimism Fractal 2 Candidate 1',
-    fractalName: 'OPFractalCandidate1',
     submitUrl: 'https://of.frapps.xyz',
     platform: 'Optimism',
     accountInfoUrl: 'https://optimism.blockscout.com/address',
   },
+  // OPFractalCandidate1: {
+  //   displayTitle: 'Optimism Fractal 2 Candidate 1',
+  //   fractalName: 'OPFractalCandidate1',
+  //   submitUrl: 'https://of.frapps.xyz',
+  //   platform: 'Optimism',
+  //   accountInfoUrl: 'https://optimism.blockscout.com/address',
+  // },
   // OPFractalCandidate1Test: {
   //   displayTitle: 'Optimism Fractal 2 Candidate 1',
   //   fractalName: 'OPFractalCandidate1',
