@@ -348,11 +348,18 @@ export const SELECT_DELEGATE_STR = 'Who should be the delegate of this group?';
 export const ALLOWED_RANKS: Rank[] = [6, 5, 4, 3, 2, 1];
 export type Rank = 6 | 5 | 4 | 3 | 2 | 1;
 
-export const DEFAULT_FRACTAL_NAME = 'EdenFractal';
+export const DEFAULT_FRACTAL_NAME = 'EdenFractal2';
 export const FRACTAL_INFO: Record<string, ExtPlatformInfo> = {
-  EdenFractal: {
-    displayTitle: 'Eden Fractal',
-    fractalName: 'EdenFractal',
+  EdenFractal2: {
+    displayTitle: 'Eden Fractal 2',
+    fractalName: 'EdenFractal2',
+    submitUrl: 'https://eden.frapps.xyz/submitBreakout',
+    platform: 'Base',
+    accountInfoUrl: 'https://basescan.org/address/',
+  },
+  EdenFractal1: {
+    displayTitle: 'Eden Fractal 1',
+    fractalName: 'EdenFractal1',
     submitUrl: 'https://edenfracfront.web.app',
     platform: 'EOS',
     accountInfoUrl: 'https://bloks.io/account',
@@ -370,6 +377,13 @@ export const FRACTAL_INFO: Record<string, ExtPlatformInfo> = {
     submitUrl: 'https://of.frapps.xyz',
     platform: 'Optimism',
     accountInfoUrl: 'https://optimism.blockscout.com/address',
+  },
+  OrdaoFractal: {
+    displayTitle: 'Ordao Fractal',
+    fractalName: 'OrdaoFractal',
+    submitUrl: 'https://ordao.frapps.xyz/submitBreakout',
+    platform: 'Base',
+    accountInfoUrl: 'https://basescan.org/address/',
   },
   // OPFractalCandidate1: {
   //   displayTitle: 'Optimism Fractal 2 Candidate 1',
@@ -409,6 +423,13 @@ export const FRACTAL_INFO_BY_PLATFORM: Record<string, ExtPlatformInfo> = {
     submitUrl: 'https://optimismfractal.web.app',
     platform: 'Optimism',
     accountInfoUrl: 'https://optimistic.etherscan.io/address',
+  },
+  Base: {
+    displayTitle: 'Eden Fractal 2',
+    fractalName: 'EdenFractal2',
+    submitUrl: 'https://eden.frapps.xyz/submitBreakout',
+    platform: 'Base',
+    accountInfoUrl: 'https://basescan.org/address/',
   },
 };
 
