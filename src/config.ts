@@ -374,7 +374,7 @@ export const FRACTAL_INFO: Record<string, ExtPlatformInfo> = {
   OPFractal: {
     displayTitle: 'Optimism Fractal',
     fractalName: 'OPFractal',
-    submitUrl: 'https://of.frapps.xyz',
+    submitUrl: 'https://of.frapps.xyz/submitBreakout',
     platform: 'Optimism',
     accountInfoUrl: 'https://optimism.blockscout.com/address',
   },
