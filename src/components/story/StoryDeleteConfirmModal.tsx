@@ -1,9 +1,9 @@
-import React, { memo, useCallback } from '../../lib/teact/teact';
+import { memo, useCallback } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
 import type { ApiTypeStory } from '../../api/types';
 
-import useLang from '../../hooks/useLang';
+import useOldLang from '../../hooks/useOldLang';
 
 import ConfirmDialog from '../ui/ConfirmDialog';
 
@@ -18,7 +18,7 @@ function StoryDeleteConfirmModal({
 }: OwnProps) {
   const { deleteStory, openNextStory } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const handleDeleteStoryClick = useCallback(() => {
     if (!story) {

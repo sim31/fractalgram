@@ -1,30 +1,32 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useEffect, useMemo, useState,
 } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
-import type { ApiAttachBot } from '../../../api/types';
+import type { TabState } from '../../../global/types';
 
 import { MINI_APP_TOS_URL } from '../../../config';
 import renderText from '../../common/helpers/renderText';
 
-import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 
 import Checkbox from '../../ui/Checkbox';
 import ConfirmDialog from '../../ui/ConfirmDialog';
 
 export type OwnProps = {
-  bot?: ApiAttachBot;
+  modal: TabState['requestedAttachBotInstall'];
 };
 
 const AttachBotInstallModal: FC<OwnProps> = ({
-  bot,
+  modal,
 }) => {
   const { confirmAttachBotInstall, cancelAttachBotInstall } = getActions();
+  const bot = modal?.bot;
+
   const [isTosAccepted, setIsTosAccepted] = useState(false);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const handleConfirm = useCallback(() => {
     confirmAttachBotInstall({
@@ -65,9 +67,7 @@ const AttachBotInstallModal: FC<OwnProps> = ({
         label={tosLabel}
         onCheck={setIsTosAccepted}
       />
-      {bot?.isInactive && bot.isForSideMenu && (
-        renderText(lang('WebBot.Account.Desclaimer.Desc', bot?.shortName), ['simple_markdown'])
-      )}
+      {renderText(lang('WebBot.Account.Desclaimer.Desc', bot?.shortName), ['simple_markdown'])}
     </ConfirmDialog>
   );
 };

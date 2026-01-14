@@ -1,10 +1,9 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo } from '../../lib/teact/teact';
+import { memo } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
 import type { GlobalState } from '../../global/types';
 import type { FolderEditDispatch } from '../../hooks/reducers/useFoldersReducer';
-import type { LeftColumnContent, SettingsScreens } from '../../types';
 
 import { ANIMATION_END_DELAY } from '../../config';
 import buildClassName from '../../util/buildClassName';
@@ -12,9 +11,9 @@ import { ANIMATION_DURATION } from '../story/helpers/ribbonAnimation';
 
 import useForumPanelRender from '../../hooks/useForumPanelRender';
 import useHistoryBack from '../../hooks/useHistoryBack';
-import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
-import useShowTransition from '../../hooks/useShowTransition';
+import useOldLang from '../../hooks/useOldLang';
+import useShowTransitionDeprecated from '../../hooks/useShowTransitionDeprecated';
 import useLeftHeaderButtonRtlForumTransition from './main/hooks/useLeftHeaderButtonRtlForumTransition';
 
 import StoryRibbon from '../story/StoryRibbon';
@@ -23,7 +22,7 @@ import Button from '../ui/Button';
 import DropdownMenu from '../ui/DropdownMenu';
 import MenuItem from '../ui/MenuItem';
 import ChatList from './main/ChatList';
-import ForumPanel from './main/ForumPanel';
+import ForumPanel from './main/forum/ForumPanel';
 
 import './ArchivedChats.scss';
 
@@ -34,9 +33,7 @@ export type OwnProps = {
   isStoryRibbonShown?: boolean;
   onReset: () => void;
   onTopicSearch: NoneToVoidFunction;
-  onSettingsScreenSelect: (screen: SettingsScreens) => void;
   foldersDispatch: FolderEditDispatch;
-  onLeftColumnContentChange: (content: LeftColumnContent) => void;
 };
 
 const ArchivedChats: FC<OwnProps> = ({
@@ -46,12 +43,10 @@ const ArchivedChats: FC<OwnProps> = ({
   isStoryRibbonShown,
   onReset,
   onTopicSearch,
-  onSettingsScreenSelect,
-  onLeftColumnContentChange,
   foldersDispatch,
 }) => {
   const { updateArchiveSettings } = getActions();
-  const lang = useLang();
+  const lang = useOldLang();
 
   useHistoryBack({
     isActive,
@@ -70,7 +65,7 @@ const ArchivedChats: FC<OwnProps> = ({
   const {
     shouldRender: shouldRenderTitle,
     transitionClassNames: titleClassNames,
-  } = useShowTransition(!isForumPanelOpen);
+  } = useShowTransitionDeprecated(!isForumPanelOpen, undefined, undefined, false);
 
   const {
     shouldRenderForumPanel, handleForumPanelAnimationEnd,
@@ -82,7 +77,9 @@ const ArchivedChats: FC<OwnProps> = ({
     shouldRender: shouldRenderStoryRibbon,
     transitionClassNames: storyRibbonClassNames,
     isClosing: isStoryRibbonClosing,
-  } = useShowTransition(isStoryRibbonShown, undefined, undefined, '', false, ANIMATION_DURATION + ANIMATION_END_DELAY);
+  } = useShowTransitionDeprecated(
+    isStoryRibbonShown, undefined, undefined, '', false, ANIMATION_DURATION + ANIMATION_END_DELAY,
+  );
 
   return (
     <div className="ArchivedChats">
@@ -100,9 +97,8 @@ const ArchivedChats: FC<OwnProps> = ({
             shouldDisableDropdownMenuTransitionRef.current && lang.isRtl && 'disable-transition',
           )}
           onTransitionEnd={handleDropdownMenuTransitionEnd}
-        >
-          <i className="icon icon-arrow-left" />
-        </Button>
+          iconName="arrow-left"
+        />
         {shouldRenderTitle && <h3 className={titleClassNames}>{lang('ArchivedChats')}</h3>}
         <div className="story-toggler-wrapper">
           <StoryToggler canShow isArchived />
@@ -133,10 +129,10 @@ const ArchivedChats: FC<OwnProps> = ({
           folderType="archived"
           isActive={isActive}
           isForumPanelOpen={isForumPanelVisible}
-          onSettingsScreenSelect={onSettingsScreenSelect}
-          onLeftColumnContentChange={onLeftColumnContentChange}
+          isMainList
           foldersDispatch={foldersDispatch}
           archiveSettings={archiveSettings}
+          isStoryRibbonShown={isStoryRibbonShown}
         />
       </div>
       {shouldRenderForumPanel && (

@@ -1,17 +1,20 @@
-import React, { memo, useMemo } from '../../lib/teact/teact';
+import { memo, useMemo } from '../../lib/teact/teact';
 import { getActions, getGlobal } from '../../global';
 
 import type { ApiStory } from '../../api/types';
 
 import { HEART_REACTION } from '../../config';
-import { getStoryKey, isUserId } from '../../global/helpers';
+import {
+  getReactionKey, getStoryKey, isSameReaction,
+} from '../../global/helpers';
 import buildClassName from '../../util/buildClassName';
+import { isUserId } from '../../util/entities/ids';
 
-import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
+import useOldLang from '../../hooks/useOldLang';
 
 import AvatarList from '../common/AvatarList';
-import Icon from '../common/Icon';
+import Icon from '../common/icons/Icon';
 import ReactionAnimatedEmoji from '../common/reactions/ReactionAnimatedEmoji';
 import Button from '../ui/Button';
 
@@ -19,25 +22,23 @@ import styles from './StoryFooter.module.scss';
 
 type OwnProps = {
   story: ApiStory;
-  areViewsExpired?: boolean;
   className?: string;
 };
 
 const StoryFooter = ({
   story,
-  areViewsExpired,
   className,
 }: OwnProps) => {
   const { openStoryViewModal, openForwardMenu, sendStoryReaction } = getActions();
-  const lang = useLang();
+  const lang = useOldLang();
 
   const {
-    viewsCount, reactionsCount, isOut, peerId, id: storyId, sentReaction,
+    views, isOut, peerId, id: storyId, sentReaction,
   } = story;
+  const { viewsCount, forwardsCount, reactionsCount } = views || {};
   const isChannel = !isUserId(peerId);
 
-  const isSentStoryReactionHeart = sentReaction && 'emoticon' in sentReaction
-    ? sentReaction.emoticon === HEART_REACTION.emoticon : false;
+  const isSentStoryReactionHeart = sentReaction && isSameReaction(sentReaction, HEART_REACTION);
 
   const canForward = Boolean(
     (isOut || isChannel)
@@ -50,11 +51,11 @@ const StoryFooter = ({
   const recentViewers = useMemo(() => {
     const { users: { byId: usersById } } = getGlobal();
 
-    const recentViewerIds = story && 'recentViewerIds' in story ? story.recentViewerIds : undefined;
+    const recentViewerIds = views && 'recentViewerIds' in views ? views.recentViewerIds : undefined;
     if (!recentViewerIds) return undefined;
 
     return recentViewerIds.map((id) => usersById[id]).filter(Boolean);
-  }, [story]);
+  }, [views]);
 
   const handleOpenStoryViewModal = useLastCallback(() => {
     openStoryViewModal({ storyId });
@@ -93,7 +94,7 @@ const StoryFooter = ({
         className={buildClassName(styles.viewInfo, !isChannel && styles.interactive)}
         onClick={!isChannel ? handleOpenStoryViewModal : undefined}
       >
-        {!areViewsExpired && Boolean(recentViewers?.length) && (
+        {Boolean(recentViewers?.length) && (
           <AvatarList
             size="small"
             peers={recentViewers}
@@ -102,7 +103,10 @@ const StoryFooter = ({
         )}
 
         {isChannel ? (
-          <span className={styles.views}><Icon name="channelviews" className={styles.viewIcon} />{viewsCount}</span>
+          <span className={styles.views}>
+            <Icon name="channelviews" className={styles.viewIcon} />
+            {viewsCount}
+          </span>
         ) : (
           <span className={styles.views}>{lang('Views', viewsCount, 'i')}</span>
         )}
@@ -121,37 +125,52 @@ const StoryFooter = ({
           round
           onClick={handleForwardClick}
           ariaLabel={lang('Forward')}
-        >
-          <Icon name="forward" />
-        </Button>
+          className={styles.footerItem}
+          iconName="forward"
+        />
       )}
       {isChannel && (
-        <div className={styles.channelReaction}>
-          <Button
-            round
-            className={styles.reactionButton}
-            color="translucent"
-            size="smaller"
-            onClick={handleLikeStory}
-            ariaLabel={lang('AccDescrLike')}
-          >
-            {sentReaction && (
-              <ReactionAnimatedEmoji
-                key={'documentId' in sentReaction ? sentReaction.documentId : sentReaction.emoticon}
-                containerId={containerId}
-                reaction={sentReaction}
-                withEffectOnly={isSentStoryReactionHeart}
+        <>
+          {Boolean(forwardsCount) && (
+            <div className={styles.footerItem}>
+              <Button
+                round
+                color="translucent"
+                size="smaller"
+                nonInteractive
+                ariaLabel={lang('PublicShares')}
+                iconName="loop"
               />
-            )}
-            {(!sentReaction || isSentStoryReactionHeart) && (
-              <Icon
-                name={isSentStoryReactionHeart ? 'heart' : 'heart-outline'}
-                className={buildClassName(isSentStoryReactionHeart && styles.reactionHeart)}
-              />
-            )}
-          </Button>
-          {Boolean(reactionsCount) && (<span>{reactionsCount}</span>)}
-        </div>
+              <span>{forwardsCount}</span>
+            </div>
+          )}
+          <div className={styles.footerItem}>
+            <Button
+              round
+              className={styles.reactionButton}
+              color="translucent"
+              size="smaller"
+              onClick={handleLikeStory}
+              ariaLabel={lang('AccDescrLike')}
+            >
+              {sentReaction && (
+                <ReactionAnimatedEmoji
+                  key={getReactionKey(sentReaction)}
+                  containerId={containerId}
+                  reaction={sentReaction}
+                  withEffectOnly={isSentStoryReactionHeart}
+                />
+              )}
+              {(!sentReaction || isSentStoryReactionHeart) && (
+                <Icon
+                  name={isSentStoryReactionHeart ? 'heart' : 'heart-outline'}
+                  className={buildClassName(isSentStoryReactionHeart && styles.reactionHeart)}
+                />
+              )}
+            </Button>
+            {Boolean(reactionsCount) && (<span>{reactionsCount}</span>)}
+          </div>
+        </>
       )}
     </div>
   );

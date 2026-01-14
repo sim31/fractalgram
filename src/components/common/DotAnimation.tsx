@@ -1,5 +1,4 @@
-import type { FC } from '../../lib/teact/teact';
-import React from '../../lib/teact/teact';
+import { memo } from '@teact';
 
 import buildClassName from '../../util/buildClassName';
 import renderText from './helpers/renderText';
@@ -13,7 +12,7 @@ type OwnProps = {
   className?: string;
 };
 
-const DotAnimation: FC<OwnProps> = ({ content, className }) => {
+const DotAnimation = ({ content, className }: OwnProps) => {
   const lang = useLang();
   return (
     <span className={buildClassName('DotAnimation', className)} dir={lang.isRtl ? 'rtl' : 'auto'}>
@@ -23,4 +22,4 @@ const DotAnimation: FC<OwnProps> = ({ content, className }) => {
   );
 };
 
-export default DotAnimation;
+export default memo(DotAnimation);

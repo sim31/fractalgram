@@ -1,11 +1,13 @@
-import { useCallback, useRef, useState } from '../lib/teact/teact';
+import {
+  getIsHeavyAnimating, useCallback, useRef, useState,
+} from '../lib/teact/teact';
 
 import useForceUpdate from './useForceUpdate';
-import useHeavyAnimationCheck, { isHeavyAnimating } from './useHeavyAnimationCheck';
+import useHeavyAnimation from './useHeavyAnimation';
 import useRunDebounced from './useRunDebounced';
 import useSyncEffect from './useSyncEffect';
 
-export default function useDebouncedMemo<R extends any, D extends any[]>(
+export default function useDebouncedMemo<R, D extends unknown[]>(
   resolverFn: () => R, ms: number, dependencies: D,
 ): R | undefined {
   const [value, setValue] = useState<R>();
@@ -43,10 +45,10 @@ function useHeavyAnimationFreeze() {
     isPending.current = false;
     forceUpdate();
   }, [forceUpdate]);
-  useHeavyAnimationCheck(noop, handleUnfreeze);
+  useHeavyAnimation(noop, handleUnfreeze);
 
   return {
-    isFrozen: isHeavyAnimating(),
+    isFrozen: getIsHeavyAnimating(),
     updateWhenUnfrozen,
   };
 }

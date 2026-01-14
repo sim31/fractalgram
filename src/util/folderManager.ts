@@ -1,20 +1,28 @@
+import { onFullyIdle } from '../lib/teact/teact';
 import { addCallback } from '../lib/teact/teactn';
 import { addActionHandler, getGlobal } from '../global';
 
-import type { ApiChat, ApiChatFolder, ApiUser } from '../api/types';
+import type {
+  ApiChat, ApiChatFolder, ApiNotifyPeerType, ApiPeerNotifySettings, ApiUser,
+} from '../api/types';
 import type { GlobalState } from '../global/types';
-import type { NotifyException, NotifySettings } from '../types';
 import type { CallbackManager } from './callbacks';
 
 import {
-  ALL_FOLDER_ID, ARCHIVED_FOLDER_ID, DEBUG, SERVICE_NOTIFICATIONS_USER_ID,
+  ALL_FOLDER_ID, ARCHIVED_FOLDER_ID, DEBUG, SAVED_FOLDER_ID, SERVICE_NOTIFICATIONS_USER_ID,
 } from '../config';
-import { selectIsChatMuted } from '../global/helpers';
-import { selectNotifyExceptions, selectNotifySettings, selectTabState } from '../global/selectors';
+import { getIsChatMuted } from '../global/helpers/notifications';
+import {
+  selectChatLastMessage,
+  selectIsChatRestricted,
+  selectNotifyDefaults,
+  selectTabState,
+  selectTopics,
+} from '../global/selectors';
 import arePropsShallowEqual from './arePropsShallowEqual';
 import { createCallbackManager } from './callbacks';
 import { areSortedArraysEqual, unique } from './iteratees';
-import { onIdle, throttle } from './schedulers';
+import { throttle } from './schedulers';
 
 interface FolderSummary {
   id: number;
@@ -36,13 +44,15 @@ interface FolderSummary {
 interface ChatSummary {
   id: string;
   type: ApiChat['type'];
-  isListed: boolean;
+  isListedInAll: boolean;
+  isListedInSaved: boolean;
   isArchived: boolean;
   isMuted: boolean;
   isUnread: boolean;
   unreadCount?: number;
   unreadMentionsCount?: number;
-  order: number;
+  orderInAll: number;
+  orderInSaved: number;
   isUserBot?: boolean;
   isUserContact?: boolean;
 }
@@ -57,13 +67,19 @@ let prevGlobal: {
   allFolderPinnedIds?: GlobalState['chats']['orderedPinnedIds']['active'];
   archivedFolderListIds?: GlobalState['chats']['listIds']['archived'];
   archivedFolderPinnedIds?: GlobalState['chats']['orderedPinnedIds']['archived'];
+  savedFolderListIds?: GlobalState['chats']['listIds']['saved'];
+  savedFolderPinnedIds?: GlobalState['chats']['orderedPinnedIds']['saved'];
   isAllFolderFullyLoaded?: boolean;
   isArchivedFolderFullyLoaded?: boolean;
+  isSavedFolderFullyLoaded?: boolean;
+  lastAllMessageIds?: GlobalState['chats']['lastMessageIds']['all'];
+  lastSavedMessageIds?: GlobalState['chats']['lastMessageIds']['saved'];
+  topicsInfoById: GlobalState['chats']['topicsInfoById'];
   chatsById: Record<string, ApiChat>;
   foldersById: Record<string, ApiChatFolder>;
   usersById: Record<string, ApiUser>;
-  notifySettings: NotifySettings;
-  notifyExceptions?: Record<number, NotifyException>;
+  notifyDefaults?: Record<ApiNotifyPeerType, ApiPeerNotifySettings>;
+  notifyExceptions?: Record<number, ApiPeerNotifySettings>;
 } = initials.prevGlobal;
 
 let prepared: {
@@ -82,16 +98,25 @@ let results: {
     chatsCount: number;
     notificationsCount: number;
   } | undefined>;
+  unreadChatIdsByFolderId: Record<string, string[] | undefined>;
 } = initials.results;
 
 let callbacks: {
   orderedIdsByFolderId: Record<number, CallbackManager>;
   chatsCountByFolderId: CallbackManager;
   unreadCountersByFolderId: CallbackManager;
+  unreadChatIdsByFolderId: CallbackManager;
 } = initials.callbacks;
 
+if (DEBUG) {
+  (window as any).DEBUG_getFolderManager = () => ({
+    prepared,
+    results,
+  });
+}
+
 const updateFolderManagerThrottled = throttle(() => {
-  onIdle(() => {
+  onFullyIdle(() => {
     updateFolderManager(getGlobal());
   });
 }, UPDATE_THROTTLE);
@@ -108,7 +133,7 @@ export function init() {
 
   const global = getGlobal();
   if (!selectTabState(global).isMasterTab) {
-    updateFolders(global, true, true, true);
+    updateFolders(global, true, true, true, true);
   }
   updateFolderManager(global);
 }
@@ -137,12 +162,23 @@ export function getUnreadCounters() {
   return results.unreadCountersByFolderId;
 }
 
+export function getUnreadChatsByFolderId() {
+  if (!inited) init();
+
+  return results.unreadChatIdsByFolderId;
+}
+
 export function getAllNotificationsCount() {
   return getUnreadCounters()[ALL_FOLDER_ID]?.notificationsCount || 0;
 }
 
-export function getOrderKey(chatId: string) {
-  return prepared.chatSummariesById.get(chatId)!.order;
+export function getOrderKey(chatId: string, isForSaved?: boolean) {
+  const summary = prepared.chatSummariesById.get(chatId)!;
+  return isForSaved ? summary.orderInSaved : summary.orderInAll;
+}
+
+export function getChatFolderIds(chatId: string) {
+  return prepared.folderIdsByChatId[chatId];
 }
 
 /* Callback managers */
@@ -159,6 +195,12 @@ export function addChatsCountCallback(callback: (chatsCount: typeof results.chat
   return callbacks.chatsCountByFolderId.addCallback(callback);
 }
 
+export function addUnreadChatsByFolderIdCallback(
+  callback: (unreadChats: typeof results.unreadChatIdsByFolderId) => void,
+) {
+  return callbacks.unreadChatIdsByFolderId.addCallback(callback);
+}
+
 export function addUnreadCountersCallback(callback: (unreadCounters: typeof results.unreadCountersByFolderId) => void) {
   return callbacks.unreadCountersByFolderId.addCallback(callback);
 }
@@ -166,7 +208,6 @@ export function addUnreadCountersCallback(callback: (unreadCounters: typeof resu
 /* Global update handlers */
 
 function updateFolderManager(global: GlobalState) {
-  // eslint-disable-next-line @typescript-eslint/naming-convention
   let DEBUG_startedAt: number;
   if (DEBUG) {
     DEBUG_startedAt = performance.now();
@@ -180,26 +221,35 @@ function updateFolderManager(global: GlobalState) {
     global.chats.listIds.archived
     && isMainFolderChanged(ARCHIVED_FOLDER_ID, global.chats.listIds.archived, global.chats.orderedPinnedIds.archived),
   );
+  const isSavedFolderChanged = Boolean(
+    global.chats.listIds.saved
+    && isMainFolderChanged(SAVED_FOLDER_ID, global.chats.listIds.saved, global.chats.orderedPinnedIds.saved),
+  );
   const isAllFullyLoadedChanged = global.chats.isFullyLoaded.active !== prevGlobal.isAllFolderFullyLoaded;
   const isArchivedFullyLoadedChanged = global.chats.isFullyLoaded.archived !== prevGlobal.isArchivedFolderFullyLoaded;
+  const isSavedFolderFullyLoadedChanged = global.chats.isFullyLoaded.saved !== prevGlobal.isSavedFolderFullyLoaded;
 
   const areFoldersChanged = global.chatFolders.byId !== prevGlobal.foldersById;
   const areChatsChanged = global.chats.byId !== prevGlobal.chatsById;
+  const areSavedLastMessageIdsChanged = global.chats.lastMessageIds.saved !== prevGlobal.lastSavedMessageIds;
+  const areAllLastMessageIdsChanged = global.chats.lastMessageIds.all !== prevGlobal.lastAllMessageIds;
+  const areTopicsChanged = global.chats.topicsInfoById !== prevGlobal.topicsInfoById;
   const areUsersChanged = global.users.byId !== prevGlobal.usersById;
-  const areNotifySettingsChanged = selectNotifySettings(global) !== prevGlobal.notifySettings;
-  const areNotifyExceptionsChanged = selectNotifyExceptions(global) !== prevGlobal.notifyExceptions;
+  const areNotifyDefaultsChanged = selectNotifyDefaults(global) !== prevGlobal.notifyDefaults;
+  const areNotifyExceptionsChanged = global.chats.notifyExceptionById !== prevGlobal.notifyExceptions;
 
   let affectedFolderIds: number[] = [];
 
-  if (isAllFullyLoadedChanged || isArchivedFullyLoadedChanged) {
+  if (isAllFullyLoadedChanged || isArchivedFullyLoadedChanged || isSavedFolderFullyLoadedChanged) {
     affectedFolderIds = affectedFolderIds.concat(
-      updateFullyLoaded(global, isArchivedFullyLoadedChanged),
+      updateFullyLoaded(global, isArchivedFullyLoadedChanged, isSavedFolderFullyLoadedChanged),
     );
   }
 
   if (!(
-    isAllFolderChanged || isArchivedFolderChanged || areFoldersChanged
-    || areChatsChanged || areUsersChanged || areNotifySettingsChanged || areNotifyExceptionsChanged
+    isAllFolderChanged || isArchivedFolderChanged || isSavedFolderChanged || areFoldersChanged
+    || areChatsChanged || areUsersChanged || areTopicsChanged || areNotifyDefaultsChanged || areNotifyExceptionsChanged
+    || areSavedLastMessageIdsChanged || areAllLastMessageIdsChanged
   )
   ) {
     if (affectedFolderIds.length) {
@@ -211,16 +261,18 @@ function updateFolderManager(global: GlobalState) {
 
   const prevAllFolderListIds = prevGlobal.allFolderListIds;
   const prevArchivedFolderListIds = prevGlobal.archivedFolderListIds;
+  const prevSavedFolderListIds = prevGlobal.savedFolderListIds;
 
-  updateFolders(global, isAllFolderChanged, isArchivedFolderChanged, areFoldersChanged);
+  updateFolders(global, isAllFolderChanged, isArchivedFolderChanged, isSavedFolderChanged, areFoldersChanged);
 
   affectedFolderIds = affectedFolderIds.concat(updateChats(
     global,
-    areFoldersChanged || isAllFolderChanged || isArchivedFolderChanged,
-    areNotifySettingsChanged,
+    areFoldersChanged || isAllFolderChanged || isArchivedFolderChanged || isSavedFolderChanged,
+    areNotifyDefaultsChanged,
     areNotifyExceptionsChanged,
     prevAllFolderListIds,
     prevArchivedFolderListIds,
+    prevSavedFolderListIds,
   ));
 
   updateResults(unique(affectedFolderIds));
@@ -237,10 +289,12 @@ function updateFolderManager(global: GlobalState) {
 function isMainFolderChanged(folderId: number, newListIds?: string[], newPinnedIds?: string[]) {
   const currentListIds = folderId === ALL_FOLDER_ID
     ? prevGlobal.allFolderListIds
-    : prevGlobal.archivedFolderListIds;
+    : folderId === SAVED_FOLDER_ID
+      ? prevGlobal.savedFolderListIds : prevGlobal.archivedFolderListIds;
   const currentPinnedIds = folderId === ALL_FOLDER_ID
     ? prevGlobal.allFolderPinnedIds
-    : prevGlobal.archivedFolderPinnedIds;
+    : folderId === SAVED_FOLDER_ID
+      ? prevGlobal.savedFolderPinnedIds : prevGlobal.archivedFolderPinnedIds;
 
   return currentListIds !== newListIds || currentPinnedIds !== newPinnedIds;
 }
@@ -248,6 +302,7 @@ function isMainFolderChanged(folderId: number, newListIds?: string[], newPinnedI
 function updateFullyLoaded(
   global: GlobalState,
   isArchivedFullyLoadedChanged = false,
+  isSavedFolderFullyLoadedChanged = false,
 ) {
   let affectedFolderIds = [];
 
@@ -255,8 +310,13 @@ function updateFullyLoaded(
     affectedFolderIds.push(ARCHIVED_FOLDER_ID);
   }
 
+  if (isSavedFolderFullyLoadedChanged) {
+    affectedFolderIds.push(SAVED_FOLDER_ID);
+  }
+
   const isAllFolderFullyLoaded = global.chats.isFullyLoaded.active;
   const isArchivedFolderFullyLoaded = global.chats.isFullyLoaded.archived;
+  const isSavedFolderFullyLoaded = global.chats.isFullyLoaded.saved;
 
   if (isAllFolderFullyLoaded && isArchivedFolderFullyLoaded) {
     const emptyFolderIds = Object.keys(prepared.folderSummariesById)
@@ -268,12 +328,17 @@ function updateFullyLoaded(
 
   prevGlobal.isAllFolderFullyLoaded = isAllFolderFullyLoaded;
   prevGlobal.isArchivedFolderFullyLoaded = isArchivedFolderFullyLoaded;
+  prevGlobal.isSavedFolderFullyLoaded = isSavedFolderFullyLoaded;
 
   return affectedFolderIds;
 }
 
 function updateFolders(
-  global: GlobalState, isAllFolderChanged: boolean, isArchivedFolderChanged: boolean, areFoldersChanged: boolean,
+  global: GlobalState,
+  isAllFolderChanged: boolean,
+  isArchivedFolderChanged: boolean,
+  isSavedFolderChanged: boolean,
+  areFoldersChanged: boolean,
 ) {
   const changedFolders = [];
 
@@ -303,6 +368,20 @@ function updateFolders(
     prevGlobal.archivedFolderPinnedIds = newPinnedIds;
 
     changedFolders.push(ARCHIVED_FOLDER_ID);
+  }
+
+  if (isSavedFolderChanged) {
+    const newListIds = global.chats.listIds.saved!;
+    const newPinnedIds = global.chats.orderedPinnedIds.saved;
+
+    prepared.folderSummariesById[SAVED_FOLDER_ID] = buildFolderSummaryFromMainList(
+      SAVED_FOLDER_ID, newListIds, newPinnedIds,
+    );
+
+    prevGlobal.savedFolderListIds = newListIds;
+    prevGlobal.savedFolderPinnedIds = newPinnedIds;
+
+    changedFolders.push(SAVED_FOLDER_ID);
   }
 
   if (areFoldersChanged) {
@@ -348,25 +427,33 @@ function buildFolderSummary(folder: ApiChatFolder): FolderSummary {
 function updateChats(
   global: GlobalState,
   areFoldersChanged: boolean,
-  areNotifySettingsChanged: boolean,
+  areNotifyDefaultsChanged: boolean,
   areNotifyExceptionsChanged: boolean,
   prevAllFolderListIds?: string[],
   prevArchivedFolderListIds?: string[],
+  prevSavedFolderListIds?: string[],
 ) {
   const newChatsById = global.chats.byId;
   const newUsersById = global.users.byId;
-  const newNotifySettings = selectNotifySettings(global);
-  const newNotifyExceptions = selectNotifyExceptions(global);
+  const newAllLastMessageIds = global.chats.lastMessageIds.all;
+  const newSavedLastMessageIds = global.chats.lastMessageIds.saved;
+  const newNotifyDefaults = selectNotifyDefaults(global);
+  const newNotifyExceptions = global.chats.notifyExceptionById;
   const folderSummaries = Object.values(prepared.folderSummariesById);
   const affectedFolderIds = new Set<number>();
 
   const newAllFolderListIds = global.chats.listIds.active;
   const newArchivedFolderListIds = global.chats.listIds.archived;
+  const newSavedFolderListIds = global.chats.listIds.saved;
 
-  const newAllIds = [...newAllFolderListIds || [], ...newArchivedFolderListIds || []];
+  const newGeneralIds = [...newAllFolderListIds || [], ...newArchivedFolderListIds || []];
+  const newAllIds = [...newGeneralIds, ...newSavedFolderListIds || []];
   let allIds = newAllIds;
-  if (newAllFolderListIds !== prevAllFolderListIds || newArchivedFolderListIds !== prevArchivedFolderListIds) {
-    allIds = unique(allIds.concat(prevAllFolderListIds || [], prevArchivedFolderListIds || []));
+  if (newAllFolderListIds !== prevAllFolderListIds || newArchivedFolderListIds !== prevArchivedFolderListIds
+    || newSavedFolderListIds !== prevSavedFolderListIds) {
+    allIds = unique(allIds.concat(
+      prevAllFolderListIds || [], prevArchivedFolderListIds || [], prevSavedFolderListIds || [],
+    ));
   }
 
   allIds.forEach((chatId) => {
@@ -374,10 +461,12 @@ function updateChats(
 
     if (
       !areFoldersChanged
-      && !areNotifySettingsChanged
+      && !areNotifyDefaultsChanged
       && !areNotifyExceptionsChanged
       && chat === prevGlobal.chatsById[chatId]
       && newUsersById[chatId] === prevGlobal.usersById[chatId]
+      && newAllLastMessageIds?.[chatId] === prevGlobal.lastAllMessageIds?.[chatId]
+      && newSavedLastMessageIds?.[chatId] === prevGlobal.lastSavedMessageIds?.[chatId]
     ) {
       return;
     }
@@ -385,9 +474,16 @@ function updateChats(
     let newFolderIds: number[];
     if (chat) {
       const currentSummary = prepared.chatSummariesById.get(chatId);
-      const isRemoved = !newAllIds.includes(chatId);
+      const isRemovedFromAll = !newGeneralIds.includes(chatId);
+      const isRemovedFromSaved = !newSavedFolderListIds?.includes(chatId);
       const newSummary = buildChatSummary(
-        chat, newNotifySettings, newNotifyExceptions, newUsersById[chatId], isRemoved,
+        global,
+        chat,
+        newNotifyDefaults,
+        newNotifyExceptions,
+        newUsersById[chatId],
+        isRemovedFromAll,
+        isRemovedFromSaved,
       );
 
       if (!areFoldersChanged && currentSummary && arePropsShallowEqual(newSummary, currentSummary)) {
@@ -418,24 +514,30 @@ function updateChats(
 
   prevGlobal.chatsById = newChatsById;
   prevGlobal.usersById = newUsersById;
-  prevGlobal.notifySettings = newNotifySettings;
+  prevGlobal.lastAllMessageIds = newAllLastMessageIds;
+  prevGlobal.lastSavedMessageIds = newSavedLastMessageIds;
+  prevGlobal.notifyDefaults = newNotifyDefaults;
   prevGlobal.notifyExceptions = newNotifyExceptions;
 
   return Array.from(affectedFolderIds);
 }
 
-function buildChatSummary(
+function buildChatSummary<T extends GlobalState>(
+  global: T,
   chat: ApiChat,
-  notifySettings: NotifySettings,
-  notifyExceptions?: Record<number, NotifyException>,
+  notifyDefaults?: Record<ApiNotifyPeerType, ApiPeerNotifySettings>,
+  notifyExceptions?: Record<string, ApiPeerNotifySettings>,
   user?: ApiUser,
-  isRemoved?: boolean,
+  isRemovedFromAll?: boolean,
+  isRemovedFromSaved?: boolean,
 ): ChatSummary {
   const {
-    id, type, lastMessage, isRestricted, isNotJoined, migratedTo, folderId,
+    id, type, isNotJoined, migratedTo, folderId,
     unreadCount: chatUnreadCount, unreadMentionsCount: chatUnreadMentionsCount, hasUnreadMark,
-    joinDate, draftDate, isForum, topics,
+    isForum,
   } = chat;
+  const isRestricted = selectIsChatRestricted(global, id);
+  const topics = selectTopics(global, chat.id);
 
   const { unreadCount, unreadMentionsCount } = isForum
     ? Object.values(topics || {}).reduce((acc, topic) => {
@@ -447,22 +549,30 @@ function buildChatSummary(
     : { unreadCount: chatUnreadCount, unreadMentionsCount: chatUnreadMentionsCount };
 
   const userInfo = type === 'chatTypePrivate' && user;
+  const lastMessage = selectChatLastMessage(global, chat.id);
   const shouldHideServiceChat = chat.id === SERVICE_NOTIFICATIONS_USER_ID && (
-    !chat.lastMessage || chat.lastMessage.content.action?.type === 'historyClear'
+    !lastMessage || lastMessage.content.action?.type === 'historyClear'
   );
+
+  const orderInAll = Math.max(chat.creationDate || 0, chat.draftDate || 0, lastMessage?.date || 0);
+
+  const lastMessageInSaved = selectChatLastMessage(global, chat.id, 'saved');
+  const orderInSaved = lastMessageInSaved?.date || 0;
 
   return {
     id,
     type,
-    isListed: Boolean(!isRestricted && !isNotJoined && !migratedTo && !shouldHideServiceChat && !isRemoved),
+    isListedInAll: Boolean(!isRestricted && !isNotJoined && !migratedTo && !shouldHideServiceChat && !isRemovedFromAll),
+    isListedInSaved: !isRemovedFromSaved,
     isArchived: folderId === ARCHIVED_FOLDER_ID,
-    isMuted: selectIsChatMuted(chat, notifySettings, notifyExceptions),
+    isMuted: getIsChatMuted(chat, notifyDefaults, notifyExceptions?.[chat.id]),
     isUnread: Boolean(unreadCount || unreadMentionsCount || hasUnreadMark),
     unreadCount,
     unreadMentionsCount,
-    order: Math.max(joinDate || 0, draftDate || 0, lastMessage?.date || 0),
     isUserBot: userInfo ? userInfo.type === 'userTypeBot' : undefined,
     isUserContact: userInfo ? userInfo.isContact : undefined,
+    orderInAll,
+    orderInSaved,
   };
 }
 
@@ -480,7 +590,8 @@ function isChatInFolder(
   chatSummary: ChatSummary,
   folderSummary: FolderSummary,
 ) {
-  if (!chatSummary.isListed) {
+  const isListed = folderSummary.id === SAVED_FOLDER_ID ? chatSummary.isListedInSaved : chatSummary.isListedInAll;
+  if (!isListed) {
     return false;
   }
 
@@ -566,7 +677,7 @@ function updateListsForChat(chatId: string, currentFolderIds: number[], newFolde
         prepared.chatIdsByFolderId[folderId] = new Set();
       }
 
-      prepared.chatIdsByFolderId[folderId]!.add(chatId);
+      prepared.chatIdsByFolderId[folderId].add(chatId);
 
       if (currentFolderOrderedIds) {
         currentFolderOrderedIds.push(chatId);
@@ -585,6 +696,7 @@ function updateListsForChat(chatId: string, currentFolderIds: number[], newFolde
 function updateResults(affectedFolderIds: number[]) {
   let wasUnreadCountersChanged = false;
   let wasChatsCountChanged = false;
+  let wasUnreadChatsChanged = false;
 
   Array.from(affectedFolderIds).forEach((folderId) => {
     const { pinnedCount: newPinnedCount, orderedIds: newOrderedIds } = buildFolderOrderedIds(folderId);
@@ -623,6 +735,15 @@ function updateResults(affectedFolderIds: number[]) {
       );
     }
     results.unreadCountersByFolderId[folderId] = newUnreadCounters;
+
+    const currentUnreadChats = results.unreadChatIdsByFolderId[folderId];
+    const newUnreadChats = buildFolderByUnreadChats(folderId);
+    if (!wasUnreadChatsChanged) {
+      wasUnreadChatsChanged = (
+        !currentUnreadChats || !areSortedArraysEqual(newUnreadChats, currentUnreadChats)
+      );
+    }
+    results.unreadChatIdsByFolderId[folderId] = newUnreadChats;
   });
 
   if (wasChatsCountChanged) {
@@ -638,6 +759,10 @@ function updateResults(affectedFolderIds: number[]) {
     results.unreadCountersByFolderId = newValue;
     callbacks.unreadCountersByFolderId.runCallbacks(newValue);
   }
+
+  if (wasUnreadChatsChanged) {
+    callbacks.unreadChatIdsByFolderId.runCallbacks(results.unreadChatIdsByFolderId);
+  }
 }
 
 function buildFolderOrderedIds(folderId: number) {
@@ -648,18 +773,19 @@ function buildFolderOrderedIds(folderId: number) {
 
   const { orderedPinnedIds, pinnedChatIds } = folderSummary;
   const {
-    chatSummariesById,
     chatIdsByFolderId: { [folderId]: chatIds },
   } = prepared;
   const {
     orderedIdsByFolderId: { [folderId]: prevOrderedIds },
   } = results;
 
+  const isSavedFolder = folderId === SAVED_FOLDER_ID;
+
   const sortedPinnedIds = chatIds ? orderedPinnedIds?.filter((id) => chatIds.has(id)) : orderedPinnedIds;
   const allListIds = prevOrderedIds || (chatIds && Array.from(chatIds)) || [];
   const notPinnedIds = pinnedChatIds ? allListIds.filter((id) => !pinnedChatIds.has(id)) : allListIds;
   const sortedNotPinnedIds = notPinnedIds.sort((chatId1: string, chatId2: string) => {
-    return chatSummariesById.get(chatId2)!.order - chatSummariesById.get(chatId1)!.order;
+    return getOrderKey(chatId2, isSavedFolder) - getOrderKey(chatId1, isSavedFolder);
   });
 
   return {
@@ -708,14 +834,23 @@ function buildFolderUnreadCounters(folderId: number) {
   });
 }
 
+function buildFolderByUnreadChats(folderId: number) {
+  const { chatSummariesById } = prepared;
+  const { orderedIdsByFolderId: { [folderId]: orderedIds } } = results;
+
+  return orderedIds!.filter((chatId) => {
+    const chatSummary = chatSummariesById.get(chatId);
+    return chatSummary?.isUnread;
+  });
+}
+
 function buildInitials() {
   return {
     prevGlobal: {
       foldersById: {},
       chatsById: {},
       usersById: {},
-      notifySettings: {} as NotifySettings,
-      notifyExceptions: {},
+      topicsInfoById: {},
     },
 
     prepared: {
@@ -731,12 +866,14 @@ function buildInitials() {
       pinnedCountByFolderId: {},
       chatsCountByFolderId: {},
       unreadCountersByFolderId: {},
+      unreadChatIdsByFolderId: {},
     },
 
     callbacks: {
       orderedIdsByFolderId: {},
       chatsCountByFolderId: createCallbackManager(),
       unreadCountersByFolderId: createCallbackManager(),
+      unreadChatIdsByFolderId: createCallbackManager(),
     },
   };
 }

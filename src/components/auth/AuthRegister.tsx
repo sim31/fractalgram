@@ -1,6 +1,4 @@
-import type { ChangeEvent } from 'react';
-import type { FC } from '../../lib/teact/teact';
-import React, { memo, useCallback, useState } from '../../lib/teact/teact';
+import { memo, useCallback, useState } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type { GlobalState } from '../../global/types';
@@ -13,12 +11,15 @@ import AvatarEditable from '../ui/AvatarEditable';
 import Button from '../ui/Button';
 import InputText from '../ui/InputText';
 
-type StateProps = Pick<GlobalState, 'authIsLoading' | 'authError'>;
+type StateProps = {
+  auth: GlobalState['auth'];
+};
 
-const AuthRegister: FC<StateProps> = ({
-  authIsLoading, authError,
-}) => {
-  const { signUp, clearAuthError, uploadProfilePhoto } = getActions();
+const AuthRegister = ({
+  auth,
+}: StateProps) => {
+  const { signUp, clearAuthErrorKey, uploadProfilePhoto } = getActions();
+  const { isLoading, errorKey } = auth;
 
   const lang = useLang();
   const [isButtonShown, setIsButtonShown] = useState(false);
@@ -26,18 +27,18 @@ const AuthRegister: FC<StateProps> = ({
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
 
-  const handleFirstNameChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
-    if (authError) {
-      clearAuthError();
+  const handleFirstNameChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    if (errorKey) {
+      clearAuthErrorKey();
     }
 
     const { target } = event;
 
     setFirstName(target.value);
     setIsButtonShown(target.value.length > 0);
-  }, [authError, clearAuthError]);
+  }, [errorKey]);
 
-  const handleLastNameChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+  const handleLastNameChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const { target } = event;
 
     setLastName(target.value);
@@ -59,24 +60,24 @@ const AuthRegister: FC<StateProps> = ({
         <form action="" method="post" onSubmit={handleSubmit}>
           <AvatarEditable onChange={setCroppedFile} />
           <h2>{lang('YourName')}</h2>
-          <p className="note">{lang('Login.Register.Desc')}</p>
+          <p className="note">{lang('LoginRegisterDesc')}</p>
           <InputText
             id="registration-first-name"
-            label={lang('Login.Register.FirstName.Placeholder')}
+            label={lang('LoginRegisterFirstNamePlaceholder')}
             onChange={handleFirstNameChange}
             value={firstName}
-            error={authError && lang(authError)}
+            error={errorKey && lang.withRegular(errorKey)}
             autoComplete="given-name"
           />
           <InputText
             id="registration-last-name"
-            label={lang('Login.Register.LastName.Placeholder')}
+            label={lang('LoginRegisterLastNamePlaceholder')}
             onChange={handleLastNameChange}
             value={lastName}
             autoComplete="family-name"
           />
           {isButtonShown && (
-            <Button type="submit" ripple isLoading={authIsLoading}>{lang('Next')}</Button>
+            <Button type="submit" ripple isLoading={isLoading}>{lang('Next')}</Button>
           )}
         </form>
       </div>
@@ -85,5 +86,7 @@ const AuthRegister: FC<StateProps> = ({
 };
 
 export default memo(withGlobal(
-  (global): StateProps => pick(global, ['authIsLoading', 'authError']),
+  (global): Complete<StateProps> => (
+    pick(global, ['auth'])
+  ),
 )(AuthRegister));

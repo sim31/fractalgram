@@ -1,7 +1,8 @@
+import type { ElementRef } from '../lib/teact/teact';
 import { useEffect } from '../lib/teact/teact';
 
 const useHorizontalScroll = (
-  containerRef: React.RefObject<HTMLDivElement>,
+  containerRef: ElementRef<HTMLDivElement>,
   isDisabled?: boolean,
   shouldPreventDefault = false,
 ) => {
@@ -15,7 +16,7 @@ const useHorizontalScroll = (
     function handleScroll(e: WheelEvent) {
       // Ignore horizontal scroll and let it work natively (e.g. on touchpad)
       if (!e.deltaX) {
-        container!.scrollLeft += e.deltaY / 4;
+        container.scrollLeft += e.deltaY / 4;
         if (shouldPreventDefault) e.preventDefault();
       }
     }

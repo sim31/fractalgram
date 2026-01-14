@@ -1,15 +1,12 @@
-import type { FC } from '../../lib/teact/teact';
-import React, { memo } from '../../lib/teact/teact';
+import type { TeactNode } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
+import type { ThreadId } from '../../types';
 import { ApiMessageEntityTypes } from '../../api/types';
 
-import {
-  DEBUG,
-} from '../../config';
-import convertPunycode from '../../lib/punycode';
+import { IS_TAURI } from '../../util/browser/globalEnvironment';
+import { ensureProtocol, getUnicodeUrl, isMixedScriptUrl } from '../../util/browser/url';
 import buildClassName from '../../util/buildClassName';
-import { ensureProtocol } from '../../util/ensureProtocol';
 
 import useLastCallback from '../../hooks/useLastCallback';
 
@@ -17,27 +14,46 @@ type OwnProps = {
   url?: string;
   text: string;
   className?: string;
-  children?: React.ReactNode;
+  children?: TeactNode;
   isRtl?: boolean;
+  shouldSkipModal?: boolean;
+  chatId?: string;
+  messageId?: number;
+  threadId?: ThreadId;
+  entityType?: ApiMessageEntityTypes.Url | ApiMessageEntityTypes.TextUrl |
+    `${ApiMessageEntityTypes.TextUrl}` | `${ApiMessageEntityTypes.Url}`;
 };
 
-const SafeLink: FC<OwnProps> = ({
+const SafeLink = ({
   url,
   text,
   className,
   children,
   isRtl,
-}) => {
+  shouldSkipModal,
+  chatId,
+  messageId,
+  threadId,
+  entityType = ApiMessageEntityTypes.Url,
+}: OwnProps) => {
   const { openUrl } = getActions();
 
   const content = children || text;
-  const isSafe = url === text;
+  const isRegularLink = url === text;
 
   const handleClick = useLastCallback((e: React.MouseEvent<HTMLAnchorElement, MouseEvent>) => {
     if (!url) return true;
 
     e.preventDefault();
-    openUrl({ url, shouldSkipModal: isSafe });
+
+    const isTrustedLink = isRegularLink && !isMixedScriptUrl(url);
+    openUrl({
+      url,
+      shouldSkipModal: shouldSkipModal || isTrustedLink,
+      ...(chatId && messageId && {
+        linkContext: { type: 'message', chatId, threadId, messageId },
+      }),
+    });
 
     return false;
   });
@@ -48,54 +64,23 @@ const SafeLink: FC<OwnProps> = ({
 
   const classNames = buildClassName(
     className || 'text-entity-link',
-    text.length > 50 && 'long-word-break-all',
+    isRegularLink && 'word-break-all',
   );
 
   return (
     <a
       href={ensureProtocol(url)}
-      title={getDomain(url)}
-      target="_blank"
+      title={getUnicodeUrl(url)}
+      target={IS_TAURI ? '_self' : '_blank'}
       rel="noopener noreferrer"
       className={classNames}
       onClick={handleClick}
       dir={isRtl ? 'rtl' : 'auto'}
-      data-entity-type={ApiMessageEntityTypes.Url}
+      data-entity-type={entityType}
     >
       {content}
     </a>
   );
 };
 
-function getDomain(url?: string) {
-  if (!url) {
-    return undefined;
-  }
-
-  const href = ensureProtocol(url);
-  if (!href) {
-    return undefined;
-  }
-
-  try {
-    let decodedHref = decodeURI(href.replace(/%%/g, '%25'));
-
-    const match = decodedHref.match(/^https?:\/\/([^/:?#]+)(?:[/:?#]|$)/i);
-    if (!match) {
-      return undefined;
-    }
-    const domain = match[1];
-    decodedHref = decodedHref.replace(domain, convertPunycode(domain));
-
-    return decodedHref;
-  } catch (error) {
-    if (DEBUG) {
-      // eslint-disable-next-line no-console
-      console.error('SafeLink.getDecodedUrl error ', url, error);
-    }
-  }
-
-  return undefined;
-}
-
-export default memo(SafeLink);
+export default SafeLink;

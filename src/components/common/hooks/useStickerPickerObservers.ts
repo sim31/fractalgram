@@ -1,4 +1,4 @@
-import type { RefObject } from 'react';
+import type { ElementRef } from '../../../lib/teact/teact';
 import { useRef, useState } from '../../../lib/teact/teact';
 
 import { ANIMATION_END_DELAY } from '../../../config';
@@ -17,8 +17,8 @@ const SCROLL_MAX_DISTANCE_WHEN_FAR = 80;
 const FOCUS_MARGIN = 0.5 * REM;
 
 export function useStickerPickerObservers(
-  containerRef: RefObject<HTMLDivElement>,
-  headerRef: RefObject<HTMLDivElement>,
+  containerRef: ElementRef<HTMLDivElement>,
+  headerRef: ElementRef<HTMLDivElement>,
   idPrefix: string,
   isHidden?: boolean,
 ) {
@@ -92,13 +92,13 @@ export function useStickerPickerObservers(
       const stickerSetEl = document.getElementById(`${idPrefix}-${index}`)!;
       const isClose = Math.abs(currentIndex - index) === 1;
 
-      animateScroll(
-        containerRef.current!,
-        stickerSetEl,
-        'start',
-        FOCUS_MARGIN,
-        isClose ? SCROLL_MAX_DISTANCE_WHEN_CLOSE : SCROLL_MAX_DISTANCE_WHEN_FAR,
-      );
+      animateScroll({
+        container: containerRef.current!,
+        element: stickerSetEl,
+        position: 'start',
+        margin: FOCUS_MARGIN,
+        maxDistance: isClose ? SCROLL_MAX_DISTANCE_WHEN_CLOSE : SCROLL_MAX_DISTANCE_WHEN_FAR,
+      });
 
       return index;
     });

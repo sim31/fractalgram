@@ -1,7 +1,7 @@
 @mixin thumb-styles() {
-  background: var(--color-primary);
   cursor: var(--custom-cursor, pointer);
   transform: scale(1);
+  background: var(--color-primary);
   transition: transform 0.25s ease-in-out;
 
   &:hover {
@@ -11,75 +11,13 @@
 
 .CropModal {
   .modal-dialog {
-    width: calc(100% - 2rem);
-    max-width: 35rem;
-    height: calc(100% - 1rem);
-    max-height: 35rem;
     position: relative;
+    width: auto;
+    min-width: inherit !important;
+    max-width: inherit !important;
   }
-
-  .modal-content,
-  #avatar-crop {
-    overflow: hidden;
-  }
-
-  .confirm-button {
-    position: absolute;
-    bottom: 1rem;
-    right: 1rem;
-    box-shadow: 0 1px 2px var(--color-default-shadow);
-  }
-
-  #avatar-crop {
-    max-width: 25rem;
-    margin: 0 auto;
-    position: relative;
-
-    &::before {
-      content: "";
-      display: block;
-      padding-top: 100%;
-    }
-
-    .cr-boundary {
-      position: absolute;
-      top: 0;
-      left: 0;
-      border-radius: var(--border-radius-messages-small);
-    }
-
-    .cr-viewport {
-      border: none;
-      box-shadow: 0 0 2000px 2000px rgba(#7f7f7f, 0.5);
-    }
-
-    .cr-slider {
-      // Note that while we're repeating code here, that's necessary as you can't comma-separate these type of selectors.
-      // Browsers will drop the entire selector if it doesn't understand a part of it.
-
-      &::-webkit-slider-runnable-track {
-        background: var(--color-borders);
-      }
-
-      &::-moz-range-track {
-        background: var(--color-borders);
-      }
-
-      &::-ms-track {
-        background: var(--color-borders);
-      }
-
-      &::-webkit-slider-thumb {
-        @include thumb-styles();
-      }
-
-      &::-moz-range-thumb {
-        @include thumb-styles();
-      }
-
-      &::-ms-thumb {
-        @include thumb-styles();
-      }
-    }
+  .modal-content {
+    padding: 1rem;
+    padding-top: 0.5rem;
   }
 }

@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   useEffect,
   useState,
 } from '../../../lib/teact/teact';
@@ -7,7 +7,11 @@ import React, {
 import type { ApiPollAnswer, ApiPollResult } from '../../../api/types';
 
 import buildClassName from '../../../util/buildClassName';
-import renderText from '../../common/helpers/renderText';
+import { renderTextWithEntities } from '../../common/helpers/renderTextWithEntities';
+
+import useLang from '../../../hooks/useLang';
+
+import Icon from '../../common/icons/Icon';
 
 import './PollOption.scss';
 
@@ -30,6 +34,7 @@ const PollOption: FC<OwnProps> = ({
   shouldAnimate,
   showFraction,
 }) => {
+  const lang = useLang();
   const result = voteResults && voteResults.find((r) => r.option === answer.option);
   const correctAnswer = correctResults.length === 0 || correctResults.indexOf(answer.option) !== -1;
   const showIcon = (correctResults.length > 0 && correctAnswer) || (result?.isChosen);
@@ -52,7 +57,7 @@ const PollOption: FC<OwnProps> = ({
   const lineStyle = `width: ${lineWidth}%; transform:scaleX(${isAnimationDoesNotStart ? 0 : 1})`;
 
   return (
-    <div className="PollOption" dir="ltr">
+    <div className="PollOption" dir={lang.isRtl ? 'rtl' : undefined}>
       <div className={`poll-option-share ${answerPercent === '100' ? 'limit-width' : ''}`}>
         {showFraction && votesFraction} {answerPercent}%
         {showIcon && (
@@ -62,13 +67,16 @@ const PollOption: FC<OwnProps> = ({
             shouldAnimate && 'animate',
           )}
           >
-            <i className={buildClassName('icon', correctAnswer ? 'icon-check' : 'icon-close')} />
+            <Icon name={correctAnswer ? 'check' : 'close'} className="poll-option-icon" />
           </span>
         )}
       </div>
       <div className="poll-option-right">
         <div className="poll-option-text" dir="auto">
-          {renderText(answer.text)}
+          {renderTextWithEntities({
+            text: answer.text.text,
+            entities: answer.text.entities,
+          })}
         </div>
         <div className={buildClassName('poll-option-answer', showIcon && !correctAnswer && 'wrong')}>
           {shouldAnimate && (

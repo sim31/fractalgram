@@ -1,12 +1,12 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useCallback } from '../../lib/teact/teact';
+import { memo, useCallback } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
 import type { ApiPhoto } from '../../api/types';
 
-import { isUserId } from '../../global/helpers';
+import { isUserId } from '../../util/entities/ids';
 
-import useLang from '../../hooks/useLang';
+import useOldLang from '../../hooks/useOldLang';
 
 import Button from '../ui/Button';
 import Modal from '../ui/Modal';
@@ -44,7 +44,7 @@ const DeleteProfilePhotoModal: FC<OwnProps> = ({
     onClose();
   }, [onConfirm, profileId, onClose, deleteProfilePhoto, photo, deleteChatPhoto]);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   return (
     <Modal

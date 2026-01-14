@@ -1,11 +1,11 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useCallback } from '../../lib/teact/teact';
+import { memo, useCallback } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
 import type { ApiChatFolder } from '../../api/types';
 
-import useLang from '../../hooks/useLang';
-import usePrevious from '../../hooks/usePrevious';
+import useOldLang from '../../hooks/useOldLang';
+import usePreviousDeprecated from '../../hooks/usePreviousDeprecated';
 
 import ConfirmDialog from '../ui/ConfirmDialog';
 
@@ -17,17 +17,17 @@ const DeleteFolderDialog: FC<OwnProps> = ({
   folder,
 }) => {
   const { closeDeleteChatFolderModal, deleteChatFolder, openDeleteChatFolderModal } = getActions();
-  const lang = useLang();
+  const lang = useOldLang();
 
   const isOpen = Boolean(folder);
 
-  const renderingFolder = usePrevious(folder) || folder;
+  const renderingFolder = usePreviousDeprecated(folder) || folder;
   const isMyChatlist = renderingFolder?.hasMyInvites;
 
   const handleDeleteFolderMessage = useCallback(() => {
     closeDeleteChatFolderModal();
     if (isMyChatlist) {
-      openDeleteChatFolderModal({ folderId: renderingFolder!.id, isConfirmedForChatlist: true });
+      openDeleteChatFolderModal({ folderId: renderingFolder.id, isConfirmedForChatlist: true });
     } else {
       deleteChatFolder({ id: renderingFolder!.id });
     }

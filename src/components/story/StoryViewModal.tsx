@@ -1,10 +1,10 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
+import {
   memo, useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { ApiStory, ApiStoryView } from '../../api/types';
+import type { ApiStory, ApiTypeStoryView } from '../../api/types';
 
 import {
   STORY_MIN_REACTIONS_SORT,
@@ -22,10 +22,11 @@ import renderText from '../common/helpers/renderText';
 
 import useDebouncedCallback from '../../hooks/useDebouncedCallback';
 import useFlag from '../../hooks/useFlag';
-import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
+import useOldLang from '../../hooks/useOldLang';
 import useScrolledState from '../../hooks/useScrolledState';
 
+import Icon from '../common/icons/Icon';
 import Button from '../ui/Button';
 import DropdownMenu from '../ui/DropdownMenu';
 import InfiniteScroll from '../ui/InfiniteScroll';
@@ -41,9 +42,9 @@ import styles from './StoryViewModal.module.scss';
 interface StateProps {
   story?: ApiStory;
   isLoading?: boolean;
-  viewsById?: Record<string, ApiStoryView>;
+  views?: ApiTypeStoryView[];
   nextOffset?: string;
-  viewersExpirePeriod: number;
+  viewersExpireDate?: number;
   isCurrentUserPremium?: boolean;
 }
 
@@ -51,26 +52,25 @@ const REFETCH_DEBOUNCE = 250;
 
 function StoryViewModal({
   story,
-  viewersExpirePeriod,
-  viewsById,
+  viewersExpireDate,
+  views,
   nextOffset,
   isLoading,
   isCurrentUserPremium,
 }: StateProps) {
   const {
-    loadStoryViews, closeStoryViewModal, clearStoryViews,
+    loadStoryViewList, closeStoryViewModal, clearStoryViews,
   } = getActions();
 
   const [areJustContacts, markJustContacts, unmarkJustContacts] = useFlag(false);
   const [areReactionsFirst, markReactionsFirst, unmarkReactionsFirst] = useFlag(true);
   const [query, setQuery] = useState('');
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const isOpen = Boolean(story);
-  const isExpired = Boolean(story?.date) && (story!.date + viewersExpirePeriod) < getServerTime();
-  const viewsCount = story?.viewsCount || 0;
-  const reactionsCount = story?.reactionsCount || 0;
+  const isExpired = Boolean(viewersExpireDate) && viewersExpireDate < getServerTime();
+  const { viewsCount = 0, reactionsCount = 0 } = story?.views || {};
 
   const shouldShowJustContacts = story?.isPublic && viewsCount > STORY_VIEWS_MIN_CONTACTS_FILTER;
   const shouldShowSortByReactions = reactionsCount > STORY_MIN_REACTIONS_SORT;
@@ -93,23 +93,17 @@ function StoryViewModal({
     refetchViews();
   }, [areJustContacts, areReactionsFirst, query, refetchViews]);
 
-  const sortedViewIds = useMemo(() => {
-    if (!viewsById) {
-      return undefined;
-    }
+  const sortedViews = useMemo(() => {
+    return views?.sort(prepareComparator(areReactionsFirst));
+  }, [areReactionsFirst, views]);
 
-    return Object.values(viewsById)
-      .sort(prepareComparator(areReactionsFirst))
-      .map((view) => view.userId);
-  }, [areReactionsFirst, viewsById]);
+  const placeholderCount = !sortedViews?.length ? Math.min(viewsCount, 8) : 1;
 
-  const placeholderCount = !sortedViewIds?.length ? Math.min(viewsCount, 8) : 1;
-
-  const notAllAvailable = Boolean(sortedViewIds?.length) && sortedViewIds!.length < viewsCount && isExpired;
+  const notAllAvailable = Boolean(sortedViews?.length) && sortedViews.length < viewsCount && isExpired;
 
   const handleLoadMore = useLastCallback(() => {
     if (!story?.id || nextOffset === undefined) return;
-    loadStoryViews({
+    loadStoryViewList({
       peerId: story.peerId,
       storyId: story.id,
       offset: nextOffset,
@@ -136,13 +130,8 @@ function StoryViewModal({
         onClick={onTrigger}
         ariaLabel={lang('SortBy')}
       >
-        <i className={buildClassName(
-          'icon',
-          areReactionsFirst ? 'icon-heart-outline' : 'icon-recent',
-          styles.iconSort,
-        )}
-        />
-        <i className={buildClassName('icon icon-down', styles.iconDown)} />
+        <Icon name={areReactionsFirst ? 'heart-outline' : 'recent'} className={styles.iconSort} />
+        <Icon name="down" className={styles.iconDown} />
       </Button>
     );
   }, [areReactionsFirst, lang]);
@@ -188,13 +177,13 @@ function StoryViewModal({
               <MenuItem icon="heart-outline" onClick={markReactionsFirst}>
                 {lang('SortByReactions')}
                 {areReactionsFirst && (
-                  <i className={buildClassName('icon icon-check', styles.check)} aria-hidden />
+                  <Icon name="check" className={styles.check} />
                 )}
               </MenuItem>
               <MenuItem icon="recent" onClick={unmarkReactionsFirst}>
                 {lang('SortByTime')}
                 {!areReactionsFirst && (
-                  <i className={buildClassName('icon icon-check', styles.check)} aria-hidden />
+                  <Icon name="check" className={styles.check} />
                 )}
               </MenuItem>
             </DropdownMenu>
@@ -208,7 +197,7 @@ function StoryViewModal({
         className={buildClassName(styles.content, !isAtBeginning && styles.topScrolled, 'custom-scroll')}
         onScroll={handleScroll}
       >
-        {isExpired && !isLoading && !query && Boolean(!sortedViewIds?.length) && (
+        {isExpired && !isLoading && !query && Boolean(!sortedViews?.length) && (
           <div className={buildClassName(styles.info, styles.centeredInfo)}>
             {renderText(
               lang(isCurrentUserPremium ? 'ServerErrorViewers' : 'ExpiredViewsStub'),
@@ -216,21 +205,25 @@ function StoryViewModal({
             )}
           </div>
         )}
-        {!isLoading && Boolean(query.length) && !sortedViewIds?.length && (
+        {!isLoading && Boolean(query.length) && !sortedViews?.length && (
           <div className={styles.info}>
             {lang('Story.ViewList.EmptyTextSearch')}
           </div>
         )}
         <InfiniteScroll
-          items={sortedViewIds}
+          items={sortedViews}
           onLoadMore={handleLoadMore}
         >
-          {sortedViewIds?.map((id) => (
-            <StoryView key={id} storyView={viewsById![id]} />
-          ))}
+          {sortedViews?.map((view) => {
+            const additionalKeyId = view.type === 'forward' ? view.messageId
+              : view.type === 'repost' ? view.storyId : 'user';
+            return (
+              <StoryView key={`${view.peerId}-${view.date}-${additionalKeyId}`} storyView={view} />
+            );
+          })}
           {isLoading && Array.from({ length: placeholderCount }).map((_, i) => (
             <ListItem
-              // eslint-disable-next-line react/no-array-index-key
+
               key={`placeholder-${i}`}
               className="chat-item-clickable contact-list-item scroll-item small-icon"
               disabled
@@ -259,12 +252,14 @@ function StoryViewModal({
 }
 
 function prepareComparator(areReactionsFirst?: boolean) {
-  return (a: ApiStoryView, b: ApiStoryView) => {
+  return (a: ApiTypeStoryView, b: ApiTypeStoryView) => {
     if (areReactionsFirst) {
-      if (a.reaction && !b.reaction) {
+      const reactionA = a.type === 'user' && a.reaction;
+      const reactionB = b.type === 'user' && b.reaction;
+      if (reactionA && !reactionB) {
         return -1;
       }
-      if (!a.reaction && b.reaction) {
+      if (!reactionA && reactionB) {
         return 1;
       }
     }
@@ -273,22 +268,21 @@ function prepareComparator(areReactionsFirst?: boolean) {
   };
 }
 
-export default memo(withGlobal((global) => {
+export default memo(withGlobal((global): Complete<StateProps> => {
   const { appConfig } = global;
   const { storyViewer: { viewModal } } = selectTabState(global);
   const {
-    storyId, viewsById, nextOffset, isLoading,
+    storyId, views, nextOffset, isLoading,
   } = viewModal || {};
   const story = storyId ? selectPeerStory(global, global.currentUserId!, storyId) : undefined;
+  const storyExpireDate = story?.['@type'] === 'story' ? story.expireDate : undefined;
 
   return {
-    storyId,
-    viewsById,
-    viewersExpirePeriod: appConfig!.storyExpirePeriod + appConfig!.storyViewersExpirePeriod,
+    views,
+    viewersExpireDate: storyExpireDate ? (storyExpireDate + appConfig.storyViewersExpirePeriod) : undefined,
     story: story && 'content' in story ? story : undefined,
     nextOffset,
     isLoading,
-    availableReactions: global.availableReactions,
     isCurrentUserPremium: selectIsCurrentUserPremium(global),
   };
 })(StoryViewModal));

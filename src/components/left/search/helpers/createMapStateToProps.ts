@@ -2,21 +2,23 @@ import type {
   ApiChat, ApiGlobalMessageSearchType, ApiMessage, ApiUser,
 } from '../../../../api/types';
 import type { GlobalState, TabState } from '../../../../global/types';
-import type { ISettings } from '../../../../types';
+import type { ThemeKey } from '../../../../types';
+import type { SearchResultKey } from '../../../../util/keys/searchResultKey';
 
 import { selectChat, selectTabState, selectTheme } from '../../../../global/selectors';
+import { selectSharedSettings } from '../../../../global/selectors/sharedState';
 
 export type StateProps = {
-  theme: ISettings['theme'];
+  theme: ThemeKey;
   isLoading?: boolean;
   chatsById: Record<string, ApiChat>;
   usersById: Record<string, ApiUser>;
   globalMessagesByChatId?: Record<string, { byId: Record<number, ApiMessage> }>;
-  foundIds?: string[];
+  foundIds?: SearchResultKey[];
   searchChatId?: string;
-  activeDownloads: TabState['activeDownloads']['byChatId'];
+  activeDownloads: TabState['activeDownloads'];
   isChatProtected?: boolean;
-  shouldWarnAboutSvg?: boolean;
+  shouldWarnAboutFiles?: boolean;
 };
 
 export function createMapStateToProps(type: ApiGlobalMessageSearchType) {
@@ -28,6 +30,8 @@ export function createMapStateToProps(type: ApiGlobalMessageSearchType) {
       fetchingStatus, resultsByType, chatId,
     } = tabState.globalSearch;
 
+    const { shouldWarnAboutFiles } = selectSharedSettings(global);
+
     // One component is used for two different types of results.
     // The differences between them are only in the isVoice property.
     // The rest of the search results use their own personal components.
@@ -36,7 +40,7 @@ export function createMapStateToProps(type: ApiGlobalMessageSearchType) {
     const { byChatId: globalMessagesByChatId } = global.messages;
     const foundIds = resultsByType?.[currentType]?.foundIds;
 
-    const activeDownloads = tabState.activeDownloads.byChatId;
+    const activeDownloads = tabState.activeDownloads;
 
     return {
       theme: selectTheme(global),
@@ -49,7 +53,7 @@ export function createMapStateToProps(type: ApiGlobalMessageSearchType) {
       searchChatId: chatId,
       activeDownloads,
       isChatProtected: chatId ? selectChat(global, chatId)?.isProtected : undefined,
-      shouldWarnAboutSvg: global.settings.byKey.shouldWarnAboutSvg,
+      shouldWarnAboutFiles,
     };
   };
 }

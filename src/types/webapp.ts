@@ -1,3 +1,30 @@
+import type { ApiInputMessageReplyInfo } from '../api/types';
+
+export type WebAppModalStateType = 'fullScreen' | 'maximized' | 'minimized';
+
+export type WebApp = {
+  url: string;
+  requestUrl?: string;
+  botId: string;
+  appName?: string;
+  buttonText: string;
+  peerId?: string;
+  queryId?: string;
+  slug?: string;
+  replyInfo?: ApiInputMessageReplyInfo;
+  canSendMessages?: boolean;
+  isRemoveModalOpen?: boolean;
+  isCloseModalOpen?: boolean;
+  shouldConfirmClosing?: boolean;
+  headerColor?: string;
+  backgroundColor?: string;
+  isBackButtonVisible?: boolean;
+  isSettingsButtonVisible?: boolean;
+  plannedEvents?: WebAppOutboundEvent[];
+  sendEvent?: (event: WebAppOutboundEvent) => void;
+  reloadFrame?: (url: string) => void;
+};
+
 export type PopupOptions = {
   title: string;
   message: string;
@@ -8,109 +35,143 @@ export type PopupOptions = {
   }[];
 };
 
-export type WebAppInboundEvent = {
-  eventType: 'web_app_data_send';
-  eventData: {
-    data: string;
-  };
-} | {
-  eventType: 'web_app_setup_main_button';
-  eventData: {
-    is_visible: boolean;
-    is_active: boolean;
-    text: string;
-    color: string;
-    text_color: string;
-    is_progress_visible: boolean;
-  };
-} | {
-  eventType: 'web_app_setup_back_button';
-  eventData: {
-    is_visible: boolean;
-  };
-} | {
-  eventType: 'web_app_open_link';
-  eventData: {
-    url: string;
-    try_instant_view?: boolean;
-  };
-} | {
-  eventType: 'web_app_open_tg_link';
-  eventData: {
-    path_full: string;
-  };
-} | {
-  eventType: 'web_app_open_invoice';
-  eventData: {
-    slug: string;
-  };
-} | {
-  eventType: 'web_app_trigger_haptic_feedback';
-  eventData: {
+type WebAppEvent<T, D> = D extends null ? {
+  eventType: T;
+  eventData?: undefined;
+} : {
+  eventType: T;
+  eventData: D;
+};
+
+export type WebAppButtonOptions = {
+  is_visible: boolean;
+  is_active: boolean;
+  text: string;
+  color: string;
+  text_color: string;
+  is_progress_visible: boolean;
+  position?: 'left' | 'right' | 'top' | 'bottom';
+};
+
+export type SafeArea = {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+};
+
+interface WebAppInboundEventMap {
+  iframe_ready: { reload_supported?: boolean };
+  web_app_data_send: { data: string };
+  web_app_setup_main_button: WebAppButtonOptions;
+  web_app_setup_secondary_button: WebAppButtonOptions;
+  web_app_setup_back_button: { is_visible: boolean };
+  web_app_setup_settings_button: { is_visible: boolean };
+  web_app_open_link: { url: string; try_instant_view?: boolean };
+  web_app_open_tg_link: { path_full: string; force_request?: boolean };
+  web_app_open_invoice: { slug: string };
+  web_app_trigger_haptic_feedback: {
     type: 'impact' | 'notification' | 'selection_change';
     impact_style?: 'light' | 'medium' | 'heavy';
     notification_type?: 'error' | 'success' | 'warning';
   };
-} | {
-  eventType: 'web_app_set_background_color';
-  eventData: {
-    color: string;
-  };
-} | {
-  eventType: 'web_app_set_header_color';
-  eventData: {
-    color_key?: 'bg_color' | 'secondary_bg_color';
-    color?: string;
-  };
-} | {
-  eventType: 'web_app_open_popup';
-  eventData: PopupOptions;
-} | {
-  eventType: 'web_app_setup_closing_behavior';
-  eventData: {
-    need_confirmation: boolean;
-  };
-} | {
-  eventType: 'web_app_open_scan_qr_popup';
-  eventData: {
-    text?: string;
-  };
-} | {
-  eventType: 'web_app_read_text_from_clipboard';
-  eventData: {
-    req_id: string;
-  };
-} | {
-  eventType: 'web_app_switch_inline_query';
-  eventData: {
+  web_app_set_bottom_bar_color: { color: string };
+  web_app_set_background_color: { color: string };
+  web_app_set_header_color: { color_key?: 'bg_color' | 'secondary_bg_color'; color?: string };
+  web_app_open_popup: PopupOptions;
+  web_app_setup_closing_behavior: { need_confirmation: boolean };
+  web_app_open_scan_qr_popup: { text?: string };
+  web_app_read_text_from_clipboard: { req_id: string };
+  web_app_switch_inline_query: {
     query: string;
     chat_types: ('users' | 'bots' | 'groups' | 'channels')[];
   };
-} | {
-  eventType: 'web_app_invoke_custom_method';
-  eventData: {
+  web_app_invoke_custom_method: { req_id: string; method: string; params: object };
+  web_app_biometry_request_access: { reason: string };
+  web_app_biometry_request_auth: { reason: string };
+  web_app_biometry_update_token: { token: string };
+  web_app_set_emoji_status: { custom_emoji_id: string; duration?: number };
+  web_app_verify_age: { passed: boolean; age?: number };
+  web_app_request_file_download: { url: string; file_name: string };
+  web_app_send_prepared_message: { id: string };
+  web_app_device_storage_save_key: {
     req_id: string;
-    method: string;
-    params: object;
+    key: string;
+    // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
+    value: unknown | null;
   };
-} | {
-  eventType: 'web_app_request_viewport' | 'web_app_request_theme' | 'web_app_ready' | 'web_app_expand'
-  | 'web_app_request_phone' | 'web_app_close' | 'iframe_ready' | 'web_app_close_scan_qr_popup'
-  | 'web_app_request_write_access' | 'web_app_request_phone';
-  eventData: null;
-};
+  web_app_device_storage_get_key: {
+    req_id: string;
+    key: string;
+  };
+  web_app_device_storage_clear: {
+    req_id: string;
+  };
+  web_app_secure_storage_save_key: {
+    req_id: string;
+    key: string;
+    // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
+    value: unknown | null;
+  };
+  web_app_secure_storage_get_key: {
+    req_id: string;
+    key: string;
+  };
+  web_app_secure_storage_restore_key: {
+    req_id: string;
+    key: string;
+  };
+  web_app_secure_storage_clear: {
+    req_id: string;
+  };
+  web_app_start_accelerometer: {
+    refresh_rate?: number;
+  };
+  web_app_start_gyroscope: {
+    refresh_rate?: number;
+  };
+  web_app_start_device_orientation: {
+    refresh_rate?: number;
+    need_absolute?: boolean;
+  };
 
-export type WebAppOutboundEvent = {
-  eventType: 'viewport_changed';
-  eventData: {
+  // No payload
+  web_app_request_viewport: null;
+  web_app_request_theme: null;
+  web_app_ready: null;
+  web_app_expand: null;
+  web_app_request_phone: null;
+  web_app_close: null;
+  web_app_close_scan_qr_popup: null;
+  web_app_request_write_access: null;
+  iframe_will_reload: null;
+  web_app_biometry_get_info: null;
+  web_app_biometry_open_settings: null;
+  web_app_request_emoji_status_access: null;
+  web_app_check_location: null;
+  web_app_request_location: null;
+  web_app_open_location_settings: null;
+  web_app_request_fullscreen: null;
+  web_app_exit_fullscreen: null;
+  web_app_request_safe_area: null;
+  web_app_request_content_safe_area: null;
+  web_app_stop_accelerometer: null;
+  web_app_stop_gyroscope: null;
+  web_app_stop_device_orientation: null;
+  web_app_add_to_home_screen: null;
+  web_app_check_home_screen: null;
+}
+
+interface WebAppOutboundEventMap {
+  viewport_changed: {
     height: number;
     width?: number;
     is_expanded?: boolean;
     is_state_stable?: boolean;
   };
-} | {
-  eventType: 'theme_changed';
-  eventData: {
+  content_safe_area_changed: SafeArea;
+  safe_area_changed: SafeArea;
+  theme_changed: {
     theme_params: {
       bg_color: string;
       text_color: string;
@@ -121,55 +182,157 @@ export type WebAppOutboundEvent = {
       secondary_bg_color: string;
     };
   };
-} | {
-  eventType: 'set_custom_style';
-  eventData: string;
-} | {
-  eventType: 'invoice_closed';
-  eventData: {
+  set_custom_style: string;
+  invoice_closed: {
     slug: string;
     status: 'paid' | 'cancelled' | 'pending' | 'failed';
   };
-} | {
-  eventType: 'phone_requested';
-  eventData: {
-    phone_number: string;
+  phone_requested: {
+    status: 'sent' | 'cancelled';
   };
-} | {
-  eventType: 'popup_closed';
-  eventData: {
+  popup_closed: {
     button_id?: string;
   };
-} | {
-  eventType: 'qr_text_received';
-  eventData: {
+  fullscreen_changed: {
+    is_fullscreen: boolean;
+  };
+  visibility_changed: {
+    is_visible: boolean;
+  };
+  fullscreen_failed: {
+    error: 'UNSUPPORTED' | (string & {});
+  };
+  qr_text_received: {
     data: string;
   };
-} | {
-  eventType: 'clipboard_text_received';
-  eventData: {
+  clipboard_text_received: {
     req_id: string;
     data: string | null;
   };
-} | {
-  eventType: 'write_access_requested';
-  eventData: {
+  write_access_requested: {
     status: 'allowed' | 'cancelled';
   };
-} | {
-  eventType: 'phone_requested';
-  eventData: {
-    status: 'sent' | 'cancelled';
-  };
-} | {
-  eventType: 'custom_method_invoked';
-  eventData: {
+  custom_method_invoked: {
     req_id: string;
-  } & ({
-    result: object;
-  } | {
-    error: string;
-  });
-} | {
-  eventType: 'main_button_pressed' | 'back_button_pressed' | 'settings_button_pressed' | 'scan_qr_popup_closed';
-};
+  } & (
+    { result: object } |
+    { error: string }
+  );
+  biometry_info_received:
+    | { available: false }
+    | {
+      available: true;
+      type: 'finger' | 'face' | 'unknown';
+      access_requested: boolean;
+      access_granted: boolean;
+      token_saved: boolean;
+      device_id: string;
+    };
+  biometry_auth_requested:
+    | { status: 'authorized'; token: string }
+    | { status: 'failed' };
+  biometry_token_updated: {
+    status: 'updated' | 'removed' | 'failed';
+  };
+  location_checked:
+    | { available: false }
+    | {
+      available: boolean;
+      access_requested: boolean;
+      access_granted?: boolean;
+    };
+  location_requested:
+    | { available: boolean }
+    | {
+      available: boolean;
+      latitude: number;
+      longitude: number;
+      altitude: number | null;
+      course: number | null;
+      speed: number | null;
+      horizontal_accuracy: number | null;
+      vertical_accuracy: number | null;
+      course_accuracy: number | null;
+      speed_accuracy: number | null;
+    };
+  emoji_status_access_requested: {
+    status: 'allowed' | 'cancelled';
+  };
+  access_requested: {
+    available: true;
+  };
+  emoji_status_failed: {
+    error:
+      | 'UNSUPPORTED'
+      | 'USER_DECLINED'
+      | 'SUGGESTED_EMOJI_INVALID'
+      | 'DURATION_INVALID'
+      | 'SERVER_ERROR'
+      | 'UNKNOWN_ERROR';
+  };
+  file_download_requested: {
+    status: 'cancelled' | 'downloading';
+  };
+  prepared_message_failed: {
+    error:
+      | 'UNSUPPORTED'
+      | 'MESSAGE_EXPIRED'
+      | 'MESSAGE_SEND_FAILED'
+      | 'USER_DECLINED'
+      | 'UNKNOWN_ERROR';
+  };
+  device_storage_failed: {
+    req_id: string;
+    error:
+      | 'UNSUPPORTED'
+      | 'KEY_INVALID'
+      | 'VALUE_INVALID'
+      | 'QUOTA_EXCEEDED'
+      | 'UNKNOWN_ERROR';
+  };
+  secure_storage_failed: {
+    req_id: string;
+    error:
+      | 'UNSUPPORTED'
+      | 'KEY_INVALID'
+      | 'VALUE_INVALID'
+      | 'QUOTA_EXCEEDED'
+      | 'STORAGE_NOT_EMPTY'
+      | 'RESTORE_UNAVAILABLE'
+      | 'RESTORE_CANCELLED'
+      | 'UNKNOWN_ERROR';
+  };
+  accelerometer_failed: {
+    error: 'UNSUPPORTED';
+  };
+  gyroscope_failed: {
+    error: 'UNSUPPORTED';
+  };
+  device_orientation_failed: {
+    error: 'UNSUPPORTED';
+  };
+  home_screen_failed: {
+    error: 'UNSUPPORTED';
+  };
+  home_screen_checked: {
+    status: 'unsupported' | 'unknown' | 'added' | 'missed';
+  };
+  main_button_pressed: null;
+  secondary_button_pressed: null;
+  back_button_pressed: null;
+  settings_button_pressed: null;
+  scan_qr_popup_closed: null;
+  reload_iframe: null;
+  prepared_message_sent: null;
+  emoji_status_set: null;
+}
+
+export type WebAppInboundEvent =
+  { [K in keyof WebAppInboundEventMap]:
+    WebAppEvent<K, WebAppInboundEventMap[K]>
+  }[keyof WebAppInboundEventMap];
+
+export type WebAppOutboundEvent =
+  { [K in keyof WebAppOutboundEventMap]:
+    WebAppEvent<K, WebAppOutboundEventMap[K]>
+  }[keyof WebAppOutboundEventMap];

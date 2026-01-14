@@ -1,6 +1,6 @@
 import type { ChangeEvent } from 'react';
-import type { FC } from '../../lib/teact/teact';
-import React, { memo, useCallback, useMemo } from '../../lib/teact/teact';
+import type { FC, TeactNode } from '../../lib/teact/teact';
+import { memo, useCallback, useMemo } from '../../lib/teact/teact';
 
 import buildClassName from '../../util/buildClassName';
 
@@ -16,10 +16,12 @@ type OwnProps = {
   label?: string;
   value: number;
   disabled?: boolean;
+  readOnly?: boolean;
   bold?: boolean;
   className?: string;
-  renderValue?: (value: number) => string;
+  renderValue?: (value: number) => TeactNode;
   onChange: (value: number) => void;
+  isCenteredLayout?: boolean;
 };
 
 const RangeSlider: FC<OwnProps> = ({
@@ -30,10 +32,12 @@ const RangeSlider: FC<OwnProps> = ({
   label,
   value,
   disabled,
+  readOnly,
   bold,
   className,
   renderValue,
   onChange,
+  isCenteredLayout,
 }) => {
   const lang = useLang();
   const handleChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
@@ -44,6 +48,7 @@ const RangeSlider: FC<OwnProps> = ({
     className,
     'RangeSlider',
     disabled && 'disabled',
+    readOnly && 'readOnly',
     bold && 'bold',
   );
 
@@ -56,16 +61,38 @@ const RangeSlider: FC<OwnProps> = ({
     }
   }, [options, value, max, min, step]);
 
-  return (
-    <div className={mainClassName}>
-      {label && (
+  function renderTopRow() {
+    if (isCenteredLayout) {
+      return (
         <div className="slider-top-row" dir={lang.isRtl ? 'rtl' : undefined}>
-          <span className="label" dir="auto">{label}</span>
           {!options && (
-            <span className="value" dir="auto">{renderValue ? renderValue(value) : value}</span>
+            <>
+              <span className="value-min" dir="auto">{min}</span>
+              <span className="label" dir="auto">{renderValue ? renderValue(value) : value}</span>
+              <span className="value-max" dir="auto">{max}</span>
+            </>
           )}
         </div>
-      )}
+      );
+    }
+
+    if (!label) {
+      return undefined;
+    }
+
+    return (
+      <div className="slider-top-row" dir={lang.isRtl ? 'rtl' : undefined}>
+        <span className="label" dir="auto">{label}</span>
+        {!options && (
+          <span className="value" dir="auto">{renderValue ? renderValue(value) : value}</span>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className={mainClassName}>
+      {renderTopRow()}
       <div className="slider-main">
         <div
           className="slider-fill-track"

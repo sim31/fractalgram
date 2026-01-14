@@ -1,11 +1,17 @@
-import { useMemo } from '../../../../lib/teact/teact';
+import { useEffect, useMemo, useRef } from '../../../../lib/teact/teact';
 
+import { requestNextMutation } from '../../../../lib/fasterdom/fasterdom';
 import { mapValues } from '../../../../util/iteratees';
 import { useChatAnimationType } from './useChatAnimationType';
 
-import usePrevious from '../../../../hooks/usePrevious';
+import useForceUpdate from '../../../../hooks/useForceUpdate';
+import useLastCallback from '../../../../hooks/useLastCallback';
+import usePreviousDeprecated from '../../../../hooks/usePreviousDeprecated';
+import useSyncEffect from '../../../../hooks/useSyncEffect';
 
-export default function useOrderDiff(orderedIds: (string | number)[] | undefined, key?: string) {
+const EMPTY_ORDER_DIFF = {};
+
+export default function useOrderDiff(orderedIds: (string | number)[] | undefined, topOffset: number, key?: string) {
   const orderById = useMemo(() => {
     if (!orderedIds) {
       return undefined;
@@ -17,23 +23,53 @@ export default function useOrderDiff(orderedIds: (string | number)[] | undefined
     }, {} as Record<string, number>);
   }, [orderedIds]);
 
-  const prevOrderById = usePrevious(orderById);
-  const prevChatId = usePrevious(key);
+  const prevOrderById = usePreviousDeprecated(orderById);
+  const prevChatId = usePreviousDeprecated(key);
+  const prevTopOffset = usePreviousDeprecated(topOffset);
+  const isInitialRenderRef = useRef(true);
 
-  const orderDiffById = useMemo(() => {
-    if (!orderById || !prevOrderById || key !== prevChatId) {
-      return {};
+  useEffect(() => {
+    requestNextMutation(() => {
+      isInitialRenderRef.current = false;
+    });
+  }, []);
+
+  const orderDiffByIdRef = useRef<Record<string | number, number>>(EMPTY_ORDER_DIFF);
+  const forceUpdate = useForceUpdate();
+
+  const onReorderAnimationEnd = useLastCallback(() => {
+    if (orderDiffByIdRef.current === EMPTY_ORDER_DIFF) return;
+
+    orderDiffByIdRef.current = EMPTY_ORDER_DIFF;
+    forceUpdate();
+  });
+
+  const shiftDiff = prevTopOffset !== undefined ? topOffset - prevTopOffset : 0;
+
+  useSyncEffect(() => {
+    if (!orderById || !prevOrderById || key !== prevChatId || prevOrderById === orderById) {
+      orderDiffByIdRef.current = EMPTY_ORDER_DIFF;
+      return;
     }
 
-    return mapValues(orderById, (order, id) => {
+    const diff = mapValues(orderById, (order, id) => {
       return prevOrderById[id] !== undefined ? order - prevOrderById[id] : -Infinity;
     });
-  }, [key, orderById, prevChatId, prevOrderById]);
 
-  const getAnimationType = useChatAnimationType(orderDiffById);
+    const hasChanges = Object.values(diff).some((value) => value !== 0);
+    orderDiffByIdRef.current = hasChanges ? diff : EMPTY_ORDER_DIFF;
+  }, [key, orderById, prevChatId, prevOrderById, topOffset]);
+
+  const getAnimationType = useChatAnimationType(
+    orderDiffByIdRef.current,
+    isInitialRenderRef.current,
+    Boolean(shiftDiff),
+  );
 
   return {
-    orderDiffById,
+    orderDiffById: orderDiffByIdRef.current,
+    shiftDiff,
     getAnimationType,
+    onReorderAnimationEnd,
   };
 }

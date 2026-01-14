@@ -1,8 +1,8 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useCallback } from '../../lib/teact/teact';
+import { memo, useCallback } from '../../lib/teact/teact';
 
+import { IS_TOUCH_ENV } from '../../util/browser/windowEnvironment';
 import buildClassName from '../../util/buildClassName';
-import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
 
 import Button from '../ui/Button';
 
@@ -45,9 +45,8 @@ const SliderDots: FC<OwnProps> = ({
           disabled={active === 0}
           round
           onClick={handleGoBack}
-        >
-          <i className="icon icon-previous" />
-        </Button>
+          iconName="previous"
+        />
       )}
       <div className={styles.root} style={`--start-from: ${startFrom}; --length: ${length}; --count: ${count};`}>
         {Array(length).fill(undefined).map((_, i) => {
@@ -66,7 +65,7 @@ const SliderDots: FC<OwnProps> = ({
                 styles.dot,
                 index === active && styles.active,
                 (isPreLast || isPreFirst) && styles.medium,
-                (isLast || isFirst) && styles.small,
+                (isLast || isFirst || isInvisible) && styles.small,
                 isInvisible && styles.invisible,
               )}
             />
@@ -80,9 +79,8 @@ const SliderDots: FC<OwnProps> = ({
           round
           disabled={active === length - 1}
           onClick={handleGoForward}
-        >
-          <i className="icon icon-next" />
-        </Button>
+          iconName="next"
+        />
       )}
     </div>
   );

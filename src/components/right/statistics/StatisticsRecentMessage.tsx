@@ -1,35 +1,40 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback } from '../../../lib/teact/teact';
+import { memo, useCallback } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
-import type { ApiMessage, StatisticsRecentMessage as StatisticsRecentMessageType } from '../../../api/types';
-import type { LangFn } from '../../../hooks/useLang';
+import type { ApiMessage, StatisticsMessageInteractionCounter } from '../../../api/types';
 
 import {
-  getMessageMediaHash,
-  getMessageMediaThumbDataUri,
   getMessageRoundVideo,
   getMessageVideo,
 } from '../../../global/helpers';
 import buildClassName from '../../../util/buildClassName';
-import { formatDateTimeToString } from '../../../util/dateFormat';
+import { formatDateTimeToString } from '../../../util/dates/dateFormat';
+import { type LangFn } from '../../../util/localization';
 import { renderMessageSummary } from '../../common/helpers/renderMessageText';
 
+import useMessageMediaHash from '../../../hooks/media/useMessageMediaHash';
+import useThumbnail from '../../../hooks/media/useThumbnail';
 import useLang from '../../../hooks/useLang';
 import useMedia from '../../../hooks/useMedia';
 
-import './StatisticsRecentMessage.scss';
+import Icon from '../../common/icons/Icon';
+import StatisticsRecentPostMeta from './StatisticsRecentPostMeta';
+
+import styles from './StatisticsRecentPost.module.scss';
 
 export type OwnProps = {
-  message: ApiMessage & StatisticsRecentMessageType;
+  postStatistic: StatisticsMessageInteractionCounter;
+  message: ApiMessage;
 };
 
-const StatisticsRecentMessage: FC<OwnProps> = ({ message }) => {
+const StatisticsRecentMessage: FC<OwnProps> = ({ postStatistic, message }) => {
   const lang = useLang();
   const { toggleMessageStatistics } = getActions();
 
-  const mediaThumbnail = getMessageMediaThumbDataUri(message);
-  const mediaBlobUrl = useMedia(getMessageMediaHash(message, 'micro'));
+  const thumbDataUri = useThumbnail(message);
+  const mediaHash = useMessageMediaHash(message, 'micro');
+  const mediaBlobUrl = useMedia(mediaHash);
   const isRoundVideo = Boolean(getMessageRoundVideo(message));
 
   const handleClick = useCallback(() => {
@@ -39,27 +44,29 @@ const StatisticsRecentMessage: FC<OwnProps> = ({ message }) => {
   return (
     <div
       className={buildClassName(
-        'StatisticsRecentMessage',
-        Boolean(mediaBlobUrl || mediaThumbnail) && 'StatisticsRecentMessage--with-image',
+        styles.root,
+        Boolean(mediaBlobUrl || thumbDataUri) && styles.withImage,
       )}
       onClick={handleClick}
     >
-      <div className="StatisticsRecentMessage__title">
-        <div className="StatisticsRecentMessage__summary">
-          {renderSummary(lang, message, mediaBlobUrl || mediaThumbnail, isRoundVideo)}
+      <div className={styles.title}>
+        <div className={styles.summary}>
+          {renderSummary(lang, message, mediaBlobUrl || thumbDataUri, isRoundVideo)}
         </div>
-        <div className="StatisticsRecentMessage__meta">
-          {lang('ChannelStats.ViewsCount', message.views, 'i')}
+        <div className={styles.meta}>
+          {lang(
+            'ChannelStatsViewsCount',
+            { count: postStatistic.viewsCount },
+            { pluralValue: postStatistic.viewsCount },
+          )}
         </div>
       </div>
 
-      <div className="StatisticsRecentMessage__info">
-        <div className="StatisticsRecentMessage__date">
+      <div className={styles.info}>
+        <div className={styles.date}>
           {formatDateTimeToString(message.date * 1000, lang.code)}
         </div>
-        <div className="StatisticsRecentMessage__meta">
-          {message.forwards ? lang('ChannelStats.SharesCount', message.forwards) : 'No shares'}
-        </div>
+        <StatisticsRecentPostMeta postStatistic={postStatistic} />
       </div>
     </div>
   );
@@ -71,14 +78,14 @@ function renderSummary(lang: LangFn, message: ApiMessage, blobUrl?: string, isRo
   }
 
   return (
-    <span className="media-preview">
+    <span>
       <img
         src={blobUrl}
         alt=""
         draggable={false}
-        className={buildClassName('media-preview__image', isRoundVideo && 'round')}
+        className={buildClassName(styles.image, isRoundVideo && styles.round)}
       />
-      {getMessageVideo(message) && <i className="icon icon-play" />}
+      {getMessageVideo(message) && <Icon name="play" />}
       {renderMessageSummary(lang, message, true)}
     </span>
   );

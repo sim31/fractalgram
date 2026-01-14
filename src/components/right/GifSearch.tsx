@@ -1,25 +1,27 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useCallback, useRef } from '../../lib/teact/teact';
+import { memo, useCallback, useRef } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { ApiChat, ApiVideo } from '../../api/types';
-import type { MessageList } from '../../global/types';
+import type { ApiChat, ApiChatFullInfo, ApiVideo } from '../../api/types';
+import type { MessageList } from '../../types';
 
 import { getAllowedAttachmentOptions, getCanPostInChat } from '../../global/helpers';
 import {
   selectCanScheduleUntilOnline,
   selectChat,
+  selectChatFullInfo,
   selectCurrentGifSearch,
   selectCurrentMessageList,
   selectIsChatWithBot,
   selectIsChatWithSelf, selectThreadInfo,
+  selectTopic,
 } from '../../global/selectors';
+import { IS_TOUCH_ENV } from '../../util/browser/windowEnvironment';
 import buildClassName from '../../util/buildClassName';
-import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
 
 import useHistoryBack from '../../hooks/useHistoryBack';
 import { useIntersectionObserver } from '../../hooks/useIntersectionObserver';
-import useLang from '../../hooks/useLang';
+import useOldLang from '../../hooks/useOldLang';
 import useSchedule from '../../hooks/useSchedule';
 
 import GifButton from '../common/GifButton';
@@ -28,7 +30,7 @@ import Loading from '../ui/Loading';
 
 import './GifSearch.scss';
 
-type OwnProps = {
+export type OwnProps = {
   onClose: NoneToVoidFunction;
   isActive: boolean;
 };
@@ -37,6 +39,7 @@ type StateProps = {
   query?: string;
   results?: ApiVideo[];
   chat?: ApiChat;
+  chatFullInfo?: ApiChatFullInfo;
   isChatWithBot?: boolean;
   canScheduleUntilOnline?: boolean;
   isSavedMessages?: boolean;
@@ -52,6 +55,7 @@ const GifSearch: FC<OwnProps & StateProps> = ({
   query,
   results,
   chat,
+  chatFullInfo,
   isChatWithBot,
   canScheduleUntilOnline,
   isSavedMessages,
@@ -65,8 +69,7 @@ const GifSearch: FC<OwnProps & StateProps> = ({
     setGifSearchQuery,
   } = getActions();
 
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>();
 
   const [requestCalendar, calendar] = useSchedule(canScheduleUntilOnline);
 
@@ -74,7 +77,8 @@ const GifSearch: FC<OwnProps & StateProps> = ({
     observe: observeIntersection,
   } = useIntersectionObserver({ rootRef: containerRef, debounceMs: INTERSECTION_DEBOUNCE });
 
-  const canSendGifs = canPostInChat && getAllowedAttachmentOptions(chat, isChatWithBot).canSendGifs;
+  const canSendGifs = canPostInChat
+    && getAllowedAttachmentOptions(chat, chatFullInfo, isChatWithBot, isSavedMessages).canSendGifs;
 
   const handleGifClick = useCallback((gif: ApiVideo, isSilent?: boolean, shouldSchedule?: boolean) => {
     if (canSendGifs) {
@@ -83,11 +87,12 @@ const GifSearch: FC<OwnProps & StateProps> = ({
       }
 
       if (shouldSchedule) {
-        requestCalendar((scheduledAt) => {
+        requestCalendar((scheduledAt, scheduleRepeatPeriod) => {
           sendMessage({
             messageList: currentMessageList,
             gif,
             scheduledAt,
+            scheduleRepeatPeriod,
             isSilent,
           });
         });
@@ -105,7 +110,7 @@ const GifSearch: FC<OwnProps & StateProps> = ({
     searchMoreGifs();
   }, [searchMoreGifs]);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   useHistoryBack({
     isActive,
@@ -161,21 +166,25 @@ const GifSearch: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const currentSearch = selectCurrentGifSearch(global);
     const { query, results } = currentSearch || {};
     const { chatId, threadId } = selectCurrentMessageList(global) || {};
     const chat = chatId ? selectChat(global, chatId) : undefined;
+    const chatFullInfo = chatId ? selectChatFullInfo(global, chatId) : undefined;
     const isChatWithBot = chat ? selectIsChatWithBot(global, chat) : undefined;
     const isSavedMessages = Boolean(chatId) && selectIsChatWithSelf(global, chatId);
     const threadInfo = chatId && threadId ? selectThreadInfo(global, chatId, threadId) : undefined;
-    const isComments = Boolean(threadInfo?.originChannelId);
-    const canPostInChat = Boolean(chat) && Boolean(threadId) && getCanPostInChat(chat, threadId, isComments);
+    const isMessageThread = Boolean(!threadInfo?.isCommentsInfo && threadInfo?.fromChannelId);
+    const topic = chatId && threadId ? selectTopic(global, chatId, threadId) : undefined;
+    const canPostInChat = Boolean(chat) && Boolean(threadId)
+      && getCanPostInChat(chat, topic, isMessageThread, chatFullInfo);
 
     return {
       query,
       results,
       chat,
+      chatFullInfo,
       isChatWithBot,
       isSavedMessages,
       canPostInChat,

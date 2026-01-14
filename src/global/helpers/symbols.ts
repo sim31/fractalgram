@@ -1,8 +1,9 @@
 import type { ApiFormattedText } from '../../api/types';
 import { ApiMessageEntityTypes } from '../../api/types';
 
-export function getStickerPreviewHash(stickerId: string) {
-  return `sticker${stickerId}?size=m`;
+export function getStickerHashById(stickerId: string, isPreview?: boolean) {
+  const base = `sticker${stickerId}`;
+  return !isPreview ? base : `${base}?size=m`;
 }
 
 export function containsCustomEmoji(formattedText: ApiFormattedText) {

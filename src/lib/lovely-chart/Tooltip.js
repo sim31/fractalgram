@@ -1,11 +1,11 @@
-import { setupCanvas, clearCanvas } from './canvas';
-import { BALLOON_OFFSET, X_AXIS_HEIGHT } from './constants';
-import { getPieRadius } from './formulas';
-import { formatInteger, getLabelDate, getLabelTime, statsFormatDayHourFull } from './format';
-import { getCssColor } from './skin';
-import { throttle, throttleWithRaf } from './utils';
-import { addEventListener, createElement } from './minifiers';
-import { toPixels } from './Projection';
+import { setupCanvas, clearCanvas } from './canvas.js';
+import { BALLOON_OFFSET, X_AXIS_HEIGHT } from './constants.js';
+import { getPieRadius } from './formulas.js';
+import {formatCryptoValue, formatInteger, getLabelDate, getLabelTime, statsFormatDayHourFull} from './format.js';
+import { getCssColor } from './skin.js';
+import { throttle, throttleWithRaf } from './utils.js';
+import { addEventListener, createElement } from './minifiers.js';
+import { toPixels } from './Projection.js';
 
 export function createTooltip(container, data, plotSize, colors, onZoom, onFocus) {
   let _state;
@@ -353,7 +353,12 @@ export function createTooltip(container, data, plotSize, colors, onZoom, onFocus
     currentDataSet.setAttribute('data-present', 'true');
 
     const valueElement = currentDataSet.querySelector(`.lovely-chart--tooltip-dataset-value.lovely-chart--color-${data.colors[key].slice(1)}:not(.lovely-chart--state-hidden)`);
-    valueElement.innerHTML = formatInteger(value);
+
+    if (data.isCurrency) {
+      valueElement.innerHTML = formatCryptoValue(value);
+    } else {
+      valueElement.innerHTML = formatInteger(value);
+    }
 
     _renderPercentageValue(currentDataSet, value, totalValue);
   }
@@ -413,6 +418,10 @@ export function createTooltip(container, data, plotSize, colors, onZoom, onFocus
       _renderTotal(dataSetContainer, formatInteger(totalValue));
     }
 
+    if (data.isCurrency) {
+      _renderCurrencyRate(dataSetContainer, formatCryptoValue(totalValue));
+    }
+
     Array.from(dataSetContainer.querySelectorAll('[data-present="false"]'))
       .forEach((dataSet) => {
         dataSet.remove();
@@ -441,6 +450,28 @@ export function createTooltip(container, data, plotSize, colors, onZoom, onFocus
       valueElement.innerHTML = totalValue;
     }
   }
+
+  function _renderCurrencyRate(dataSetContainer, totalValue) {
+    const totalText = dataSetContainer.querySelector(`[data-total="true"]`);
+    const className = `lovely-chart--tooltip-dataset-value lovely-chart--position-right`;
+
+    const totalUsd = (parseFloat(totalValue) * data.currencyRate).toFixed(2);
+
+    if (!totalText) {
+      const newTotalText = createElement();
+      newTotalText.className = 'lovely-chart--tooltip-dataset';
+      newTotalText.setAttribute('data-present', 'true');
+      newTotalText.setAttribute('data-total', 'true');
+      newTotalText.innerHTML = `<span>USD ≈</span><span class="${className}">$${totalUsd}</span>`;
+      dataSetContainer.appendChild(newTotalText);
+    } else {
+      totalText.setAttribute('data-present', 'true');
+
+      const valueElement = totalText.querySelector(`.lovely-chart--tooltip-dataset-value:not(.lovely-chart--state-hidden)`);
+      valueElement.innerHTML = `$${totalUsd}`;
+    }
+  }
+
 
   function _hideBalloon() {
     _balloon.classList.remove('lovely-chart--state-shown');

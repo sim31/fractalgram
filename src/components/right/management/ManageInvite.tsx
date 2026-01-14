@@ -1,18 +1,18 @@
 import type { ChangeEvent } from 'react';
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback, useState } from '../../../lib/teact/teact';
+import { memo, useCallback, useState } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiExportedInvite } from '../../../api/types';
 import { ManagementScreens } from '../../../types';
 
 import { selectTabState } from '../../../global/selectors';
-import { formatFullDate, formatTime } from '../../../util/dateFormat';
+import { formatFullDate, formatTime } from '../../../util/dates/dateFormat';
 import { getServerTime } from '../../../util/serverTime';
 
 import useFlag from '../../../hooks/useFlag';
 import useHistoryBack from '../../../hooks/useHistoryBack';
-import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 import useSyncEffect from '../../../hooks/useSyncEffect';
 
 import CalendarModal from '../../common/CalendarModal';
@@ -50,11 +50,11 @@ const ManageInvite: FC<OwnProps & StateProps> = ({
 }) => {
   const { editExportedChatInvite, exportChatInvite } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
   const [isCalendarOpened, openCalendar, closeCalendar] = useFlag();
   const [isRequestNeeded, setIsRequestNeeded] = useState(false);
   const [title, setTitle] = useState('');
-  const [customExpireDate, setCustomExpireDate] = useState<number>(Date.now() + DEFAULT_CUSTOM_EXPIRE_DATE);
+  const [customExpireDate, setCustomExpireDate] = useState<number>(() => Date.now() + DEFAULT_CUSTOM_EXPIRE_DATE);
   const [selectedExpireOption, setSelectedExpireOption] = useState('unlimited');
   const [customUsageLimit, setCustomUsageLimit] = useState<number | undefined>(10);
   const [selectedUsageOption, setSelectedUsageOption] = useState('0');
@@ -157,7 +157,7 @@ const ManageInvite: FC<OwnProps & StateProps> = ({
 
   return (
     <div className="Management ManageInvite">
-      <div className="custom-scroll">
+      <div className="panel-content custom-scroll">
         <div className="section">
           <Checkbox
             label={lang('ApproveNewMembers')}
@@ -173,10 +173,10 @@ const ManageInvite: FC<OwnProps & StateProps> = ({
             value={title}
             onChange={handleTitleChange}
           />
-          <p className="text-muted hint">{lang('LinkNameHelp')}</p>
+          <p className="section-help hint">{lang('LinkNameHelp')}</p>
         </div>
         <div className="section">
-          <div className="section-header">{lang('LimitByPeriod')}</div>
+          <div className="section-heading">{lang('LimitByPeriod')}</div>
           <RadioGroup
             name="expireOptions"
             options={[
@@ -206,14 +206,16 @@ const ManageInvite: FC<OwnProps & StateProps> = ({
           />
           {selectedExpireOption === 'custom' && (
             <Button className="expire-limit" isText onClick={openCalendar}>
-              {formatFullDate(lang, customExpireDate)} {formatTime(lang, customExpireDate)}
+              {formatFullDate(lang, customExpireDate)}
+              {' '}
+              {formatTime(lang, customExpireDate)}
             </Button>
           )}
-          <p className="text-muted hint">{lang('TimeLimitHelp')}</p>
+          <p className="section-help hint">{lang('TimeLimitHelp')}</p>
         </div>
         {!isRequestNeeded && (
           <div className="section">
-            <div className="section-header">{lang('LimitNumberOfUses')}</div>
+            <div className="section-heading">{lang('LimitNumberOfUses')}</div>
             <RadioGroup
               name="usageOptions"
               options={[
@@ -240,7 +242,7 @@ const ManageInvite: FC<OwnProps & StateProps> = ({
                 onChange={handleCustomUsageLimitChange}
               />
             )}
-            <p className="text-muted hint">{lang('UsesLimitHelp')}</p>
+            <p className="section-help hint">{lang('UsesLimitHelp')}</p>
           </div>
         )}
         <FloatingActionButton
@@ -248,9 +250,8 @@ const ManageInvite: FC<OwnProps & StateProps> = ({
           onClick={handleSaveClick}
           disabled={isSubmitBlocked}
           ariaLabel={editingInvite ? lang('SaveLink') : lang('CreateLink')}
-        >
-          <i className="icon icon-check" />
-        </FloatingActionButton>
+          iconName="check"
+        />
       </div>
       <CalendarModal
         isOpen={isCalendarOpened}
@@ -266,8 +267,8 @@ const ManageInvite: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { chatId }): StateProps => {
-    const { editingInvite } = selectTabState(global).management.byChatId[chatId];
+  (global, { chatId }): Complete<StateProps> => {
+    const { editingInvite } = selectTabState(global).management.byChatId[chatId] || {};
 
     return {
       editingInvite,

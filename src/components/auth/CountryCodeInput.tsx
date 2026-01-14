@@ -1,5 +1,6 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
+import type React from '../../lib/teact/teact';
+import {
   memo, useCallback, useRef, useState,
 } from '../../lib/teact/teact';
 import { withGlobal } from '../../global';
@@ -7,8 +8,10 @@ import { withGlobal } from '../../global';
 import type { ApiCountryCode } from '../../api/types';
 
 import { ANIMATION_END_DELAY } from '../../config';
+import { IS_TAURI } from '../../util/browser/globalEnvironment';
+import { IS_EMOJI_SUPPORTED } from '../../util/browser/windowEnvironment';
 import buildClassName from '../../util/buildClassName';
-import { isoToEmoji } from '../../util/emoji';
+import { isoToEmoji } from '../../util/emoji/emoji';
 import { prepareSearchWordsForNeedle } from '../../util/searchWords';
 import renderText from '../common/helpers/renderText';
 
@@ -43,8 +46,7 @@ const CountryCodeInput: FC<OwnProps & StateProps> = ({
   phoneCodeList,
 }) => {
   const lang = useLang();
-  // eslint-disable-next-line no-null/no-null
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>();
 
   const [filter, setFilter] = useState<string | undefined>();
   const [filteredList, setFilteredList] = useState<ApiCountryCode[]>([]);
@@ -104,7 +106,9 @@ const CountryCodeInput: FC<OwnProps & StateProps> = ({
       handleTrigger();
     };
 
-    const inputValue = filter ?? (value?.name || value?.defaultName || '');
+    const emoji = value && IS_EMOJI_SUPPORTED && isoToEmoji(value.iso2);
+    const name = value?.name || value?.defaultName || '';
+    const inputValue = filter ?? [emoji, name].filter(Boolean).join(' ');
 
     return (
       <div className={buildClassName('input-group', value && 'touched')}>
@@ -115,12 +119,13 @@ const CountryCodeInput: FC<OwnProps & StateProps> = ({
           id={id}
           value={inputValue}
           autoComplete="off"
+          spellCheck={IS_TAURI ? false : undefined}
           onClick={handleTrigger}
           onFocus={handleTrigger}
           onInput={handleCodeInput}
           onKeyDown={handleInputKeyDown}
         />
-        <label>{lang('Login.SelectCountry.Title')}</label>
+        <label>{lang('LoginSelectCountryTitle')}</label>
         {isLoading ? (
           <Spinner color="black" />
         ) : (
@@ -140,12 +145,15 @@ const CountryCodeInput: FC<OwnProps & StateProps> = ({
           <MenuItem
             key={`${country.iso2}-${country.countryCode}`}
             className={value && country.iso2 === value.iso2 ? 'selected' : ''}
-            // eslint-disable-next-line react/jsx-no-bind
+
             onClick={() => handleChange(country)}
           >
             <span className="country-flag">{renderText(isoToEmoji(country.iso2), ['hq_emoji'])}</span>
             <span className="country-name">{country.name || country.defaultName}</span>
-            <span className="country-code">+{country.countryCode}</span>
+            <span className="country-code">
+              +
+              {country.countryCode}
+            </span>
           </MenuItem>
         ))}
       {!filteredList.length && (
@@ -154,7 +162,7 @@ const CountryCodeInput: FC<OwnProps & StateProps> = ({
           className="no-results"
           disabled
         >
-          <span>{lang('lng_country_none')}</span>
+          <span>{lang('CountryNone')}</span>
         </MenuItem>
       )}
     </DropdownMenu>
@@ -174,7 +182,7 @@ function getFilteredList(countryList: ApiCountryCode[], filter = ''): ApiCountry
 }
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const { countryList: { phoneCodes: phoneCodeList } } = global;
     return {
       phoneCodeList,

@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useMemo } from '../../../lib/teact/teact';
+import { memo, useMemo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { GroupCallParticipant as TypeGroupCallParticipant } from '../../../lib/secret-sauce';
@@ -24,7 +24,6 @@ type OwnProps = {
 type StateProps = {
   participantsCount: number;
   participants?: Record<string, TypeGroupCallParticipant>;
-  canInvite?: boolean;
 };
 
 const GroupCallParticipantList: FC<OwnProps & StateProps> = ({
@@ -75,13 +74,13 @@ const GroupCallParticipantList: FC<OwnProps & StateProps> = ({
 
 function compareParticipants(a: TypeGroupCallParticipant, b: TypeGroupCallParticipant) {
   return compareFields(!a.isMuted, !b.isMuted)
-        || compareFields(a.presentation, b.presentation)
-        || compareFields(a.video, b.video)
-        || compareFields(a.raiseHandRating, b.raiseHandRating);
+    || compareFields(a.presentation, b.presentation)
+    || compareFields(a.video, b.video)
+    || compareFields(a.raiseHandRating, b.raiseHandRating);
 }
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const { participantsCount, participants } = selectActiveGroupCall(global) || {};
 
     return {

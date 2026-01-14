@@ -1,11 +1,12 @@
-import React, { memo } from '../../../lib/teact/teact';
+import { memo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type {
   ApiMessage, ApiPeer, ApiTypeStory, ApiUser,
 } from '../../../api/types';
 
-import { getSenderTitle, getStoryMediaHash, getUserFirstOrLastName } from '../../../global/helpers';
+import { getStoryMediaHash, getUserFirstOrLastName } from '../../../global/helpers';
+import { getPeerTitle } from '../../../global/helpers/peers';
 import {
   selectPeer,
   selectPeerStories,
@@ -16,9 +17,9 @@ import buildClassName from '../../../util/buildClassName';
 import renderText from '../../common/helpers/renderText';
 
 import useEnsureStory from '../../../hooks/useEnsureStory';
-import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useMedia from '../../../hooks/useMedia';
+import useOldLang from '../../../hooks/useOldLang';
 
 interface OwnProps {
   message: ApiMessage;
@@ -36,7 +37,7 @@ function StoryMention({
 }: OwnProps & StateProps) {
   const { openStoryViewer } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const { storyData } = message.content;
 
@@ -69,7 +70,7 @@ function StoryMention({
 
     return isDeleted
       ? lang('ExpiredStoryMention')
-      : lang('StoryMentionedTitle', getSenderTitle(lang, peer!));
+      : lang('StoryMentionedTitle', getPeerTitle(lang, peer!));
   }
 
   return (
@@ -92,7 +93,7 @@ function StoryMention({
   );
 }
 
-export default memo(withGlobal<OwnProps>((global, { message }): StateProps => {
+export default memo(withGlobal<OwnProps>((global, { message }): Complete<StateProps> => {
   const { id, peerId } = message.content.storyData!;
   const lastReadId = selectPeerStories(global, peerId)?.lastReadId;
 

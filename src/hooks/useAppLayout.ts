@@ -6,8 +6,8 @@ import {
   MOBILE_SCREEN_LANDSCAPE_MAX_WIDTH,
   MOBILE_SCREEN_MAX_WIDTH,
 } from '../config';
+import { IS_IOS } from '../util/browser/windowEnvironment';
 import { createCallbackManager } from '../util/callbacks';
-import { IS_IOS } from '../util/windowEnvironment';
 import { updateSizes } from '../util/windowSize';
 import useForceUpdate from './useForceUpdate';
 
@@ -16,10 +16,10 @@ type MediaQueryCacheKey = 'mobile' | 'tablet' | 'landscape' | 'touch';
 const mediaQueryCache = new Map<MediaQueryCacheKey, MediaQueryList>();
 const callbacks = createCallbackManager();
 
-let isMobile: boolean | undefined;
-let isTablet: boolean | undefined;
-let isLandscape: boolean | undefined;
-let isTouchScreen: boolean | undefined;
+let isMobile: boolean;
+let isTablet: boolean;
+let isLandscape: boolean;
+let isTouchScreen: boolean;
 
 export function getIsMobile() {
   return isMobile;
@@ -27,6 +27,10 @@ export function getIsMobile() {
 
 export function getIsTablet() {
   return isTablet;
+}
+
+export function getIsWebAppsFullscreenSupported() {
+  return !getIsMobile();
 }
 
 function handleMediaQueryChange() {

@@ -1,23 +1,38 @@
 .content {
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  padding-top: 0 !important;
+
   min-height: 14rem;
-  overflow: hidden;
+}
+
+.modal {
+  :global(.modal-dialog) {
+    max-width: 22.5rem;
+  }
+
+  :global(.modal-title) {
+    overflow: hidden;
+    padding-left: 0.5rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 .loading {
   margin-block: auto;
 }
 
-.text-center {
+.description {
+  padding: 0.5rem;
+  line-height: 1.25;
   text-align: center;
-  text-wrap: balance
+  text-wrap: balance;
 }
 
-.description {
-  padding: 0 0.75rem;
+.bold {
+  font-weight: var(--font-weight-medium);
 }
 
 .chip {
@@ -25,7 +40,7 @@
 }
 
 .replaceModal :global(.modal-dialog) {
-  max-width: 22rem;
+  max-width: 20rem;
 }
 
 .replaceModalContent {
@@ -36,9 +51,10 @@
 
 .avatarContainer {
   display: flex;
-  align-self: center;
   gap: 0.25rem;
   align-items: center;
+  align-self: center;
+
   margin-bottom: 0.5rem;
 }
 
@@ -53,17 +69,21 @@
 
 .boostedMark {
   position: absolute;
-  bottom: -0.125rem;
+  z-index: 10;
   right: -0.125rem;
-  font-size: 1.25rem;
-  background-color: var(--color-background);
+  bottom: -0.125rem;
+
   padding: 0.125rem;
   border-radius: 50%;
-  z-index: 10;
+
+  font-size: 1.25rem;
+
+  background-color: var(--color-background);
 
   &::before {
     background-image: var(--premium-gradient);
     background-clip: text;
+
     -webkit-text-fill-color: transparent;
   }
 }

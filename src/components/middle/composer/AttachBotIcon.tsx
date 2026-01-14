@@ -1,8 +1,8 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useMemo } from '../../../lib/teact/teact';
+import { memo, useMemo } from '../../../lib/teact/teact';
 
 import type { ApiDocument } from '../../../api/types';
-import type { ISettings } from '../../../types';
+import type { ThemeKey } from '../../../types';
 import { ApiMediaFormat } from '../../../api/types';
 
 import { getDocumentMediaHash } from '../../../global/helpers';
@@ -15,7 +15,7 @@ import styles from './AttachBotIcon.module.scss';
 
 type OwnProps = {
   icon: ApiDocument;
-  theme: ISettings['theme'];
+  theme: ThemeKey;
 };
 
 const ADDITIONAL_STROKE_WIDTH = '0.5px';
@@ -27,7 +27,7 @@ const AttachBotIcon: FC<OwnProps> = ({
   icon, theme,
 }) => {
   const { isTouchScreen } = useAppLayout();
-  const mediaData = useMedia(getDocumentMediaHash(icon), false, ApiMediaFormat.Text);
+  const mediaData = useMedia(getDocumentMediaHash(icon, 'full'), false, ApiMediaFormat.Text);
 
   const iconSvg = useMemo(() => {
     if (!mediaData) return '';

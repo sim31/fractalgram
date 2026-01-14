@@ -1,11 +1,11 @@
 import { useEffect, useRef } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
-import type { ActiveEmojiInteraction } from '../../../global/types';
+import type { ActiveEmojiInteraction } from '../../../types';
 
+import { IS_TAURI } from '../../../util/browser/globalEnvironment';
 import buildStyle from '../../../util/buildStyle';
 import safePlay from '../../../util/safePlay';
-import { IS_ELECTRON } from '../../../util/windowEnvironment';
 import { REM } from '../helpers/mediaDimensions';
 
 import useLastCallback from '../../../hooks/useLastCallback';
@@ -29,16 +29,14 @@ export default function useAnimatedEmoji(
     interactWithAnimatedEmoji, sendEmojiInteraction, sendWatchingEmojiInteraction,
   } = getActions();
 
-  // eslint-disable-next-line no-null/no-null
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement>();
 
-  // eslint-disable-next-line no-null/no-null
-  const audioRef = useRef<HTMLAudioElement | undefined>(null);
+  const audioRef = useRef<HTMLAudioElement | undefined>();
 
   const soundMediaData = useMedia(soundId ? `document${soundId}` : undefined, !soundId);
 
   const size = preferredSize || SIZE;
-  const style = buildStyle(`width: ${size}px`, `height: ${size}px`, emoji && !IS_ELECTRON && 'cursor: pointer');
+  const style = buildStyle(`width: ${size}px`, `height: ${size}px`, emoji && !IS_TAURI && 'cursor: pointer');
 
   const interactions = useRef<number[] | undefined>(undefined);
   const startedInteractions = useRef<number | undefined>(undefined);
@@ -85,7 +83,7 @@ export default function useAnimatedEmoji(
     const { x, y } = container.getBoundingClientRect();
 
     interactWithAnimatedEmoji({
-      emoji: emoji!,
+      emoji,
       x,
       y,
       startSize: size,

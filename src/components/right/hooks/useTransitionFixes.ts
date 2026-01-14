@@ -1,11 +1,10 @@
+import type { ElementRef } from '../../../lib/teact/teact';
 import { useEffect } from '../../../lib/teact/teact';
 
-import { requestMeasure, requestMutation } from '../../../lib/fasterdom/fasterdom';
-
-import useLastCallback from '../../../hooks/useLastCallback';
+import { requestMutation } from '../../../lib/fasterdom/fasterdom';
 
 export default function useTransitionFixes(
-  containerRef: { current: HTMLDivElement | null },
+  containerRef: ElementRef<HTMLDivElement>,
   transitionElSelector = '.Transition.shared-media-transition',
 ) {
   // Set `min-height` for shared media container to prevent jumping when switching tabs
@@ -15,7 +14,7 @@ export default function useTransitionFixes(
       const transitionEl = container.querySelector<HTMLDivElement>(transitionElSelector);
       const tabsEl = container.querySelector<HTMLDivElement>('.TabList');
       if (transitionEl && tabsEl) {
-        const newHeight = container.offsetHeight - tabsEl.offsetHeight;
+        const newHeight = container.clientHeight - tabsEl.offsetHeight;
 
         requestMutation(() => {
           transitionEl.style.minHeight = `${newHeight}px`;
@@ -31,28 +30,4 @@ export default function useTransitionFixes(
       window.removeEventListener('resize', setMinHeight, false);
     };
   }, [containerRef, transitionElSelector]);
-
-  // Workaround for scrollable content flickering during animation.
-  const applyTransitionFix = useLastCallback(() => {
-    // This callback is called from `Transition.onStart` which is "mutate" phase
-    requestMeasure(() => {
-      const container = containerRef.current!;
-      if (container.style.overflowY === 'hidden') return;
-
-      const scrollBarWidth = container.offsetWidth - container.clientWidth;
-
-      requestMutation(() => {
-        container.style.overflowY = 'hidden';
-        container.style.paddingRight = `${scrollBarWidth}px`;
-      });
-    });
-  });
-
-  const releaseTransitionFix = useLastCallback(() => {
-    const container = containerRef.current!;
-    container.style.overflowY = 'scroll';
-    container.style.paddingRight = '0';
-  });
-
-  return { applyTransitionFix, releaseTransitionFix };
 }

@@ -1,27 +1,27 @@
-import type { ApiUserStatus } from '../../../api/types';
-import type { ActionReturnType, RequiredGlobalState } from '../../types';
+import { throttleWithFullyIdle } from '../../../lib/teact/heavyAnimation';
 
-import { throttle } from '../../../util/schedulers';
+import type { ApiUserStatus } from '../../../api/types';
+import type { ActionReturnType } from '../../types';
+
 import { addActionHandler, getGlobal, setGlobal } from '../../index';
 import {
-  deleteContact, replaceUserStatuses, updatePeerStoriesHidden, updateUser, updateUserFullInfo,
+  deleteContact,
+  replaceUserStatuses,
+  updateChat,
+  updatePeerStoriesHidden,
+  updateUser,
+  updateUserFullInfo,
 } from '../../reducers';
-import { selectIsCurrentUserPremium, selectUser, selectUserFullInfo } from '../../selectors';
+import {
+  selectIsChatWithSelf, selectIsCurrentUserPremium, selectUser, selectUserFullInfo,
+} from '../../selectors';
 
-const STATUS_UPDATE_THROTTLE = 3000;
-
-const flushStatusUpdatesThrottled = throttle(flushStatusUpdates, STATUS_UPDATE_THROTTLE, true);
+const updateStatusesOnFullyIdle = throttleWithFullyIdle(flushStatusUpdates);
 
 let pendingStatusUpdates: Record<string, ApiUserStatus> = {};
 
-function scheduleStatusUpdate(userId: string, statusUpdate: ApiUserStatus) {
-  pendingStatusUpdates[userId] = statusUpdate;
-  flushStatusUpdatesThrottled();
-}
-
 function flushStatusUpdates() {
-  // eslint-disable-next-line eslint-multitab-tt/no-immediate-global
-  let global = getGlobal() as RequiredGlobalState;
+  let global = getGlobal();
 
   global = replaceUserStatuses(global, {
     ...global.users.statusesById,
@@ -40,7 +40,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
 
     case 'updateUser': {
       Object.values(global.byTabId).forEach(({ id: tabId }) => {
-        if (update.id === global.currentUserId && update.user.isPremium !== selectIsCurrentUserPremium(global)) {
+        if (selectIsChatWithSelf(global, update.id) && update.user.isPremium !== selectIsCurrentUserPremium(global)) {
           if (update.user.isPremium && global.byTabId[tabId].premiumModal) {
             actions.openPremiumModal({ isSuccess: true, tabId });
           }
@@ -75,12 +75,15 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
     }
 
     case 'updateUserEmojiStatus': {
-      return updateUser(global, update.userId, { emojiStatus: update.emojiStatus });
+      global = updateUser(global, update.userId, { emojiStatus: update.emojiStatus });
+      global = updateChat(global, update.userId, { emojiStatus: update.emojiStatus });
+      return global;
     }
 
     case 'updateUserStatus': {
       // Status updates come very often so we throttle them
-      scheduleStatusUpdate(update.userId, update.status);
+      pendingStatusUpdates[update.userId] = update.status;
+      updateStatusesOnFullyIdle();
       return undefined;
     }
 
@@ -104,6 +107,36 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
           menuButton: button,
         },
       });
+    }
+
+    case 'updateBotCommands': {
+      const { botId, commands } = update;
+      const targetUserFullInfo = selectUserFullInfo(global, botId);
+      if (!targetUserFullInfo?.botInfo) {
+        return undefined;
+      }
+
+      return updateUserFullInfo(global, botId, {
+        botInfo: {
+          ...targetUserFullInfo.botInfo,
+          commands,
+        },
+      });
+    }
+
+    case 'updatePeerSettings': {
+      const { id, settings } = update;
+
+      const targetUserFullInfo = selectUserFullInfo(global, id);
+      if (!targetUserFullInfo?.botInfo) {
+        actions.loadFullUser({ userId: id });
+        return undefined;
+      }
+
+      global = updateUserFullInfo(global, id, {
+        settings,
+      });
+      return global;
     }
   }
 

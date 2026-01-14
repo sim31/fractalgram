@@ -1,26 +1,29 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
+import type React from '../../lib/teact/teact';
+import {
   memo, useEffect, useLayoutEffect,
   useMemo,
+  useRef,
+  useSignal,
 } from '../../lib/teact/teact';
 
-import type { ApiDimensions } from '../../api/types';
+import type { StoryboardInfo } from '../../api/types';
 import type { BufferedRange } from '../../hooks/useBuffering';
+import type { IconName } from '../../types/icons';
 
+import { IS_IOS, IS_TOUCH_ENV } from '../../util/browser/windowEnvironment';
 import buildClassName from '../../util/buildClassName';
-import { formatMediaDuration } from '../../util/dateFormat';
-import { formatFileSize } from '../../util/textFormat';
-import { IS_IOS, IS_TOUCH_ENV } from '../../util/windowEnvironment';
+import { formatMediaDuration } from '../../util/dates/dateFormat';
 
 import useAppLayout from '../../hooks/useAppLayout';
 import useCurrentTimeSignal from '../../hooks/useCurrentTimeSignal';
 import useDerivedState from '../../hooks/useDerivedState';
 import useFlag from '../../hooks/useFlag';
-import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
-import useSignal from '../../hooks/useSignal';
+import useOldLang from '../../hooks/useOldLang';
 import useControlsSignal from './hooks/useControlsSignal';
 
+import AnimatedFileSize from '../common/AnimatedFileSize';
 import Button from '../ui/Button';
 import Menu from '../ui/Menu';
 import MenuItem from '../ui/MenuItem';
@@ -30,7 +33,7 @@ import SeekLine from './SeekLine';
 import './VideoPlayerControls.scss';
 
 type OwnProps = {
-  url?: string;
+  storyboardInfo?: StoryboardInfo;
   bufferedRanges: BufferedRange[];
   bufferedProgress: number;
   duration: number;
@@ -41,12 +44,10 @@ type OwnProps = {
   isFullscreenSupported: boolean;
   isPictureInPictureSupported: boolean;
   isFullscreen: boolean;
-  isPreviewDisabled?: boolean;
   isBuffered: boolean;
   volume: number;
   isMuted: boolean;
   playbackRate: number;
-  posterSize?: ApiDimensions;
   onChangeFullscreen: (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => void;
   onPictureInPictureChange?: () => void;
   onVolumeClick: () => void;
@@ -54,6 +55,7 @@ type OwnProps = {
   onPlaybackRateChange: (playbackRate: number) => void;
   onPlayPause: (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => void;
   onSeek: (position: number) => void;
+  onSeekingChange: (isSeeking: boolean) => void;
 };
 
 const stopEvent = (e: React.MouseEvent<HTMLElement>) => {
@@ -70,7 +72,7 @@ const PLAYBACK_RATES = [
 const HIDE_CONTROLS_TIMEOUT_MS = 3000;
 
 const VideoPlayerControls: FC<OwnProps> = ({
-  url,
+  storyboardInfo,
   bufferedRanges,
   bufferedProgress,
   duration,
@@ -81,24 +83,25 @@ const VideoPlayerControls: FC<OwnProps> = ({
   isFullscreenSupported,
   isFullscreen,
   isBuffered,
-  isPreviewDisabled,
   volume,
   isMuted,
   playbackRate,
-  posterSize,
+  isPictureInPictureSupported,
   onChangeFullscreen,
   onVolumeClick,
   onVolumeChange,
   onPlaybackRateChange,
-  isPictureInPictureSupported,
   onPictureInPictureChange,
   onPlayPause,
   onSeek,
+  onSeekingChange,
 }) => {
   const [isPlaybackMenuOpen, openPlaybackMenu, closePlaybackMenu] = useFlag();
   const [getCurrentTime] = useCurrentTimeSignal();
   const currentTime = useDerivedState(() => Math.trunc(getCurrentTime()), [getCurrentTime]);
   const [getIsSeeking, setIsSeeking] = useSignal(false);
+
+  const closeTimeoutRef = useRef<number | undefined>();
 
   const { isMobile } = useAppLayout();
   const [getIsVisible, setVisibility] = useControlsSignal();
@@ -106,16 +109,15 @@ const VideoPlayerControls: FC<OwnProps> = ({
 
   useEffect(() => {
     if (!IS_TOUCH_ENV && !isForceMobileVersion) return undefined;
-    let timeout: number | undefined;
     if (!isVisible || !isPlaying || isPlaybackMenuOpen || getIsSeeking()) {
-      if (timeout) window.clearTimeout(timeout);
+      if (closeTimeoutRef.current) window.clearTimeout(closeTimeoutRef.current);
       return undefined;
     }
-    timeout = window.setTimeout(() => {
+    closeTimeoutRef.current = window.setTimeout(() => {
       setVisibility(false);
     }, HIDE_CONTROLS_TIMEOUT_MS);
     return () => {
-      if (timeout) window.clearTimeout(timeout);
+      if (closeTimeoutRef.current) window.clearTimeout(closeTimeoutRef.current);
     };
   }, [isPlaying, isVisible, setVisibility, isPlaybackMenuOpen, getIsSeeking, isForceMobileVersion]);
 
@@ -136,22 +138,24 @@ const VideoPlayerControls: FC<OwnProps> = ({
     }
   }, [closePlaybackMenu, isVisible]);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const handleSeek = useLastCallback((position: number) => {
     setIsSeeking(false);
     onSeek(position);
+    onSeekingChange(false);
   });
 
   const handleSeekStart = useLastCallback(() => {
     setIsSeeking(true);
+    onSeekingChange(true);
   });
 
-  const volumeIcon = useMemo(() => {
-    if (volume === 0 || isMuted) return 'icon-muted';
-    if (volume < 0.3) return 'icon-volume-1';
-    if (volume < 0.6) return 'icon-volume-2';
-    return 'icon-volume-3';
+  const volumeIcon: IconName = useMemo(() => {
+    if (volume === 0 || isMuted) return 'muted';
+    if (volume < 0.3) return 'volume-1';
+    if (volume < 0.6) return 'volume-2';
+    return 'volume-3';
   }, [volume, isMuted]);
 
   return (
@@ -160,12 +164,10 @@ const VideoPlayerControls: FC<OwnProps> = ({
       onClick={stopEvent}
     >
       <SeekLine
-        url={url}
+        storyboardInfo={storyboardInfo}
         duration={duration}
         isReady={isReady}
         isPlaying={isPlaying}
-        isPreviewDisabled={isPreviewDisabled}
-        posterSize={posterSize}
         bufferedRanges={bufferedRanges}
         playbackRate={playbackRate}
         onSeek={handleSeek}
@@ -181,9 +183,8 @@ const VideoPlayerControls: FC<OwnProps> = ({
           className="play"
           round
           onClick={onPlayPause}
-        >
-          <i className={buildClassName('icon', isPlaying ? 'icon-pause' : 'icon-play')} />
-        </Button>
+          iconName={isPlaying ? 'pause' : 'play'}
+        />
         <Button
           ariaLabel="Volume"
           size="tiny"
@@ -191,16 +192,15 @@ const VideoPlayerControls: FC<OwnProps> = ({
           className="volume"
           round
           onClick={onVolumeClick}
-        >
-          <i className={buildClassName('icon', volumeIcon)} />
-        </Button>
+          iconName={volumeIcon}
+        />
         {!IS_IOS && (
           <RangeSlider bold className="volume-slider" value={isMuted ? 0 : volume * 100} onChange={onVolumeChange} />
         )}
         {renderTime(currentTime, duration)}
         {!isBuffered && (
           <div className="player-file-size">
-            {`${formatFileSize(lang, fileSize * bufferedProgress)} / ${formatFileSize(lang, fileSize)}`}
+            <AnimatedFileSize size={fileSize} progress={bufferedProgress} />
           </div>
         )}
         <div className="spacer" />
@@ -222,9 +222,8 @@ const VideoPlayerControls: FC<OwnProps> = ({
             className="fullscreen"
             round
             onClick={onPictureInPictureChange}
-          >
-            <i className="icon icon-pip" />
-          </Button>
+            iconName="pip"
+          />
         )}
         {isFullscreenSupported && (
           <Button
@@ -234,9 +233,8 @@ const VideoPlayerControls: FC<OwnProps> = ({
             className="fullscreen"
             round
             onClick={onChangeFullscreen}
-          >
-            <i className={buildClassName('icon ', isFullscreen ? 'icon-smallscreen' : 'icon-fullscreen')} />
-          </Button>
+            iconName={isFullscreen ? 'smallscreen' : 'fullscreen'}
+          />
         )}
       </div>
       <Menu
@@ -252,7 +250,7 @@ const VideoPlayerControls: FC<OwnProps> = ({
         onClose={closePlaybackMenu}
       >
         {PLAYBACK_RATES.map((rate) => (
-          // eslint-disable-next-line react/jsx-no-bind
+
           <MenuItem disabled={playbackRate === rate} onClick={() => onPlaybackRateChange(rate)}>
             {`${rate}x`}
           </MenuItem>

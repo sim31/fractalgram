@@ -1,38 +1,31 @@
 .Notification-container {
   position: relative;
+  z-index: var(--z-notification);
+
   width: 22rem;
   max-width: 100vw;
   margin: 4.25rem auto 0.25rem;
-  z-index: var(--z-notification);
-
-  .has-header-tools & {
-    margin-top: 7.375rem;
-  }
-
-  @media (min-width: 1276px) {
-    transition: transform var(--layer-transition);
-  }
 
   & ~ & {
     margin-top: 0.25rem;
-
-    .has-header-tools & {
-      margin-top: 0.25rem;
-    }
   }
 }
 
 .Notification {
-  background: rgba(32, 32, 32, 0.8)
-    url("data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIj48Y2lyY2xlIGZpbGw9IiNGRkYiIGN4PSIxMiIgY3k9IjEyIiByPSIxMiIvPjxjaXJjbGUgZmlsbD0iIzAwMCIgZmlsbC1ydWxlPSJub256ZXJvIiBjeD0iMTIiIGN5PSI2LjUiIHI9IjEuNSIvPjxwYXRoIGQ9Ik0xMiA5LjVjLS41NTIgMC0xIC4zNy0xIC44MjZ2Ny4zNDhjMCAuNDU2LjQ0OC44MjYgMSAuODI2czEtLjM3IDEtLjgyNnYtNy4zNDhjMC0uNDU2LS40NDgtLjgyNi0xLS44MjZ6IiBmaWxsPSIjMDAwIiBmaWxsLXJ1bGU9Im5vbnplcm8iLz48L2c+PC9zdmc+")
-    no-repeat 0.9375rem 50%;
-  background-size: 1.5rem;
-  border-radius: var(--border-radius-default);
-  padding: 0.9375rem 0.9375rem 0.9375rem 3.375rem;
-  color: #fff;
-  margin: 0 0.5rem;
+  --color-toast-action: var(--color-primary);
+
   display: flex;
   align-items: center;
+
+  margin: 0 0.5rem;
+  padding: 0.9375rem;
+  border-radius: var(--border-radius-toast);
+
+  color: #fff;
+
+  background-color: var(--color-toast-background);
+  background-size: 1.5rem;
+  backdrop-filter: blur(0.5rem);
 
   .text-entity-link,
   .text-entity-link:hover,
@@ -42,27 +35,44 @@
   }
 
   .content {
-    line-height: 1.25;
-    word-break: break-word;
-    font-size: 0.9375rem;
     flex-grow: 1;
+    font-size: 0.9375rem;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
   }
 
   &.bold-link b {
-    color: var(--color-primary);
     cursor: var(--custom-cursor, pointer);
+    color: var(--color-primary);
   }
 
   .notification-title {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
-  .Notification-button {
-    color: var(--color-primary);
-    font-weight: 500;
-    text-transform: none;
-    margin: 0 0.5rem;
-    height: 2rem;
+  .notification-icon {
+    font-size: 1.75rem;
+  }
+
+  .notification-emoji-icon {
+    --custom-emoji-size: 1.75rem;
+  }
+
+  .notification-icon, .notification-emoji-icon {
+    margin-inline-end: 0.75rem;
+  }
+
+  .notification-timer {
+    margin-inline: 0.75rem;
+  }
+
+  .notification-button {
     width: auto;
+    height: 2rem;
+    margin-inline-start: 0.125rem;
+
+    font-weight: var(--font-weight-medium);
+    color: var(--color-toast-action);
+    text-transform: none;
   }
 }

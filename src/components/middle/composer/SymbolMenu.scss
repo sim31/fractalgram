@@ -1,4 +1,4 @@
-@import "../../../styles/mixins";
+@use "../../../styles/mixins";
 
 .SymbolMenu {
   &.attachment-modal-symbol-menu {
@@ -8,17 +8,19 @@
 
   &.mobile-menu {
     position: fixed;
-    left: 0;
+    z-index: var(--z-symbol-menu-mobile);
     right: 0;
     bottom: 0;
-    background: var(--color-background);
-    z-index: var(--z-symbol-menu-mobile);
+    left: 0;
+    transform: translate3d(0, calc(var(--symbol-menu-height)), 0);
 
-    transition: transform var(--layer-transition);
     padding-right: env(safe-area-inset-right);
     padding-bottom: 0;
     padding-left: env(safe-area-inset-left);
-    transform: translate3d(0, calc(var(--symbol-menu-height)), 0);
+
+    background: var(--color-background);
+
+    transition: transform var(--layer-transition);
 
     &.open:not(.in-attachment-modal) {
       transform: translate3d(0, 0, 0);
@@ -31,20 +33,6 @@
     &.open.in-attachment-modal {
       z-index: calc(var(--z-modal) + 1);
       transform: translate3d(0, calc(var(--symbol-menu-height)), 0);
-    }
-
-    // Target: Old Firefox (Waterfox Classic)
-    @supports not (padding-right: env(safe-area-inset-right)) {
-      padding-right: 0;
-      padding-left: 0;
-      transform: translate3d(0, calc(var(--symbol-menu-height)), 0);
-    }
-
-    @media (max-width: 600px) {
-      @supports not (padding-right: env(safe-area-inset-right)) {
-        padding-bottom: env(safe-area-inset-bottom);
-        transform: translate3d(0, calc(var(--symbol-menu-height) + env(safe-area-inset-bottom)), 0);
-      }
     }
 
     body.no-page-transitions & {
@@ -61,23 +49,24 @@
     max-height: calc(100vh - var(--symbol-menu-footer-height));
 
     @media (max-width: 600px) {
-      @supports (max-height: calc(100vh - var(--symbol-menu-footer-height) - env(safe-area-inset-bottom))) {
-        max-height: calc(100vh - var(--symbol-menu-footer-height) - env(safe-area-inset-bottom));
-      }
+      max-height: calc(100vh - var(--symbol-menu-footer-height) - env(safe-area-inset-bottom));
     }
   }
 
   &-footer {
-    height: var(--symbol-menu-footer-height);
+    position: relative;
+
     display: flex;
     align-items: center;
     justify-content: center;
+
+    height: var(--symbol-menu-footer-height);
     /* stylelint-disable-next-line plugin/whole-pixel */
     box-shadow: 0 -0.5px var(--color-borders-alternate);
-    position: relative;
 
     .Button {
       flex-shrink: 0;
+
       width: 2.125rem !important;
       height: 2.125rem;
       margin: 0 0.25rem;
@@ -116,15 +105,16 @@
     > .backdrop {
       position: absolute;
       top: -1rem;
-      left: 0;
       right: auto;
+      left: 0;
+
       width: 3.5rem;
       height: 4.5rem;
     }
 
     &.attachment-modal-symbol-menu > .backdrop {
-      bottom: 0;
       top: auto;
+      bottom: 0;
     }
   }
 
@@ -145,23 +135,20 @@
   }
 
   .bubble {
-    --offset-y: 4rem;
+    --offset-y: 3.5rem;
 
-    border-radius: 1.25rem;
+    overflow: hidden;
+
     width: calc(var(--symbol-menu-width) + var(--scrollbar-width));
     padding: 0;
-    overflow: hidden;
+    border-radius: 1.25rem;
+
+    transition-duration: 200ms !important;
 
     body:not(.no-menu-blur) & {
       background: var(--color-background-compact-menu);
       backdrop-filter: blur(25px);
     }
-
-    &:not(.open) {
-      transform: scale(0.85) !important;
-    }
-
-    transition-duration: 200ms !important;
   }
 
   .StickerButton.custom-emoji, .sticker-set-cover {
@@ -169,24 +156,20 @@
   }
 
   .picker-disabled {
-    height: var(--symbol-menu-height);
     display: flex;
     align-items: center;
     justify-content: center;
+
+    height: var(--symbol-menu-height);
+
     color: var(--color-text-secondary);
   }
 
   .symbol-close-button {
-    display: none;
     position: absolute;
-    right: max(0.25rem, env(safe-area-inset-right));
     top: max(0.25rem, env(safe-area-inset-top));
-
-    // Target: Old Firefox (Waterfox Classic)
-    @supports not (right: max(0.25rem, env(safe-area-inset-right))) {
-      right: 0.25rem;
-      top: 0.25rem;
-    }
+    right: max(0.25rem, env(safe-area-inset-right));
+    display: none;
   }
 
   @media (orientation: landscape) {
@@ -197,10 +180,10 @@
 }
 
 .symbol-set {
-  margin-bottom: 0.75rem;
   position: relative;
   display: flex;
   flex-direction: column;
+  margin-bottom: 0.75rem;
 
   &-header {
     display: flex;
@@ -209,52 +192,71 @@
     color: rgba(var(--color-text-secondary-rgb), 0.75);
   }
 
-  &-name {
-    font-size: 1rem;
-    line-height: 1.6875rem;
-    font-weight: 500;
-    margin: 0;
-    padding: 0 0.25rem 0.125rem;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    text-align: center;
-    unicode-bidi: plaintext;
+  &-title {
     z-index: 1;
 
+    unicode-bidi: plaintext;
+    overflow: hidden;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+
+    margin: 0;
+    padding: 0 0.25rem 0.125rem;
+
+    font-size: 1rem;
+    font-weight: var(--font-weight-medium);
+    line-height: 1.6875rem;
+
     &-external {
+      margin-right: 0.5rem;
       color: var(--color-text);
       text-align: start;
     }
   }
 
-  &-amount {
-    display: block;
-    font-size: 0.875rem;
-    font-weight: normal;
-    text-align: left;
-    line-height: 1.125rem;
-    margin-top: -0.125rem;
-    margin-bottom: 0.125rem;
-    color: rgba(var(--color-text-secondary-rgb), 0.75);
-    unicode-bidi: plaintext;
-
-    .symbol-set-locked & {
-      padding-left: 1.25rem;
-    }
+  &-name {
+    overflow: hidden;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  &-locked-icon {
-    margin-right: 0.25rem;
+  &-amount {
+    unicode-bidi: plaintext;
+
+    font-size: 0.875rem;
+    font-weight: normal;
+    color: rgba(var(--color-text-secondary-rgb), 0.75);
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  &-chat {
+    padding-inline: 0.25rem;
+    border-radius: 1rem;
+
+    color: var(--color-background);
+    white-space: nowrap;
+
+    background-color: var(--color-text-secondary);
+  }
+
+  &-add-button {
+    margin-bottom: 0.25rem;
   }
 
   &-remove {
-    right: 0;
-    position: absolute;
-    font-size: 1rem;
     cursor: var(--custom-cursor, pointer);
-    border-radius: 50%;
+
+    position: absolute;
+    right: 0;
+
     padding: 0.25rem;
+    border-radius: 50%;
+
+    font-size: 1rem;
+
     transition: background-color 0.15s;
 
     &:active,
@@ -271,28 +273,31 @@
 
   &-button {
     flex-shrink: 0;
+
     width: 2.125rem !important;
     height: 2.125rem;
     margin: 0 0.25rem;
     padding: 0;
   }
 
-  @include while-transition() {
+  @include mixins.while-transition() {
     overflow: hidden;
   }
 }
 
+.effect-emojis.symbol-set-container {
+  --emoji-size: 2.25rem;
+}
+
 .symbol-set-container {
   display: grid !important;
-  justify-content: space-between;
+  grid-auto-rows: var(--emoji-size, 4.5rem);
   grid-template-columns: repeat(auto-fill, var(--emoji-size, 4.5rem));
   row-gap: 0.25rem;
   column-gap: var(--symbol-set-gap-size, 0.625rem);
-  text-align: initial;
+  justify-content: space-between;
 
-  @media (max-width: 600px) {
-    grid-gap: 0.5rem;
-  }
+  text-align: initial;
 
   &:not(.shown) {
     display: block;
@@ -303,7 +308,12 @@
   }
 
   > .EmojiButton,
-  > .StickerButton {
+  > .StickerButton,
+  > .gift-effect-wrapper > .StickerButton {
     margin: 0;
+  }
+
+  @media (max-width: 600px) {
+    gap: 0.5rem;
   }
 }

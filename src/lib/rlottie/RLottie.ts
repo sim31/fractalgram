@@ -1,12 +1,11 @@
 import { animate } from '../../util/animation';
+import {
+  IS_ANDROID, IS_IOS, IS_SAFARI,
+} from '../../util/browser/windowEnvironment';
 import cycleRestrict from '../../util/cycleRestrict';
 import Deferred from '../../util/Deferred';
 import generateUniqueId from '../../util/generateUniqueId';
 import launchMediaWorkers, { MAX_WORKERS } from '../../util/launchMediaWorkers';
-import {
-  DPR, IS_ANDROID, IS_IOS,
-  IS_SAFARI,
-} from '../../util/windowEnvironment';
 import { requestMeasure, requestMutation } from '../fasterdom/fasterdom';
 
 interface Params {
@@ -28,6 +27,7 @@ const LOW_PRIORITY_QUALITY = IS_ANDROID ? 0.5 : 0.75;
 const LOW_PRIORITY_QUALITY_SIZE_THRESHOLD = 24;
 const HIGH_PRIORITY_CACHE_MODULO = IS_SAFARI ? 2 : 4;
 const LOW_PRIORITY_CACHE_MODULO = 0;
+const CANVAS_CLASS = 'rlottie-canvas';
 
 const workers = launchMediaWorkers().map(({ connector }) => connector);
 const instancesByRenderId = new Map<string, RLottie>();
@@ -100,7 +100,6 @@ class RLottie {
     let instance = instancesByRenderId.get(renderId);
 
     if (!instance) {
-      // eslint-disable-next-line prefer-rest-params
       instance = new RLottie(...args);
       instancesByRenderId.set(renderId, instance);
     } else {
@@ -163,6 +162,8 @@ class RLottie {
   }
 
   pause(viewId?: string) {
+    this.lastRenderAt = undefined;
+
     if (viewId) {
       this.views.get(viewId)!.isPaused = true;
 
@@ -248,7 +249,7 @@ class RLottie {
     const frame = this.getFrame(this.prevFrameIndex) || this.getFrame(Math.round(this.approxFrameIndex));
 
     if (frame && frame !== WAITING) {
-      ctx.drawImage(frame, containerInfo.coords!.x, containerInfo.coords!.y);
+      ctx.drawImage(frame, containerInfo.coords.x, containerInfo.coords.y);
     }
   }
 
@@ -279,6 +280,8 @@ class RLottie {
       requestMutation(() => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d')!;
+
+        canvas.classList.add(CANVAS_CLASS);
 
         canvas.style.width = `${size}px`;
         canvas.style.height = `${size}px`;
@@ -336,7 +339,7 @@ class RLottie {
     } = this.params;
 
     // Reduced quality only looks acceptable on high DPR screens
-    return Math.max(DPR * quality, 1);
+    return Math.max(window.devicePixelRatio * quality, 1);
   }
 
   private destroy() {
@@ -502,7 +505,7 @@ class RLottie {
 
       const now = Date.now();
       const currentSpeed = this.lastRenderAt ? this.msPerFrame / (now - this.lastRenderAt) : 1;
-      const delta = Math.min(1, (this.direction * this.speed) / currentSpeed);
+      const delta = (this.direction * this.speed) / currentSpeed;
       const expectedNextFrameIndex = Math.round(this.approxFrameIndex + delta);
 
       this.lastRenderAt = now;

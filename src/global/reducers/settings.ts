@@ -1,13 +1,15 @@
-import type { ApiNotifyException } from '../../api/types';
+import type { ApiNotifyPeerType, ApiPeerNotifySettings } from '../../api/types';
 import type {
-  ISettings, IThemeSettings, NotifyException,
+  AccountSettings, IThemeSettings,
   ThemeKey,
 } from '../../types';
-import type { GlobalState } from '../types';
+import type { GlobalState, SharedState } from '../types';
 
+import { selectSharedSettings } from '../selectors/sharedState';
+import { updateSharedState } from './sharedState';
 import { updateUserBlockedState } from './users';
 
-export function replaceSettings<T extends GlobalState>(global: T, newSettings?: Partial<ISettings>): T {
+export function replaceSettings<T extends GlobalState>(global: T, newSettings?: Partial<AccountSettings>): T {
   return {
     ...global,
     settings: {
@@ -20,17 +22,32 @@ export function replaceSettings<T extends GlobalState>(global: T, newSettings?: 
   };
 }
 
-export function replaceThemeSettings<T extends GlobalState>(
+export function updateSharedSettings<T extends GlobalState>(
+  global: T, newSettings?: Partial<SharedState['settings']>,
+): T {
+  const settings = selectSharedSettings(global);
+  return updateSharedState(global, {
+    settings: {
+      ...settings,
+      ...newSettings,
+    },
+  });
+}
+
+export function updateThemeSettings<T extends GlobalState>(
   global: T, theme: ThemeKey, newSettings?: Partial<IThemeSettings>,
 ): T {
+  const settings = global.settings;
+  const current = settings.themes[theme];
+
   return {
     ...global,
     settings: {
       ...global.settings,
       themes: {
-        ...global.settings.themes,
+        ...settings.themes,
         [theme]: {
-          ...(global.settings.themes[theme] || {}),
+          ...current,
           ...newSettings,
         },
       },
@@ -39,52 +56,63 @@ export function replaceThemeSettings<T extends GlobalState>(
 }
 
 export function addNotifyExceptions<T extends GlobalState>(
-  global: T, notifyExceptions: ApiNotifyException[],
-): T {
-  notifyExceptions.forEach((notifyException) => {
-    const { chatId, ...exceptionData } = notifyException;
-    global = addNotifyException(global, chatId, exceptionData);
-  });
-
-  return global;
-}
-
-export function addNotifyException<T extends GlobalState>(
-  global: T, id: string, notifyException: NotifyException,
+  global: T, notifyExceptionById: Record<string, ApiPeerNotifySettings>,
 ): T {
   return {
     ...global,
-    settings: {
-      ...global.settings,
-      notifyExceptions: {
-        ...global.settings.notifyExceptions,
+    chats: {
+      ...global.chats,
+      notifyExceptionById: {
+        ...global.chats.notifyExceptionById,
+        ...notifyExceptionById,
+      },
+    },
+  };
+}
+
+export function replaceNotifyExceptions<T extends GlobalState>(
+  global: T, notifyExceptionById: Record<string, ApiPeerNotifySettings>,
+): T {
+  return {
+    ...global,
+    chats: {
+      ...global.chats,
+      notifyExceptionById,
+    },
+  };
+}
+
+export function addNotifyException<T extends GlobalState>(
+  global: T, id: string, notifyException: ApiPeerNotifySettings,
+): T {
+  return {
+    ...global,
+    chats: {
+      ...global.chats,
+      notifyExceptionById: {
+        ...global.chats.notifyExceptionById,
         [id]: notifyException,
       },
     },
   };
 }
 
-// eslint-disable-next-line consistent-return
-export function updateNotifySettings<T extends GlobalState>(
-  global: T, peerType: 'contact' | 'group' | 'broadcast', isSilent?: boolean, shouldShowPreviews?: boolean,
+export function updateNotifyDefaults<T extends GlobalState>(
+  global: T, peerType: ApiNotifyPeerType, settings: Partial<ApiPeerNotifySettings>,
 ): T {
-  switch (peerType) {
-    case 'contact':
-      return replaceSettings(global, {
-        ...(typeof isSilent !== 'undefined' && { hasPrivateChatsNotifications: !isSilent }),
-        ...(typeof shouldShowPreviews !== 'undefined' && { hasPrivateChatsMessagePreview: shouldShowPreviews }),
-      });
-    case 'group':
-      return replaceSettings(global, {
-        ...(typeof isSilent !== 'undefined' && { hasGroupNotifications: !isSilent }),
-        ...(typeof shouldShowPreviews !== 'undefined' && { hasGroupMessagePreview: shouldShowPreviews }),
-      });
-    case 'broadcast':
-      return replaceSettings(global, {
-        ...(typeof isSilent !== 'undefined' && { hasBroadcastNotifications: !isSilent }),
-        ...(typeof shouldShowPreviews !== 'undefined' && { hasBroadcastMessagePreview: shouldShowPreviews }),
-      });
-  }
+  return {
+    ...global,
+    settings: {
+      ...global.settings,
+      notifyDefaults: {
+        ...global.settings.notifyDefaults,
+        [peerType]: {
+          ...global.settings.notifyDefaults?.[peerType],
+          ...settings,
+        },
+      },
+    },
+  };
 }
 
 export function addBlockedUser<T extends GlobalState>(global: T, contactId: string): T {

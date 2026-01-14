@@ -1,11 +1,12 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback, useMemo } from '../../../lib/teact/teact';
+import { memo, useCallback, useMemo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiChat, ApiMessage } from '../../../api/types';
 import { LoadMoreDirection } from '../../../types';
 
 import { selectTabState } from '../../../global/selectors';
+import { parseSearchResultKey, type SearchResultKey } from '../../../util/keys/searchResultKey';
 import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
 import { throttle } from '../../../util/schedulers';
 import { renderMessageSummary } from '../../common/helpers/renderMessageText';
@@ -28,7 +29,7 @@ export type OwnProps = {
 
 type StateProps = {
   currentUserId?: string;
-  foundIds?: string[];
+  foundIds?: SearchResultKey[];
   globalMessagesByChatId?: Record<string, { byId: Record<number, ApiMessage> }>;
   chatsById: Record<string, ApiChat>;
   fetchingStatus?: { chats?: boolean; messages?: boolean };
@@ -50,7 +51,7 @@ const ChatMessageResults: FC<OwnProps & StateProps> = ({
   onSearchDateSelect,
   onReset,
 }) => {
-  const { searchMessagesGlobal, openChat } = getActions();
+  const { searchMessagesGlobal, openThread } = getActions();
 
   const lang = useLang();
   const { isMobile } = useAppLayout();
@@ -68,13 +69,14 @@ const ChatMessageResults: FC<OwnProps & StateProps> = ({
 
   const handleTopicClick = useCallback(
     (id: number) => {
-      openChat({ id: searchChatId, threadId: id, shouldReplaceHistory: true });
+      if (!searchChatId) return;
+      openThread({ chatId: searchChatId, threadId: id, shouldReplaceHistory: true });
 
       if (!isMobile) {
         onReset();
       }
     },
-    [openChat, searchChatId, isMobile, onReset],
+    [searchChatId, isMobile, onReset],
   );
 
   const foundMessages = useMemo(() => {
@@ -84,9 +86,9 @@ const ChatMessageResults: FC<OwnProps & StateProps> = ({
 
     return foundIds
       .map((id) => {
-        const [chatId, messageId] = id.split('_');
+        const [chatId, messageId] = parseSearchResultKey(id);
 
-        return globalMessagesByChatId?.[chatId]?.byId[Number(messageId)];
+        return globalMessagesByChatId?.[chatId]?.byId[messageId];
       })
       .filter(Boolean)
       .sort((a, b) => b.date - a.date);
@@ -113,7 +115,7 @@ const ChatMessageResults: FC<OwnProps & StateProps> = ({
     && !foundTopicIds?.length;
 
   return (
-    <div className="LeftSearch">
+    <div className="LeftSearch--content">
       <InfiniteScroll
         className="search-content custom-scroll chat-list"
         items={foundMessages}
@@ -130,16 +132,17 @@ const ChatMessageResults: FC<OwnProps & StateProps> = ({
         )}
         {nothingFound && (
           <NothingFound
-            text={lang('ChatList.Search.NoResults')}
-            description={lang('ChatList.Search.NoResultsDescription')}
+            withSticker
+            text={lang('ChatListSearchNoResults')}
+            description={lang('ChatListSearchNoResultsDescription')}
           />
         )}
         {Boolean(foundTopicIds?.length) && (
           <div className="pb-2">
             <h3 className="section-heading topic-search-heading" dir={lang.isRtl ? 'auto' : undefined}>
-              {lang('Topics')}
+              {lang('SearchResultTopics')}
             </h3>
-            {foundTopicIds!.map((id) => {
+            {foundTopicIds.map((id) => {
               return (
                 <LeftSearchResultTopic
                   chatId={searchChatId!}
@@ -164,7 +167,7 @@ const ChatMessageResults: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const { byId: chatsById } = global.chats;
     const { currentUserId, messages: { byChatId: globalMessagesByChatId } } = global;
     const {

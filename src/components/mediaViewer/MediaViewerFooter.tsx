@@ -1,16 +1,20 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { useEffect, useState } from '../../lib/teact/teact';
+import type React from '../../lib/teact/teact';
+import { useEffect, useState } from '../../lib/teact/teact';
 
 import type { TextPart } from '../../types';
 
+import { IS_TOUCH_ENV } from '../../util/browser/windowEnvironment';
 import buildClassName from '../../util/buildClassName';
 import { throttle } from '../../util/schedulers';
-import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
 import { REM } from '../common/helpers/mediaDimensions';
 
 import useAppLayout from '../../hooks/useAppLayout';
 import useDerivedState from '../../hooks/useDerivedState';
+import useLastCallback from '../../hooks/useLastCallback';
 import useControlsSignal from './hooks/useControlsSignal';
+
+import Button from '../ui/Button';
 
 import './MediaViewerFooter.scss';
 
@@ -18,14 +22,16 @@ const RESIZE_THROTTLE_MS = 500;
 
 type OwnProps = {
   text: TextPart | TextPart[];
-  onClick: () => void;
+  buttonText?: string;
+  onClick: (e: React.MouseEvent<HTMLDivElement>) => void;
+  handleSponsoredClick: (isFromMedia?: boolean) => void;
   isForVideo: boolean;
   isForceMobileVersion?: boolean;
   isProtected?: boolean;
 };
 
 const MediaViewerFooter: FC<OwnProps> = ({
-  text = '', isForVideo, onClick, isProtected, isForceMobileVersion,
+  text = '', buttonText, isForVideo, onClick, handleSponsoredClick, isProtected, isForceMobileVersion,
 }) => {
   const [isMultiline, setIsMultiline] = useState(false);
   const { isMobile } = useAppLayout();
@@ -33,7 +39,7 @@ const MediaViewerFooter: FC<OwnProps> = ({
   const isHidden = useDerivedState(() => (IS_TOUCH_ENV ? !getIsVisible() : false), [getIsVisible]);
 
   useEffect(() => {
-    const footerContent = document.querySelector('.MediaViewerFooter .media-text') as HTMLDivElement | null;
+    const footerContent = document.querySelector('.MediaViewerFooter .media-text');
 
     const checkIsMultiline = () => {
       const height = footerContent ? footerContent.clientHeight : 0;
@@ -59,6 +65,10 @@ const MediaViewerFooter: FC<OwnProps> = ({
     }
   }
 
+  const onButtonClick = useLastCallback(() => {
+    handleSponsoredClick();
+  });
+
   const classNames = buildClassName(
     'MediaViewerFooter',
     isForVideo && 'is-for-video',
@@ -75,6 +85,17 @@ const MediaViewerFooter: FC<OwnProps> = ({
             {text}
           </p>
         </div>
+      )}
+      {Boolean(buttonText) && (
+        <Button
+          className={buildClassName('media-viewer-footer-content', 'media-viewer-button')}
+          size="default"
+          color="primary"
+          isRectangular
+          onClick={onButtonClick}
+        >
+          {buttonText}
+        </Button>
       )}
     </div>
   );

@@ -6,6 +6,28 @@
     }
   }
 
+  .repeat-mode {
+    position: relative;
+
+    .repeat-mode-button {
+      margin-bottom: 0.5rem;
+    }
+
+    .drop-down-icon {
+      transition: transform 0.3s ease;
+    }
+
+    .expanded-icon {
+      transform: rotate(-180deg);
+    }
+
+    .repeated-mode-transition-slide {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+  }
+
   .timepicker {
     display: flex;
     align-items: center;
@@ -27,8 +49,17 @@
 
   .footer {
     display: flex;
-    justify-content: flex-end;
     flex-direction: column;
+    justify-content: flex-end;
+
+    .description {
+      min-height: 2.75rem;
+      margin-bottom: 1rem;
+      margin-left: 1rem;
+
+      font-size: 0.875rem;
+      color: var(--color-text-secondary);
+    }
 
     .Button {
       text-transform: none;
@@ -39,44 +70,53 @@
     }
   }
 
+  .container {
+    margin-top: 0.1875rem;
+  }
+
   .month-selector {
     display: flex;
     align-items: center;
 
     h4 {
       flex: 1;
-      margin: 0 0 0 1.25rem;
+      margin: 0 0 0 2.25rem;
       font-size: 1.25rem;
-
-      @media (max-width: 600px) {
-        margin-left: 0.75rem;
-      }
 
       & ~ .Button {
         color: var(--color-primary);
       }
+
+      @media (max-width: 600px) {
+        margin-left: 0.75rem;
+      }
     }
 
     .Button.hidden {
-      opacity: 0.5;
       pointer-events: none;
+      opacity: 0.5;
     }
   }
 
   .day-button {
     position: relative;
-    border-radius: 4rem;
-    outline: none !important;
-    font-weight: 500;
-    margin: 0.125rem 0.625rem;
 
-    @media (max-width: 600px) {
-      margin: 0.25rem 0.375rem;
+    margin: 0.125rem 0.625rem;
+    border-radius: 4rem;
+
+    font-weight: var(--font-weight-medium);
+
+    outline: none !important;
+
+    &::before {
+      content: "";
+      display: block;
+      padding-top: 100%;
     }
 
     &.weekday {
-      margin-bottom: 0;
       height: 1rem;
+      margin-bottom: 0;
     }
 
     &.clickable {
@@ -87,32 +127,33 @@
       }
 
       &.selected {
-        background-color: var(--color-primary);
         color: white;
+        background-color: var(--color-primary);
       }
     }
 
     &.disabled {
-      opacity: 0.25;
       pointer-events: none;
-    }
-
-    &::before {
-      content: "";
-      display: block;
-      padding-top: 100%;
+      opacity: 0.25;
     }
 
     span {
       position: absolute;
       top: 0;
       left: 0;
-      width: 100%;
-      height: 100%;
+
       display: flex;
       align-items: center;
       justify-content: center;
+
+      width: 100%;
+      height: 100%;
+
       font-size: 0.875rem;
+    }
+
+    @media (max-width: 600px) {
+      margin: 0.25rem 0.375rem;
     }
   }
 
@@ -120,6 +161,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+
     min-height: 17rem;
     margin: 1.5rem -0.5rem 0.5rem;
   }

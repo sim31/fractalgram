@@ -1,30 +1,23 @@
-import type { RefObject } from 'react';
+import type { ElementRef } from '../lib/teact/teact';
 import { useEffect } from '../lib/teact/teact';
 
-import { requestMutation } from '../lib/fasterdom/fasterdom';
-import useAppLayout from './useAppLayout';
+import { requestMeasure } from '../lib/fasterdom/fasterdom';
+import { IS_TOUCH_ENV } from '../util/browser/windowEnvironment';
+import focusNoScroll from '../util/focusNoScroll';
 
-// Focus slows down animation, also it breaks transition layout in Chrome
-const FOCUS_DELAY_MS = 500;
 const MODAL_HIDE_DELAY_MS = 300;
 
 export default function useInputFocusOnOpen(
-  inputRef: RefObject<HTMLInputElement | HTMLTextAreaElement>,
+  inputRef: ElementRef<HTMLInputElement | HTMLTextAreaElement>,
   isOpen?: boolean,
   onClose?: NoneToVoidFunction,
 ) {
-  const { isMobile } = useAppLayout();
-
   useEffect(() => {
     if (isOpen) {
-      if (!isMobile) {
-        setTimeout(() => {
-          requestMutation(() => {
-            if (inputRef.current?.isConnected) {
-              inputRef.current.focus();
-            }
-          });
-        }, FOCUS_DELAY_MS);
+      if (!IS_TOUCH_ENV && inputRef.current?.isConnected) {
+        requestMeasure(() => {
+          focusNoScroll(inputRef.current);
+        });
       }
     } else {
       if (inputRef.current?.isConnected) {
@@ -35,5 +28,5 @@ export default function useInputFocusOnOpen(
         setTimeout(onClose, MODAL_HIDE_DELAY_MS);
       }
     }
-  }, [inputRef, isMobile, isOpen, onClose]);
+  }, [inputRef, isOpen, onClose]);
 }

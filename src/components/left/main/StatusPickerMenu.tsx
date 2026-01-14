@@ -1,6 +1,5 @@
-import type { RefObject } from 'react';
-import type { FC } from '../../../lib/teact/teact';
-import React, {
+import type { ElementRef } from '../../../lib/teact/teact';
+import {
   memo, useCallback, useEffect, useRef,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
@@ -8,8 +7,6 @@ import { getActions, withGlobal } from '../../../global';
 import type { ApiSticker } from '../../../api/types';
 
 import { selectIsContextMenuTranslucent } from '../../../global/selectors';
-
-import useFlag from '../../../hooks/useFlag';
 
 import CustomEmojiPicker from '../../common/CustomEmojiPicker';
 import Menu from '../../ui/Menu';
@@ -19,7 +16,7 @@ import styles from './StatusPickerMenu.module.scss';
 
 export type OwnProps = {
   isOpen: boolean;
-  statusButtonRef: RefObject<HTMLButtonElement>;
+  statusButtonRef: ElementRef<HTMLButtonElement>;
   onEmojiStatusSelect: (emojiStatus: ApiSticker) => void;
   onClose: () => void;
 };
@@ -29,18 +26,17 @@ interface StateProps {
   isTranslucent?: boolean;
 }
 
-const StatusPickerMenu: FC<OwnProps & StateProps> = ({
+const StatusPickerMenu = ({
   isOpen,
   statusButtonRef,
   areFeaturedStickersLoaded,
   isTranslucent,
   onEmojiStatusSelect,
   onClose,
-}) => {
+}: OwnProps & StateProps) => {
   const { loadFeaturedEmojiStickers } = getActions();
 
-  const transformOriginX = useRef<number>();
-  const [isContextMenuShown, markContextMenuShown, unmarkContextMenuShown] = useFlag();
+  const transformOriginX = useRef<number>(0);
   useEffect(() => {
     transformOriginX.current = statusButtonRef.current!.getBoundingClientRect().right;
   }, [isOpen, statusButtonRef]);
@@ -61,11 +57,10 @@ const StatusPickerMenu: FC<OwnProps & StateProps> = ({
       <Menu
         isOpen={isOpen}
         noCompact
-        positionX="right"
+        positionX="left"
         bubbleClassName={styles.menuContent}
         onClose={onClose}
         transformOriginX={transformOriginX.current}
-        noCloseOnBackdrop={isContextMenuShown}
       >
         <CustomEmojiPicker
           idPrefix="status-emoji-set-"
@@ -73,17 +68,15 @@ const StatusPickerMenu: FC<OwnProps & StateProps> = ({
           isHidden={!isOpen}
           isStatusPicker
           isTranslucent={isTranslucent}
-          onContextMenuOpen={markContextMenuShown}
-          onContextMenuClose={unmarkContextMenuShown}
+          onDismiss={onClose}
           onCustomEmojiSelect={handleEmojiSelect}
-          onContextMenuClick={onClose}
         />
       </Menu>
     </Portal>
   );
 };
 
-export default memo(withGlobal<OwnProps>((global): StateProps => {
+export default memo(withGlobal<OwnProps>((global): Complete<StateProps> => {
   return {
     areFeaturedStickersLoaded: Boolean(global.customEmojis.featuredIds?.length),
     isTranslucent: selectIsContextMenuTranslucent(global),

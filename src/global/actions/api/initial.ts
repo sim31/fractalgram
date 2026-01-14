@@ -1,8 +1,8 @@
 import type { ActionReturnType } from '../../types';
+import { ManagementProgress } from '../../../types';
 
 import {
   CUSTOM_BG_CACHE_NAME,
-  IS_TEST,
   LANG_CACHE_NAME,
   LOCK_SCREEN_ANIMATION_DURATION_MS,
   MEDIA_CACHE_NAME,
@@ -10,138 +10,175 @@ import {
   MEDIA_PROGRESSIVE_CACHE_NAME,
 } from '../../../config';
 import { updateAppBadge } from '../../../util/appBadge';
+import { PASSCODE_IDB_STORE } from '../../../util/browser/idb';
+import { toCredentialRequestOptions } from '../../../util/browser/passkeys';
+import {
+  IS_WEBAUTHN_SUPPORTED,
+  IS_WEBM_SUPPORTED, MAX_BUFFER_SIZE, PLATFORM_ENV,
+} from '../../../util/browser/windowEnvironment';
 import * as cacheApi from '../../../util/cacheApi';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
-import { buildCollectionByKey } from '../../../util/iteratees';
+import { ACCOUNT_SLOT, getAccountsInfo } from '../../../util/multiaccount';
 import { unsubscribe } from '../../../util/notifications';
 import { clearEncryptedSession, encryptSession, forgetPasscode } from '../../../util/passcode';
-import { parseInitialLocationHash, resetInitialLocationHash } from '../../../util/routing';
+import { parseInitialLocationHash, resetInitialLocationHash, resetLocationHash } from '../../../util/routing';
+import { pause } from '../../../util/schedulers';
 import {
-  clearLegacySessions,
   clearStoredSession,
-  importLegacySession,
   loadStoredSession,
   storeSession,
 } from '../../../util/sessions';
 import { forceWebsync } from '../../../util/websync';
 import {
-  IS_WEBM_SUPPORTED, MAX_BUFFER_SIZE, PLATFORM_ENV,
-} from '../../../util/windowEnvironment';
-import {
   callApi, callApiLocal, initApi, setShouldEnableDebugLog,
 } from '../../../api/gramjs';
-import { serializeGlobal } from '../../cache';
+import { removeGlobalFromCache, removeSharedStateFromCache, serializeGlobal } from '../../cache';
 import {
   addActionHandler, getGlobal, setGlobal,
 } from '../../index';
-import { addUsers, clearGlobalForLockScreen, updatePasscodeSettings } from '../../reducers';
+import {
+  clearGlobalForLockScreen, updateManagementProgress, updatePasscodeSettings,
+} from '../../reducers';
+import { updateAuth } from '../../reducers/auth';
+import { selectSharedSettings } from '../../selectors/sharedState';
+import { destroySharedStatePort } from '../../shared/sharedStateConnector';
 
-addActionHandler('initApi', async (global, actions): Promise<void> => {
-  if (!IS_TEST) {
-    await importLegacySession();
-    void clearLegacySessions();
-  }
-
+addActionHandler('initApi', (global, actions): ActionReturnType => {
   const initialLocationHash = parseInitialLocationHash();
+  const {
+    shouldAllowHttpTransport,
+    shouldForceHttpTransport,
+    shouldDebugExportedSenders,
+    shouldCollectDebugLogs,
+    language,
+  } = selectSharedSettings(global);
+
+  const hasTestParam = window.location.search.includes('test') || initialLocationHash?.tgWebAuthTest === '1';
+
+  const isTestServer = global.config?.isTestServer;
+  const accountsInfo = getAccountsInfo();
+  const accountIds = Object.values(accountsInfo)
+    .filter((info) => info.isTest === isTestServer)
+    .map(({ userId }) => userId)
+    .filter(Boolean);
 
   void initApi(actions.apiUpdate, {
     userAgent: navigator.userAgent,
     platform: PLATFORM_ENV,
     sessionData: loadStoredSession(),
-    isTest: window.location.search.includes('test') || initialLocationHash?.tgWebAuthTest === '1',
     isWebmSupported: IS_WEBM_SUPPORTED,
     maxBufferSize: MAX_BUFFER_SIZE,
     webAuthToken: initialLocationHash?.tgWebAuthToken,
     dcId: initialLocationHash?.tgWebAuthDcId ? Number(initialLocationHash?.tgWebAuthDcId) : undefined,
     mockScenario: initialLocationHash?.mockScenario,
-    shouldAllowHttpTransport: global.settings.byKey.shouldAllowHttpTransport,
-    shouldForceHttpTransport: global.settings.byKey.shouldForceHttpTransport,
-    shouldDebugExportedSenders: global.settings.byKey.shouldDebugExportedSenders,
+    shouldAllowHttpTransport,
+    shouldForceHttpTransport,
+    shouldDebugExportedSenders,
+    langCode: language,
+    isTestServerRequested: hasTestParam,
+    accountIds,
+    hasPasskeySupport: IS_WEBAUTHN_SUPPORTED,
   });
 
-  void setShouldEnableDebugLog(Boolean(global.settings.byKey.shouldCollectDebugLogs));
+  void setShouldEnableDebugLog(Boolean(shouldCollectDebugLogs));
 });
 
 addActionHandler('setAuthPhoneNumber', (global, actions, payload): ActionReturnType => {
-  const { phoneNumber } = payload!;
+  const { phoneNumber } = payload;
 
   void callApi('provideAuthPhoneNumber', phoneNumber.replace(/[^\d]/g, ''));
 
-  return {
-    ...global,
-    authIsLoading: true,
-    authError: undefined,
-  };
+  return updateAuth(global, {
+    isLoading: true,
+    errorKey: undefined,
+  });
 });
 
 addActionHandler('setAuthCode', (global, actions, payload): ActionReturnType => {
-  const { code } = payload!;
+  const { code } = payload;
 
   void callApi('provideAuthCode', code);
 
-  return {
-    ...global,
-    authIsLoading: true,
-    authError: undefined,
-  };
+  return updateAuth(global, {
+    isLoading: true,
+    errorKey: undefined,
+  });
 });
 
 addActionHandler('setAuthPassword', (global, actions, payload): ActionReturnType => {
-  const { password } = payload!;
+  const { password } = payload;
 
   void callApi('provideAuthPassword', password);
 
-  return {
-    ...global,
-    authIsLoading: true,
-    authError: undefined,
-  };
+  return updateAuth(global, {
+    isLoading: true,
+    errorKey: undefined,
+  });
+});
+
+addActionHandler('loginWithPasskey', async (global, actions, payload): Promise<void> => {
+  const passkeyOption = global.auth.passkeyOption;
+  if (!passkeyOption) return;
+
+  const credential = await navigator.credentials.get(toCredentialRequestOptions(passkeyOption)).catch((e: unknown) => {
+    actions.showNotification({
+      message: {
+        key: 'PasskeyLoginError',
+      },
+      tabId: getCurrentTabId(),
+    });
+  });
+  if (!credential) return;
+
+  const publicKeyCredential = credential as PublicKeyCredential;
+  callApi('restartAuthWithPasskey', publicKeyCredential.toJSON());
 });
 
 addActionHandler('uploadProfilePhoto', async (global, actions, payload): Promise<void> => {
   const {
-    file, isFallback, isVideo, videoTs,
-  } = payload!;
+    file, isFallback, isVideo, videoTs, bot,
+    tabId = getCurrentTabId(),
+  } = payload;
 
-  const result = await callApi('uploadProfilePhoto', file, isFallback, isVideo, videoTs);
+  global = updateManagementProgress(global, ManagementProgress.InProgress, tabId);
+  setGlobal(global);
+
+  const result = await callApi('uploadProfilePhoto', file, isFallback, isVideo, videoTs, bot);
   if (!result) return;
 
   global = getGlobal();
-  global = addUsers(global, buildCollectionByKey(result.users, 'id'));
+  global = updateManagementProgress(global, ManagementProgress.Complete, tabId);
   setGlobal(global);
 
   actions.loadFullUser({ userId: global.currentUserId! });
 });
 
 addActionHandler('signUp', (global, actions, payload): ActionReturnType => {
-  const { firstName, lastName } = payload!;
+  const { firstName, lastName } = payload;
 
   void callApi('provideAuthRegistration', { firstName, lastName });
 
-  return {
-    ...global,
-    authIsLoading: true,
-    authError: undefined,
-  };
+  return updateAuth(global, {
+    isLoading: true,
+    errorKey: undefined,
+  });
 });
 
 addActionHandler('returnToAuthPhoneNumber', (global): ActionReturnType => {
   void callApi('restartAuth');
 
-  return {
-    ...global,
-    authError: undefined,
-  };
+  return updateAuth(global, {
+    errorKey: undefined,
+  });
 });
 
 addActionHandler('goToAuthQrCode', (global): ActionReturnType => {
   void callApi('restartAuthWithQr');
 
-  return {
-    ...global,
-    authIsLoadingQrCode: true,
-    authError: undefined,
-  };
+  return updateAuth(global, {
+    isLoadingQrCode: true,
+    errorKey: undefined,
+  });
 });
 
 addActionHandler('saveSession', (global, actions, payload): ActionReturnType => {
@@ -151,7 +188,7 @@ addActionHandler('saveSession', (global, actions, payload): ActionReturnType => 
 
   const { sessionData } = payload;
   if (sessionData) {
-    storeSession(sessionData, global.currentUserId);
+    storeSession(sessionData);
   } else {
     clearStoredSession();
   }
@@ -163,8 +200,9 @@ addActionHandler('signOut', async (global, actions, payload): Promise<void> => {
 
   try {
     resetInitialLocationHash();
+    resetLocationHash();
     await unsubscribe();
-    await callApi('destroy');
+    await Promise.race([callApi('destroy'), pause(3000)]);
     await forceWebsync(false);
   } catch (err) {
     // Do nothing
@@ -184,7 +222,7 @@ addActionHandler('requestChannelDifference', (global, actions, payload): ActionR
 });
 
 addActionHandler('reset', (global, actions): ActionReturnType => {
-  clearStoredSession();
+  clearStoredSession(ACCOUNT_SLOT);
   clearEncryptedSession();
 
   void cacheApi.clear(MEDIA_CACHE_NAME);
@@ -192,13 +230,21 @@ addActionHandler('reset', (global, actions): ActionReturnType => {
   void cacheApi.clear(MEDIA_PROGRESSIVE_CACHE_NAME);
   void cacheApi.clear(CUSTOM_BG_CACHE_NAME);
 
+  removeGlobalFromCache();
+  destroySharedStatePort();
+
+  // Check if there are any accounts left
+  const accounts = getAccountsInfo();
+  if (!Object.values(accounts).length) {
+    PASSCODE_IDB_STORE.clear();
+    removeSharedStateFromCache();
+  }
+
   const langCachePrefix = LANG_CACHE_NAME.replace(/\d+$/, '');
   const langCacheVersion = Number((LANG_CACHE_NAME.match(/\d+$/) || ['0'])[0]);
   for (let i = 0; i < langCacheVersion; i++) {
     void cacheApi.clear(`${langCachePrefix}${i === 0 ? '' : i}`);
   }
-
-  void clearLegacySessions();
 
   updateAppBadge(0);
 
@@ -224,18 +270,18 @@ addActionHandler('loadNearestCountry', async (global): Promise<void> => {
   const authNearestCountry = await callApi('fetchNearestCountry');
 
   global = getGlobal();
-  global = {
-    ...global,
-    authNearestCountry,
-  };
+  global = updateAuth(global, {
+    nearestCountry: authNearestCountry,
+  });
   setGlobal(global);
 });
 
-addActionHandler('setDeviceToken', (global, actions, deviceToken): ActionReturnType => {
+addActionHandler('setDeviceToken', (global, actions, payload): ActionReturnType => {
+  const { token } = payload;
   return {
     ...global,
     push: {
-      deviceToken,
+      deviceToken: token,
       subscribedAt: Date.now(),
     },
   };
@@ -250,7 +296,7 @@ addActionHandler('deleteDeviceToken', (global): ActionReturnType => {
 
 addActionHandler('lockScreen', async (global): Promise<void> => {
   const sessionJson = JSON.stringify({ ...loadStoredSession(), userId: global.currentUserId });
-  const globalJson = await serializeGlobal(global);
+  const globalJson = serializeGlobal(global);
 
   await encryptSession(sessionJson, globalJson);
   forgetPasscode();

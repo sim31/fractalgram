@@ -1,5 +1,4 @@
-import type { FC } from '../../lib/teact/teact';
-import React, { memo } from '../../lib/teact/teact';
+import { memo } from '../../lib/teact/teact';
 
 import type { ApiFakeType } from '../../api/types';
 
@@ -11,9 +10,9 @@ type OwnProps = {
   fakeType: ApiFakeType;
 };
 
-const FakeIcon: FC<OwnProps> = ({
+const FakeIcon = ({
   fakeType,
-}) => {
+}: OwnProps) => {
   const lang = useLang();
 
   return (

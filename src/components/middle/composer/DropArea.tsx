@@ -1,13 +1,18 @@
-import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useEffect, useRef } from '../../../lib/teact/teact';
+import { memo, useEffect, useRef } from '../../../lib/teact/teact';
+import { getActions } from '../../../global';
 
+import type { ApiMessage } from '../../../api/types';
+
+import { canReplaceMessageMedia } from '../../../global/helpers';
 import buildClassName from '../../../util/buildClassName';
 import captureEscKeyListener from '../../../util/captureEscKeyListener';
+import buildAttachment from './helpers/buildAttachment';
 import getFilesFromDataTransferItems from './helpers/getFilesFromDataTransferItems';
 
+import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
-import usePrevious from '../../../hooks/usePrevious';
-import useShowTransition from '../../../hooks/useShowTransition';
+import usePreviousDeprecated from '../../../hooks/usePreviousDeprecated';
+import useShowTransitionDeprecated from '../../../hooks/useShowTransitionDeprecated';
 
 import Portal from '../../ui/Portal';
 import DropTarget from './DropTarget';
@@ -17,8 +22,9 @@ import './DropArea.scss';
 export type OwnProps = {
   isOpen: boolean;
   withQuick?: boolean;
+  editingMessage?: ApiMessage | undefined;
   onHide: NoneToVoidFunction;
-  onFileSelect: (files: File[], suggestCompression?: boolean) => void;
+  onFileSelect: (files: File[]) => void;
 };
 
 export enum DropAreaState {
@@ -29,13 +35,14 @@ export enum DropAreaState {
 
 const DROP_LEAVE_TIMEOUT_MS = 150;
 
-const DropArea: FC<OwnProps> = ({
-  isOpen, withQuick, onHide, onFileSelect,
-}) => {
-  // eslint-disable-next-line no-null/no-null
-  const hideTimeoutRef = useRef<number>(null);
-  const prevWithQuick = usePrevious(withQuick);
-  const { shouldRender, transitionClassNames } = useShowTransition(isOpen);
+const DropArea = ({
+  isOpen, withQuick, editingMessage, onHide, onFileSelect,
+}: OwnProps) => {
+  const lang = useLang();
+  const { showNotification, updateAttachmentSettings } = getActions();
+  const hideTimeoutRef = useRef<number>();
+  const prevWithQuick = usePreviousDeprecated(withQuick);
+  const { shouldRender, transitionClassNames } = useShowTransitionDeprecated(isOpen);
 
   useEffect(() => (isOpen ? captureEscKeyListener(onHide) : undefined), [isOpen, onHide]);
 
@@ -52,16 +59,50 @@ const DropArea: FC<OwnProps> = ({
       }
     }
 
+    if (editingMessage) {
+      if (files.length > 1) {
+        showNotification({ message: lang('MediaReplaceInvalidError', undefined, { pluralValue: files.length }) });
+        return;
+      }
+
+      if (files.length === 1) {
+        const newAttachment = await buildAttachment(files[0].name, files[0]);
+        const canReplace = editingMessage && newAttachment && canReplaceMessageMedia(editingMessage, newAttachment);
+        if (!canReplace) {
+          showNotification({ message: lang('MediaReplaceInvalidError', undefined, { pluralValue: files.length }) });
+          return;
+        }
+      }
+    }
+
     onHide();
-    onFileSelect(files, withQuick ? false : undefined);
+    updateAttachmentSettings({ shouldCompress: withQuick ? false : undefined });
+    onFileSelect(files);
   });
 
-  const handleQuickFilesDrop = useLastCallback((e: React.DragEvent<HTMLDivElement>) => {
+  const handleQuickFilesDrop = useLastCallback(async (e: React.DragEvent<HTMLDivElement>) => {
     const { dataTransfer: dt } = e;
 
     if (dt.files && dt.files.length > 0) {
+      const files = Array.from(dt.files);
+      if (editingMessage) {
+        if (files.length > 1) {
+          showNotification({ message: lang('MediaReplaceInvalidError', undefined, { pluralValue: files.length }) });
+          return;
+        }
+        if (files.length === 1) {
+          const newAttachment = await buildAttachment(files[0].name, files[0]);
+          const canReplace = editingMessage && newAttachment && canReplaceMessageMedia(editingMessage, newAttachment);
+          if (!canReplace) {
+            showNotification({ message: lang('MediaReplaceInvalidError', undefined, { pluralValue: files.length }) });
+            return;
+          }
+        }
+      }
+
       onHide();
-      onFileSelect(Array.from(dt.files), true);
+      updateAttachmentSettings({ shouldCompress: true });
+      onFileSelect(files);
     }
   });
 
@@ -71,7 +112,11 @@ const DropArea: FC<OwnProps> = ({
     const { target: fromTarget, relatedTarget: toTarget } = e;
 
     // Esc button pressed during drag event
-    if ((fromTarget as HTMLDivElement).matches('.DropTarget, .DropArea') && !toTarget) {
+    if (
+      (fromTarget as HTMLDivElement).matches('.DropTarget, .DropArea') && (
+        !toTarget || !(toTarget as HTMLDivElement).matches('.DropTarget, .DropArea')
+      )
+    ) {
       hideTimeoutRef.current = window.setTimeout(() => {
         onHide();
       }, DROP_LEAVE_TIMEOUT_MS);
@@ -96,7 +141,7 @@ const DropArea: FC<OwnProps> = ({
   );
 
   return (
-    <Portal containerId="#middle-column-portals">
+    <Portal containerSelector="#middle-column-portals">
       <div
         className={className}
         onDragLeave={handleDragLeave}

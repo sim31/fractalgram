@@ -1,36 +1,37 @@
 import type { TeactNode } from '../../../lib/teact/teact';
-import React from '../../../lib/teact/teact';
 
 import type { TextPart } from '../../../types';
 
-import {
-  BASE_URL, IS_ELECTRON_BUILD, RE_LINK_TEMPLATE, RE_MENTION_TEMPLATE,
-} from '../../../config';
+import { RE_LINK_TEMPLATE, RE_MENTION_TEMPLATE } from '../../../config';
 import EMOJI_REGEX from '../../../lib/twemojiRegex';
+import { IS_EMOJI_SUPPORTED } from '../../../util/browser/windowEnvironment';
 import buildClassName from '../../../util/buildClassName';
+import { isDeepLink } from '../../../util/deepLinkParser';
 import {
-  fixNonStandardEmoji,
   handleEmojiLoad,
   LOADED_EMOJIS,
   nativeToUnifiedExtendedWithCache,
-} from '../../../util/emoji';
+} from '../../../util/emoji/emoji';
+import fixNonStandardEmoji from '../../../util/emoji/fixNonStandardEmoji';
 import { compact } from '../../../util/iteratees';
-import { IS_EMOJI_SUPPORTED } from '../../../util/windowEnvironment';
 
 import MentionLink from '../../middle/message/MentionLink';
 import SafeLink from '../SafeLink';
 
 export type TextFilter = (
   'escape_html' | 'hq_emoji' | 'emoji' | 'emoji_html' | 'br' | 'br_html' | 'highlight' | 'links' |
-  'simple_markdown' | 'simple_markdown_html'
-  );
+  'simple_markdown' | 'simple_markdown_html' | 'tg_links'
+);
 
 const SIMPLE_MARKDOWN_REGEX = /(\*\*|__).+?\1/g;
 
 export default function renderText(
   part: TextPart,
   filters: Array<TextFilter> = ['emoji'],
-  params?: { highlight: string | undefined },
+  params?: {
+    highlight?: string;
+    markdownPostProcessor?: (part: string) => TeactNode;
+  },
 ): TeactNode[] {
   if (typeof part !== 'string') {
     return [part];
@@ -39,34 +40,37 @@ export default function renderText(
   return compact(filters.reduce((text, filter) => {
     switch (filter) {
       case 'escape_html':
-        return escapeHtml(text);
+        return escapeHtml(text, params?.markdownPostProcessor);
 
       case 'hq_emoji':
         EMOJI_REGEX.lastIndex = 0;
-        return replaceEmojis(text, 'big', 'jsx');
+        return replaceEmojis(text, 'big', 'jsx', params?.markdownPostProcessor);
 
       case 'emoji':
         EMOJI_REGEX.lastIndex = 0;
-        return replaceEmojis(text, 'small', 'jsx');
+        return replaceEmojis(text, 'small', 'jsx', params?.markdownPostProcessor);
 
       case 'emoji_html':
         EMOJI_REGEX.lastIndex = 0;
         return replaceEmojis(text, 'small', 'html');
 
       case 'br':
-        return addLineBreaks(text, 'jsx');
+        return addLineBreaks(text, 'jsx', params?.markdownPostProcessor);
 
       case 'br_html':
         return addLineBreaks(text, 'html');
 
       case 'highlight':
-        return addHighlight(text, params!.highlight);
+        return addHighlight(text, params!.highlight, params?.markdownPostProcessor);
 
       case 'links':
-        return addLinks(text);
+        return addLinks(text, undefined, params?.markdownPostProcessor);
+
+      case 'tg_links':
+        return addLinks(text, true, params?.markdownPostProcessor);
 
       case 'simple_markdown':
-        return replaceSimpleMarkdown(text, 'jsx');
+        return replaceSimpleMarkdown(text, 'jsx', params?.markdownPostProcessor);
 
       case 'simple_markdown_html':
         return replaceSimpleMarkdown(text, 'html');
@@ -76,7 +80,9 @@ export default function renderText(
   }, [part] as TextPart[]));
 }
 
-function escapeHtml(textParts: TextPart[]): TextPart[] {
+function escapeHtml(textParts: TextPart[], postProcessor?: (part: string) => TeactNode): TextPart[] {
+  const postProcess = postProcessor || ((part: string) => part);
+
   const divEl = document.createElement('div');
   return textParts.reduce((result: TextPart[], part) => {
     if (typeof part !== 'string') {
@@ -85,15 +91,20 @@ function escapeHtml(textParts: TextPart[]): TextPart[] {
     }
 
     divEl.innerText = part;
-    result.push(divEl.innerHTML);
+    result.push(postProcess(divEl.innerHTML));
 
     return result;
   }, []);
 }
 
-function replaceEmojis(textParts: TextPart[], size: 'big' | 'small', type: 'jsx' | 'html'): TextPart[] {
+function replaceEmojis(
+  textParts: TextPart[], size: 'big' | 'small', type: 'jsx' | 'html',
+  postProcessor?: (part: string) => TeactNode,
+): TextPart[] {
+  const postProcess = postProcessor || ((part: string) => part);
+
   if (IS_EMOJI_SUPPORTED) {
-    return textParts;
+    return textParts.map((part) => typeof part === 'string' ? postProcess(part) : part);
   }
 
   return textParts.reduce((result: TextPart[], part: TextPart) => {
@@ -105,15 +116,14 @@ function replaceEmojis(textParts: TextPart[], size: 'big' | 'small', type: 'jsx'
     part = fixNonStandardEmoji(part);
     const parts = part.split(EMOJI_REGEX);
     const emojis: string[] = part.match(EMOJI_REGEX) || [];
-    result.push(parts[0]);
+    result.push(postProcess(parts[0]));
 
     return emojis.reduce((emojiResult: TextPart[], emoji, i) => {
       const code = nativeToUnifiedExtendedWithCache(emoji);
       if (!code) {
-        emojiResult.push(emoji);
+        emojiResult.push(postProcess(emoji));
       } else {
-        const baseSrcUrl = IS_ELECTRON_BUILD ? BASE_URL : '.';
-        const src = `${baseSrcUrl}/img-apple-${size === 'big' ? '160' : '64'}/${code}.png`;
+        const src = `./img-apple-${size === 'big' ? '160' : '64'}/${code}.png`;
         const className = buildClassName(
           'emoji',
           size === 'small' && 'emoji-small',
@@ -147,7 +157,7 @@ function replaceEmojis(textParts: TextPart[], size: 'big' | 'small', type: 'jsx'
 
       const index = i * 2 + 2;
       if (parts[index]) {
-        emojiResult.push(parts[index]);
+        emojiResult.push(postProcess(parts[index]));
       }
 
       return emojiResult;
@@ -155,7 +165,11 @@ function replaceEmojis(textParts: TextPart[], size: 'big' | 'small', type: 'jsx'
   }, [] as TextPart[]);
 }
 
-function addLineBreaks(textParts: TextPart[], type: 'jsx' | 'html'): TextPart[] {
+function addLineBreaks(
+  textParts: TextPart[], type: 'jsx' | 'html', postProcessor?: (part: string) => TeactNode,
+): TextPart[] {
+  const postProcess = postProcessor || ((part: string) => part);
+
   return textParts.reduce((result: TextPart[], part) => {
     if (typeof part !== 'string') {
       result.push(part);
@@ -166,9 +180,10 @@ function addLineBreaks(textParts: TextPart[], type: 'jsx' | 'html'): TextPart[] 
       .split(/\r\n|\r|\n/g)
       .reduce((parts: TextPart[], line: string, i, source) => {
         // This adds non-breaking space if line was indented with spaces, to preserve the indentation
-        const trimmedLine = line.trimLeft();
+        const trimmedLine = line.trimStart();
         const indentLength = line.length - trimmedLine.length;
-        parts.push(String.fromCharCode(160).repeat(indentLength) + trimmedLine);
+        parts.push(String.fromCharCode(160).repeat(indentLength));
+        parts.push(postProcess(trimmedLine));
 
         if (i !== source.length - 1) {
           parts.push(
@@ -183,7 +198,12 @@ function addLineBreaks(textParts: TextPart[], type: 'jsx' | 'html'): TextPart[] 
   }, []);
 }
 
-function addHighlight(textParts: TextPart[], highlight: string | undefined): TextPart[] {
+function addHighlight(
+  textParts: TextPart[], highlight: string | undefined,
+  postProcessor?: (part: string) => TeactNode,
+): TextPart[] {
+  const postProcess = postProcessor || ((part: string) => part);
+
   return textParts.reduce<TextPart[]>((result, part) => {
     if (typeof part !== 'string' || !highlight) {
       result.push(part);
@@ -193,25 +213,29 @@ function addHighlight(textParts: TextPart[], highlight: string | undefined): Tex
     const lowerCaseText = part.toLowerCase();
     const queryPosition = lowerCaseText.indexOf(highlight.toLowerCase());
     if (queryPosition < 0) {
-      result.push(part);
+      result.push(postProcess(part));
       return result;
     }
 
     const newParts: TextPart[] = [];
-    newParts.push(part.substring(0, queryPosition));
+    newParts.push(postProcess(part.substring(0, queryPosition)));
     newParts.push(
       <span className="matching-text-highlight">
-        {part.substring(queryPosition, queryPosition + highlight.length)}
+        {postProcess(part.substring(queryPosition, queryPosition + highlight.length))}
       </span>,
     );
-    newParts.push(part.substring(queryPosition + highlight.length));
+    newParts.push(postProcess(part.substring(queryPosition + highlight.length)));
     return [...result, ...newParts];
   }, []);
 }
 
 const RE_LINK = new RegExp(`${RE_LINK_TEMPLATE}|${RE_MENTION_TEMPLATE}`, 'ig');
 
-function addLinks(textParts: TextPart[]): TextPart[] {
+function addLinks(
+  textParts: TextPart[], allowOnlyTgLinks?: boolean, postProcessor?: (part: string) => TeactNode,
+): TextPart[] {
+  const postProcess = postProcessor || ((part: string) => part);
+
   return textParts.reduce<TextPart[]>((result, part) => {
     if (typeof part !== 'string') {
       result.push(part);
@@ -220,7 +244,7 @@ function addLinks(textParts: TextPart[]): TextPart[] {
 
     const links = part.match(RE_LINK);
     if (!links || !links.length) {
-      result.push(part);
+      result.push(postProcess(part));
       return result;
     }
 
@@ -230,11 +254,11 @@ function addLinks(textParts: TextPart[]): TextPart[] {
     let lastIndex = 0;
     while (nextLink) {
       const index = part.indexOf(nextLink, lastIndex);
-      content.push(part.substring(lastIndex, index));
+      content.push(postProcess(part.substring(lastIndex, index)));
       if (nextLink.startsWith('@')) {
         content.push(
           <MentionLink username={nextLink}>
-            {nextLink}
+            {postProcess(nextLink)}
           </MentionLink>,
         );
       } else {
@@ -242,20 +266,29 @@ function addLinks(textParts: TextPart[]): TextPart[] {
           nextLink = nextLink.slice(0, nextLink.length - 1);
         }
 
-        content.push(
-          <SafeLink text={nextLink} url={nextLink} />,
-        );
+        if (!allowOnlyTgLinks || isDeepLink(nextLink)) {
+          content.push(
+            <SafeLink text={nextLink} url={nextLink} />,
+          );
+        } else {
+          content.push(postProcess(nextLink));
+        }
       }
       lastIndex = index + nextLink.length;
       nextLink = links.shift();
     }
-    content.push(part.substring(lastIndex));
+    content.push(postProcess(part.substring(lastIndex)));
 
     return [...result, ...content];
   }, []);
 }
 
-function replaceSimpleMarkdown(textParts: TextPart[], type: 'jsx' | 'html'): TextPart[] {
+function replaceSimpleMarkdown(
+  textParts: TextPart[], type: 'jsx' | 'html', postProcessor?: (part: string) => TeactNode,
+): TextPart[] {
+  // Currently supported only for JSX. If needed, add typings to support HTML as well.
+  const postProcess = postProcessor || ((part: string) => part);
+
   return textParts.reduce<TextPart[]>((result, part) => {
     if (typeof part !== 'string') {
       result.push(part);
@@ -264,14 +297,14 @@ function replaceSimpleMarkdown(textParts: TextPart[], type: 'jsx' | 'html'): Tex
 
     const parts = part.split(SIMPLE_MARKDOWN_REGEX);
     const entities: string[] = part.match(SIMPLE_MARKDOWN_REGEX) || [];
-    result.push(parts[0]);
+    result.push(postProcess(parts[0]));
 
     return entities.reduce((entityResult: TextPart[], entity, i) => {
       if (type === 'jsx') {
         entityResult.push(
           entity.startsWith('**')
-            ? <b>{entity.replace(/\*\*/g, '')}</b>
-            : <i>{entity.replace(/__/g, '')}</i>,
+            ? <b>{postProcess(entity.replace(/\*\*/g, ''))}</b>
+            : <i>{postProcess(entity.replace(/__/g, ''))}</i>,
         );
       } else {
         entityResult.push(
@@ -283,7 +316,7 @@ function replaceSimpleMarkdown(textParts: TextPart[], type: 'jsx' | 'html'): Tex
 
       const index = i * 2 + 2;
       if (parts[index]) {
-        entityResult.push(parts[index]);
+        entityResult.push(postProcess(parts[index]));
       }
 
       return entityResult;

@@ -9,7 +9,7 @@ import type {
 } from '../../../lib/secret-sauce';
 import type { ApiGroupCall, ApiPhoneCall } from '../../types';
 
-import { getApiChatIdFromMtpPeer, isPeerUser } from './peers';
+import { getApiChatIdFromMtpPeer, isMtpPeerUser } from './peers';
 
 export function buildApiGroupCallParticipant(participant: GramJs.GroupCallParticipant): GroupCallParticipant {
   const {
@@ -33,7 +33,7 @@ export function buildApiGroupCallParticipant(participant: GramJs.GroupCallPartic
     raiseHandRating: raiseHandRating?.toString(),
     volume,
     date: new Date(date),
-    isUser: isPeerUser(peer),
+    isUser: isMtpPeerUser(peer),
     id: getApiChatIdFromMtpPeer(peer),
     video: video ? buildApiGroupCallParticipantVideo(video) : undefined,
     presentation: presentation ? buildApiGroupCallParticipantVideo(presentation) : undefined,
@@ -102,7 +102,8 @@ export function buildApiGroupCall(groupCall: GramJs.TypeGroupCall): ApiGroupCall
 }
 
 export function getGroupCallId(groupCall: GramJs.TypeInputGroupCall) {
-  return groupCall.id.toString();
+  if (groupCall instanceof GramJs.InputGroupCall) return groupCall.id.toString();
+  return undefined;
 }
 
 export function buildPhoneCall(call: GramJs.TypePhoneCall): ApiPhoneCall {
@@ -143,7 +144,7 @@ export function buildPhoneCall(call: GramJs.TypePhoneCall): ApiPhoneCall {
       keyFingerprint: keyFingerprint.toString(),
       startDate,
       isP2pAllowed: Boolean(p2pAllowed),
-      connections: connections.map(buildApiCallConnection).filter(Boolean) as ApiPhoneCallConnection[],
+      connections: connections.map(buildApiCallConnection).filter(Boolean),
     };
   }
 

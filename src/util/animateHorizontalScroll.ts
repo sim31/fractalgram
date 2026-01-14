@@ -6,7 +6,7 @@ import { animate } from './animation';
 
 const DEFAULT_DURATION = 300;
 
-const stopById: Map<string, VoidFunction> = new Map();
+const stopById = new Map<string, VoidFunction>();
 
 export default function animateHorizontalScroll(container: HTMLElement, left: number, duration = DEFAULT_DURATION) {
   if (!selectCanAnimateInterface(getGlobal())) {
@@ -57,8 +57,17 @@ export default function animateHorizontalScroll(container: HTMLElement, left: nu
 
       const startAt = Date.now();
 
+      function cleanup() {
+        container.style.scrollSnapType = '';
+        delete container.dataset.scrollId;
+        stopById.delete(id);
+      }
+
       animate(() => {
-        if (isStopped) return false;
+        if (isStopped) {
+          cleanup();
+          return false;
+        }
 
         const t = Math.min((Date.now() - startAt) / duration, 1);
 
@@ -66,9 +75,7 @@ export default function animateHorizontalScroll(container: HTMLElement, left: nu
         container.scrollLeft = Math.round(target - currentPath);
 
         if (t >= 1) {
-          container.style.scrollSnapType = '';
-          delete container.dataset.scrollId;
-          stopById.delete(id);
+          cleanup();
           resolve();
         }
 

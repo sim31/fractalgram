@@ -1,30 +1,27 @@
-import type { FC } from '../../../lib/teact/teact';
-import React, {
-  memo, useEffect, useMemo, useRef, useState,
-} from '../../../lib/teact/teact';
+import { type FC, memo, useEffect, useMemo, useRef, useState } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type {
-  ApiAttachment, ApiChatMember, ApiSticker,
-} from '../../../api/types';
+import type { ApiAttachment, ApiChatMember, ApiMessage, ApiSticker } from '../../../api/types';
 import type { GlobalState } from '../../../global/types';
+import type { MessageListType, ThreadId } from '../../../types';
 import type { Signal } from '../../../util/signals';
 
 import {
   BASE_EMOJI_KEYWORD_LANG,
   EDITABLE_INPUT_MODAL_ID,
-  GIF_MIME_TYPE,
   SUPPORTED_AUDIO_CONTENT_TYPES,
-  SUPPORTED_IMAGE_CONTENT_TYPES,
+  SUPPORTED_PHOTO_CONTENT_TYPES,
   SUPPORTED_VIDEO_CONTENT_TYPES,
 } from '../../../config';
 import { requestMutation } from '../../../lib/fasterdom/fasterdom';
-import { isUserId } from '../../../global/helpers';
-import { selectChatFullInfo, selectIsChatWithSelf } from '../../../global/selectors';
+import { getAttachmentMediaType } from '../../../global/helpers';
+import { selectChatFullInfo, selectIsChatWithSelf, selectTabState } from '../../../global/selectors';
 import { selectCurrentLimit } from '../../../global/selectors/limits';
+import { selectSharedSettings } from '../../../global/selectors/sharedState';
 import buildClassName from '../../../util/buildClassName';
 import captureEscKeyListener from '../../../util/captureEscKeyListener';
 import { validateFiles } from '../../../util/files';
+import { formatStarsAsIcon } from '../../../util/localization/format';
 import { removeAllSelections } from '../../../util/selection';
 import { openSystemFilesDialog } from '../../../util/systemFilesDialog';
 import getFilesFromDataTransferItems from './helpers/getFilesFromDataTransferItems';
@@ -33,11 +30,13 @@ import { getHtmlTextLength } from './helpers/getHtmlTextLength';
 import useAppLayout from '../../../hooks/useAppLayout';
 import useContextMenuHandlers from '../../../hooks/useContextMenuHandlers';
 import useDerivedState from '../../../hooks/useDerivedState';
+import useEffectOnce from '../../../hooks/useEffectOnce';
 import useFlag from '../../../hooks/useFlag';
 import useGetSelectionRange from '../../../hooks/useGetSelectionRange';
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
-import usePrevious from '../../../hooks/usePrevious';
+import usePreviousDeprecated from '../../../hooks/usePreviousDeprecated';
+import useResizeObserver from '../../../hooks/useResizeObserver';
 import useScrolledState from '../../../hooks/useScrolledState';
 import useCustomEmojiTooltip from './hooks/useCustomEmojiTooltip';
 import useEmojiTooltip from './hooks/useEmojiTooltip';
@@ -59,28 +58,33 @@ import styles from './AttachmentModal.module.scss';
 
 export type OwnProps = {
   chatId: string;
-  threadId: number;
+  threadId: ThreadId;
   attachments: ApiAttachment[];
+  editingMessage?: ApiMessage;
+  messageListType?: MessageListType;
   getHtml: Signal<string>;
   canShowCustomSendMenu?: boolean;
   isReady: boolean;
   isForMessage?: boolean;
   shouldSchedule?: boolean;
-  shouldSuggestCompression?: boolean;
   shouldForceCompression?: boolean;
   shouldForceAsFile?: boolean;
   isForCurrentMessageList?: boolean;
   forceDarkTheme?: boolean;
+  canScheduleUntilOnline?: boolean;
+  canSchedule?: boolean;
+  paidMessagesStars?: number;
   onCaptionUpdate: (html: string) => void;
-  onSend: (sendCompressed: boolean, sendGrouped: boolean) => void;
+  onSend: (sendCompressed: boolean, sendGrouped: boolean, isInvertedMedia?: true) => void;
   onFileAppend: (files: File[], isSpoiler?: boolean) => void;
   onAttachmentsUpdate: (attachments: ApiAttachment[]) => void;
   onClear: NoneToVoidFunction;
-  onSendSilent: (sendCompressed: boolean, sendGrouped: boolean) => void;
-  onSendScheduled: (sendCompressed: boolean, sendGrouped: boolean) => void;
+  onSendSilent: (sendCompressed: boolean, sendGrouped: boolean, isInvertedMedia?: true) => void;
+  onSendScheduled: (sendCompressed: boolean, sendGrouped: boolean, isInvertedMedia?: true) => void;
   onCustomEmojiSelect: (emoji: ApiSticker) => void;
   onRemoveSymbol: VoidFunction;
   onEmojiSelect: (emoji: string) => void;
+  onSendWhenOnline?: NoneToVoidFunction;
 };
 
 type StateProps = {
@@ -94,17 +98,20 @@ type StateProps = {
   customEmojiForEmoji?: ApiSticker[];
   captionLimit: number;
   attachmentSettings: GlobalState['attachmentSettings'];
+  shouldSaveAttachmentsCompression?: boolean;
 };
 
 const ATTACHMENT_MODAL_INPUT_ID = 'caption-input-text';
 const DROP_LEAVE_TIMEOUT_MS = 150;
 const MAX_LEFT_CHARS_TO_SHOW = 100;
+const CLOSE_MENU_ANIMATION_DURATION = 200;
 
-const AttachmentModal: FC<OwnProps & StateProps> = ({
+const AttachmentModal = ({
   chatId,
   threadId,
   attachments,
   getHtml,
+  editingMessage,
   canShowCustomSendMenu,
   captionLimit,
   isReady,
@@ -119,11 +126,14 @@ const AttachmentModal: FC<OwnProps & StateProps> = ({
   shouldSuggestCustomEmoji,
   customEmojiForEmoji,
   attachmentSettings,
-  shouldSuggestCompression,
+  shouldSaveAttachmentsCompression,
   shouldForceCompression,
   shouldForceAsFile,
   isForCurrentMessageList,
   forceDarkTheme,
+  canScheduleUntilOnline,
+  canSchedule,
+  paidMessagesStars,
   onAttachmentsUpdate,
   onCaptionUpdate,
   onSend,
@@ -134,28 +144,39 @@ const AttachmentModal: FC<OwnProps & StateProps> = ({
   onCustomEmojiSelect,
   onRemoveSymbol,
   onEmojiSelect,
-}) => {
+  onSendWhenOnline,
+}: OwnProps & StateProps) => {
+  const ref = useRef<HTMLDivElement>();
+  const svgRef = useRef<SVGSVGElement>();
   const { addRecentCustomEmoji, addRecentEmoji, updateAttachmentSettings } = getActions();
 
   const lang = useLang();
 
-  // eslint-disable-next-line no-null/no-null
-  const mainButtonRef = useRef<HTMLButtonElement | null>(null);
-  // eslint-disable-next-line no-null/no-null
-  const inputRef = useRef<HTMLDivElement>(null);
+  const mainButtonRef = useRef<HTMLButtonElement>();
+  const inputRef = useRef<HTMLDivElement>();
 
   const hideTimeoutRef = useRef<number>();
-  const prevAttachments = usePrevious(attachments);
+  const prevAttachments = usePreviousDeprecated(attachments);
   const renderingAttachments = attachments.length ? attachments : prevAttachments;
   const { isMobile } = useAppLayout();
 
+  const isEditing = editingMessage && Boolean(editingMessage);
+  const isInAlbum = editingMessage && editingMessage?.groupedId;
+  const isEditingMessageFile = isEditing && attachments?.length && getAttachmentMediaType(attachments[0]);
+  const notEditingFile = isEditingMessageFile !== 'file';
+
   const [isSymbolMenuOpen, openSymbolMenu, closeSymbolMenu] = useFlag();
 
-  const [shouldSendCompressed, setShouldSendCompressed] = useState(
-    shouldSuggestCompression ?? attachmentSettings.shouldCompress,
+  const shouldSendCompressed = attachmentSettings.shouldCompress;
+  const isSendingCompressed = Boolean(
+    (shouldSendCompressed || shouldForceCompression || isInAlbum) && !shouldForceAsFile,
   );
-  const isSendingCompressed = Boolean((shouldSendCompressed || shouldForceCompression) && !shouldForceAsFile);
   const [shouldSendGrouped, setShouldSendGrouped] = useState(attachmentSettings.shouldSendGrouped);
+  const isInvertedMedia = attachmentSettings.isInvertedMedia;
+  const [shouldSendInHighQuality, setShouldSendInHighQuality] = useState(
+    attachmentSettings.shouldSendInHighQuality,
+  );
+  const [renderingShouldSendInHighQuality, setRenderingShouldSendInHighQuality] = useState(shouldSendInHighQuality);
 
   const {
     handleScroll: handleAttachmentsScroll,
@@ -169,9 +190,12 @@ const AttachmentModal: FC<OwnProps & StateProps> = ({
   const renderingIsOpen = Boolean(renderingAttachments?.length);
   const [isHovered, markHovered, unmarkHovered] = useFlag();
 
+  const timerRef = useRef<number | undefined>();
+
   useEffect(() => {
     if (!isOpen) {
       closeSymbolMenu();
+      updateAttachmentSettings({ isInvertedMedia: undefined });
     }
   }, [closeSymbolMenu, isOpen]);
 
@@ -240,10 +264,20 @@ const AttachmentModal: FC<OwnProps & StateProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setShouldSendCompressed(shouldSuggestCompression ?? attachmentSettings.shouldCompress);
       setShouldSendGrouped(attachmentSettings.shouldSendGrouped);
+      setShouldSendInHighQuality(attachmentSettings.shouldSendInHighQuality);
     }
-  }, [attachmentSettings, isOpen, shouldSuggestCompression]);
+  }, [attachmentSettings, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      updateAttachmentSettings({ isInvertedMedia: undefined });
+    }
+  }, [updateAttachmentSettings, isOpen]);
+
+  function setIsInvertedMedia(value?: true) {
+    updateAttachmentSettings({ isInvertedMedia: value });
+  }
 
   useEffect(() => {
     if (isOpen && isMobile) {
@@ -260,12 +294,16 @@ const AttachmentModal: FC<OwnProps & StateProps> = ({
 
   const sendAttachments = useLastCallback((isSilent?: boolean, shouldSendScheduled?: boolean) => {
     if (isOpen) {
-      const send = ((shouldSchedule || shouldSendScheduled) && isForMessage) ? onSendScheduled
+      const send = ((shouldSchedule || shouldSendScheduled) && isForMessage && !editingMessage) ? onSendScheduled
         : isSilent ? onSendSilent : onSend;
-      send(isSendingCompressed, shouldSendGrouped);
+      send(isSendingCompressed, shouldSendGrouped, isInvertedMedia);
       updateAttachmentSettings({
-        shouldCompress: shouldSuggestCompression === undefined ? isSendingCompressed : undefined,
+        ...(shouldSaveAttachmentsCompression && {
+          defaultAttachmentCompression: attachmentSettings.shouldCompress ? 'compress' : 'original',
+        }),
         shouldSendGrouped,
+        isInvertedMedia,
+        shouldSendInHighQuality,
       });
     }
   });
@@ -343,8 +381,19 @@ const AttachmentModal: FC<OwnProps & StateProps> = ({
   const handleEnableSpoilers = useLastCallback(() => {
     onAttachmentsUpdate(attachments.map((a) => ({
       ...a,
-      shouldSendAsSpoiler: a.mimeType !== GIF_MIME_TYPE ? true : undefined,
+      shouldSendAsSpoiler: true,
     })));
+  });
+
+  const handleToggleShouldCompress = useLastCallback(() => {
+    const newValue = !shouldSendCompressed;
+    updateAttachmentSettings({ shouldCompress: newValue });
+  });
+
+  const handleToggleQuality = useLastCallback(() => {
+    const newValue = !shouldSendInHighQuality;
+    setShouldSendInHighQuality(newValue);
+    updateAttachmentSettings({ shouldSendInHighQuality: newValue });
   });
 
   const handleDisableSpoilers = useLastCallback(() => {
@@ -364,6 +413,22 @@ const AttachmentModal: FC<OwnProps & StateProps> = ({
     }));
   });
 
+  const handleResize = useLastCallback(() => {
+    const svg = svgRef.current;
+    if (!svg) {
+      return;
+    }
+
+    const { width, height } = svg.getBoundingClientRect();
+    svg.viewBox.baseVal.width = width;
+    svg.viewBox.baseVal.height = height;
+  });
+
+  // Can't listen for SVG resize
+  useResizeObserver(ref, handleResize);
+
+  useEffectOnce(handleResize);
+
   useEffect(() => {
     const mainButton = mainButtonRef.current;
     const input = document.getElementById(ATTACHMENT_MODAL_INPUT_ID);
@@ -382,14 +447,13 @@ const AttachmentModal: FC<OwnProps & StateProps> = ({
       <Button
         round
         ripple={!isMobile}
-        size="smaller"
+        size="tiny"
         color="translucent"
         className={isMenuOpen ? 'active' : ''}
         onClick={onTrigger}
         ariaLabel="More actions"
-      >
-        <i className="icon icon-more" />
-      </Button>
+        iconName="more"
+      />
     );
   }, [isMobile]);
 
@@ -402,19 +466,33 @@ const AttachmentModal: FC<OwnProps & StateProps> = ({
 
   const isQuickGallery = isSendingCompressed && hasOnlyMedia;
 
-  const [areAllPhotos, areAllVideos, areAllAudios] = useMemo(() => {
+  const [areAllPhotos, areAllVideos, areAllAudios, hasAnyPhoto] = useMemo(() => {
     if (!isQuickGallery || !renderingAttachments) return [false, false, false];
-    const everyPhoto = renderingAttachments.every((a) => SUPPORTED_IMAGE_CONTENT_TYPES.has(a.mimeType));
+    const everyPhoto = renderingAttachments.every((a) => SUPPORTED_PHOTO_CONTENT_TYPES.has(a.mimeType));
     const everyVideo = renderingAttachments.every((a) => SUPPORTED_VIDEO_CONTENT_TYPES.has(a.mimeType));
     const everyAudio = renderingAttachments.every((a) => SUPPORTED_AUDIO_CONTENT_TYPES.has(a.mimeType));
-    return [everyPhoto, everyVideo, everyAudio];
+    const anyPhoto = renderingAttachments.some((a) => SUPPORTED_PHOTO_CONTENT_TYPES.has(a.mimeType));
+    return [everyPhoto, everyVideo, everyAudio, anyPhoto];
   }, [renderingAttachments, isQuickGallery]);
 
   const hasAnySpoilerable = useMemo(() => {
     if (!renderingAttachments) return false;
-    return renderingAttachments.some((a) => a.mimeType !== GIF_MIME_TYPE
-      && !SUPPORTED_AUDIO_CONTENT_TYPES.has(a.mimeType));
+    return renderingAttachments.some((a) => !SUPPORTED_AUDIO_CONTENT_TYPES.has(a.mimeType));
   }, [renderingAttachments]);
+
+  useEffect(() => {
+    if (shouldSendInHighQuality === renderingShouldSendInHighQuality) return;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(() => {
+      setRenderingShouldSendInHighQuality(shouldSendInHighQuality);
+    }, CLOSE_MENU_ANIMATION_DURATION);
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = undefined;
+      }
+    };
+  }, [shouldSendInHighQuality, renderingShouldSendInHighQuality]);
 
   if (!renderingAttachments) {
     return undefined;
@@ -422,15 +500,40 @@ const AttachmentModal: FC<OwnProps & StateProps> = ({
 
   const isMultiple = renderingAttachments.length > 1;
 
+  const canInvertMedia = (() => {
+    if (isEditing) return false;
+    if (!hasMedia) return false;
+    if (!shouldForceAsFile && !shouldForceCompression && !isSendingCompressed) return false;
+    if (isMultiple && shouldSendGrouped) return false;
+    return true;
+  })();
+
   let title = '';
+  const attachmentsLength = renderingAttachments.length;
   if (areAllPhotos) {
-    title = lang('PreviewSender.SendPhoto', renderingAttachments.length, 'i');
+    title = lang(
+      `Attachment${isEditing ? 'Replace' : 'Send'}Photo`,
+      { count: attachmentsLength },
+      { pluralValue: attachmentsLength },
+    );
   } else if (areAllVideos) {
-    title = lang('PreviewSender.SendVideo', renderingAttachments.length, 'i');
+    title = lang(
+      `Attachment${isEditing ? 'Replace' : 'Send'}Video`,
+      { count: attachmentsLength },
+      { pluralValue: attachmentsLength },
+    );
   } else if (areAllAudios) {
-    title = lang('PreviewSender.SendAudio', renderingAttachments.length, 'i');
+    title = lang(
+      `Attachment${isEditing ? 'Replace' : 'Send'}Audio`,
+      { count: attachmentsLength },
+      { pluralValue: attachmentsLength },
+    );
   } else {
-    title = lang('PreviewSender.SendFile', renderingAttachments.length, 'i');
+    title = lang(
+      `Attachment${isEditing ? 'Replace' : 'Send'}File`,
+      { count: attachmentsLength },
+      { pluralValue: attachmentsLength },
+    );
   }
 
   function renderHeader() {
@@ -440,71 +543,109 @@ const AttachmentModal: FC<OwnProps & StateProps> = ({
 
     return (
       <div className="modal-header-condensed" dir={lang.isRtl ? 'rtl' : undefined}>
-        <Button round color="translucent" size="smaller" ariaLabel="Cancel attachments" onClick={onClear}>
-          <i className="icon icon-close" />
-        </Button>
+        <Button
+          round
+          color="translucent"
+          size="tiny"
+          ariaLabel="Cancel attachments"
+          onClick={onClear}
+          iconName="close"
+        />
         <div className="modal-title">{title}</div>
-        <DropdownMenu
-          className="attachment-modal-more-menu with-menu-transitions"
-          trigger={MoreMenuButton}
-          positionX="right"
-        >
-          <MenuItem icon="add" onClick={handleDocumentSelect}>{lang('Add')}</MenuItem>
-          {hasMedia && (
-            <>
-              {
-                !shouldForceAsFile && !shouldForceCompression && (isSendingCompressed ? (
-                  // eslint-disable-next-line react/jsx-no-bind
-                  <MenuItem icon="document" onClick={() => setShouldSendCompressed(false)}>
-                    {lang(isMultiple ? 'Attachment.SendAsFiles' : 'Attachment.SendAsFile')}
+        {notEditingFile && !isInAlbum
+          && (
+            <DropdownMenu
+              className="with-menu-transitions"
+              trigger={MoreMenuButton}
+              positionX="right"
+            >
+              {Boolean(!editingMessage) && (
+                <MenuItem icon="add" onClick={handleDocumentSelect}>{lang('Add')}</MenuItem>
+              )}
+              {hasMedia && (
+                <>
+                  {
+                    canInvertMedia && (!isInvertedMedia ? (
+
+                      <MenuItem icon="move-caption-up" onClick={() => setIsInvertedMedia(true)}>
+                        {lang('ContextMoveTextUp')}
+                      </MenuItem>
+                    ) : (
+
+                      <MenuItem icon="move-caption-down" onClick={() => setIsInvertedMedia(undefined)}>
+                        {lang('ContextMoveTextDown')}
+                      </MenuItem>
+                    ))
+                  }
+                  {
+                    !shouldForceAsFile && !shouldForceCompression && (isSendingCompressed ? (
+
+                      <MenuItem icon="document" onClick={handleToggleShouldCompress}>
+                        {lang(isMultiple ? 'AttachmentMenuSendAllAsFiles' : 'AttachmentMenuSendAsFiles')}
+                      </MenuItem>
+                    ) : (
+
+                      <MenuItem icon="photo" onClick={handleToggleShouldCompress}>
+                        {lang(isMultiple ? 'AttachmentMenuSendAllAsMedia' : 'AttachmentMenuSendAsMedia')}
+                      </MenuItem>
+                    ))
+                  }
+                  {isSendingCompressed && !editingMessage && hasAnyPhoto && (
+                    <MenuItem
+                      icon={renderingShouldSendInHighQuality ? 'sd-photo' : 'hd-photo'}
+                      onClick={handleToggleQuality}
+                    >
+                      {lang(renderingShouldSendInHighQuality ? 'SendInStandardQuality' : 'SendInHighQuality')}
+                    </MenuItem>
+                  )}
+                  {isSendingCompressed && hasAnySpoilerable && Boolean(!editingMessage) && (
+                    hasSpoiler ? (
+                      <MenuItem icon="spoiler-disable" onClick={handleDisableSpoilers}>
+                        {lang('AttachmentMenuDisableSpoiler')}
+                      </MenuItem>
+                    ) : (
+                      <MenuItem icon="spoiler" onClick={handleEnableSpoilers}>
+                        {lang('AttachmentMenuEnableSpoiler')}
+                      </MenuItem>
+                    )
+                  )}
+                </>
+              )}
+              {isMultiple && (
+                shouldSendGrouped ? (
+                  <MenuItem
+                    icon="grouped-disable"
+
+                    onClick={() => setShouldSendGrouped(false)}
+                  >
+                    {lang('AttachmentMenuUngroupAllMedia')}
                   </MenuItem>
                 ) : (
-                  // eslint-disable-next-line react/jsx-no-bind
-                  <MenuItem icon="photo" onClick={() => setShouldSendCompressed(true)}>
-                    {isMultiple ? 'Send All as Media' : 'Send as Media'}
-                  </MenuItem>
-                ))
-              }
-              {isSendingCompressed && hasAnySpoilerable && (
-                hasSpoiler ? (
-                  <MenuItem icon="spoiler-disable" onClick={handleDisableSpoilers}>
-                    {lang('Attachment.DisableSpoiler')}
-                  </MenuItem>
-                ) : (
-                  <MenuItem icon="spoiler" onClick={handleEnableSpoilers}>
-                    {lang('Attachment.EnableSpoiler')}
+
+                  <MenuItem icon="grouped" onClick={() => setShouldSendGrouped(true)}>
+                    {lang('AttachmentMenuGroupAllMedia')}
                   </MenuItem>
                 )
               )}
-            </>
+            </DropdownMenu>
           )}
-          {isMultiple && (
-            shouldSendGrouped ? (
-              <MenuItem
-                icon="grouped-disable"
-                // eslint-disable-next-line react/jsx-no-bind
-                onClick={() => setShouldSendGrouped(false)}
-              >
-                Ungroup All Media
-              </MenuItem>
-            ) : (
-              // eslint-disable-next-line react/jsx-no-bind
-              <MenuItem icon="grouped" onClick={() => setShouldSendGrouped(true)}>
-                Group All Media
-              </MenuItem>
-            )
-          )}
-        </DropdownMenu>
       </div>
     );
   }
 
   const isBottomDividerShown = !areAttachmentsScrolledToBottom || !isCaptionNotScrolled;
+  const buttonSendCaption = paidMessagesStars ? formatStarsAsIcon(
+    lang,
+    attachmentsLength * paidMessagesStars,
+    {
+      className: styles.sendButtonStar,
+      asFont: true,
+    },
+  ) : lang('Send');
 
   return (
     <Modal
       isOpen={isOpen}
-      onClose={onClear}
       header={renderHeader()}
       className={buildClassName(
         styles.root,
@@ -514,7 +655,10 @@ const AttachmentModal: FC<OwnProps & StateProps> = ({
         isSymbolMenuOpen && styles.symbolMenuOpen,
         forceDarkTheme && 'component-theme-dark',
       )}
+      hasAbsoluteCloseButton={Boolean(renderingAttachments)}
       noBackdropClose
+      isLowStackPriority
+      onClose={onClear}
     >
       <div
         className={styles.dropTarget}
@@ -523,9 +667,12 @@ const AttachmentModal: FC<OwnProps & StateProps> = ({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onClick={unmarkHovered}
-        data-attach-description={lang('Preview.Dragging.AddItems', 10)}
+        data-attach-description={lang('AttachmentDragAddItems')}
         data-dropzone
       >
+        <svg className={styles.dropOutlineContainer}>
+          <rect className={styles.dropOutline} x="0" y="0" width="100%" height="100%" rx="8" />
+        </svg>
         <div
           className={buildClassName(
             styles.attachments,
@@ -605,7 +752,7 @@ const AttachmentModal: FC<OwnProps & StateProps> = ({
               isActive={isOpen}
               getHtml={getHtml}
               editableInputId={EDITABLE_INPUT_MODAL_ID}
-              placeholder={lang('AddCaption')}
+              placeholder={lang('AttachmentCaptionPlaceholder')}
               onUpdate={onCaptionUpdate}
               onSend={handleSendClick}
               onScroll={handleCaptionScroll}
@@ -618,20 +765,24 @@ const AttachmentModal: FC<OwnProps & StateProps> = ({
               <Button
                 ref={mainButtonRef}
                 className={styles.send}
+                size="smaller"
                 onClick={handleSendClick}
                 onContextMenu={canShowCustomSendMenu ? handleContextMenu : undefined}
               >
-                {shouldSchedule ? lang('Next') : lang('Send')}
+                {shouldSchedule && !editingMessage ? lang('Next')
+                  : editingMessage ? lang('Save') : buttonSendCaption}
               </Button>
               {canShowCustomSendMenu && (
                 <CustomSendMenu
                   isOpen={isCustomSendMenuOpen}
-                  canSchedule={isForMessage}
+                  canSchedule={canSchedule && isForMessage}
                   onSendSilent={!isChatWithSelf ? handleSendSilent : undefined}
                   onSendSchedule={handleScheduleClick}
                   onClose={handleContextMenuClose}
                   onCloseAnimationEnd={handleContextMenuHide}
                   isSavedMessages={isChatWithSelf}
+                  onSendWhenOnline={onSendWhenOnline}
+                  canScheduleUntilOnline={canScheduleUntilOnline}
                 />
               )}
             </div>
@@ -643,7 +794,7 @@ const AttachmentModal: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { chatId }): StateProps => {
+  (global, { chatId }): Complete<StateProps> => {
     const {
       currentUserId,
       recentEmojis,
@@ -651,9 +802,11 @@ export default memo(withGlobal<OwnProps>(
       attachmentSettings,
     } = global;
 
-    const chatFullInfo = !isUserId(chatId) ? selectChatFullInfo(global, chatId) : undefined;
+    const { shouldSaveAttachmentsCompression } = selectTabState(global);
+    const chatFullInfo = selectChatFullInfo(global, chatId);
     const isChatWithSelf = selectIsChatWithSelf(global, chatId);
-    const { language, shouldSuggestCustomEmoji } = global.settings.byKey;
+    const { shouldSuggestCustomEmoji } = global.settings.byKey;
+    const { language } = selectSharedSettings(global);
     const baseEmojiKeywords = global.emojiKeywords[BASE_EMOJI_KEYWORD_LANG];
     const emojiKeywords = language !== BASE_EMOJI_KEYWORD_LANG ? global.emojiKeywords[language] : undefined;
 
@@ -668,6 +821,7 @@ export default memo(withGlobal<OwnProps>(
       customEmojiForEmoji: customEmojis.forEmoji.stickers,
       captionLimit: selectCurrentLimit(global, 'captionLength'),
       attachmentSettings,
+      shouldSaveAttachmentsCompression,
     };
   },
 )(AttachmentModal));

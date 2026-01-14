@@ -1,40 +1,49 @@
 import { addCallback } from '../../../lib/teact/teactn';
 
+import type { ApiNotification } from '../../../api/types';
+import type { LangCode } from '../../../types';
 import type { ActionReturnType, GlobalState } from '../../types';
 
 import { requestMutation } from '../../../lib/fasterdom/fasterdom';
+import { IS_ELECTRON, IS_MULTIACCOUNT_SUPPORTED, IS_TAURI } from '../../../util/browser/globalEnvironment';
+import {
+  IS_ANDROID, IS_IOS, IS_LINUX,
+  IS_MAC_OS, IS_SAFARI, IS_TOUCH_ENV, IS_WINDOWS,
+} from '../../../util/browser/windowEnvironment';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
-import { setLanguage } from '../../../util/langProvider';
+import generateUniqueId from '../../../util/generateUniqueId';
 import { subscribe, unsubscribe } from '../../../util/notifications';
+import { oldSetLanguage } from '../../../util/oldLangProvider';
 import { decryptSessionByCurrentHash } from '../../../util/passcode';
 import { applyPerformanceSettings } from '../../../util/perfomanceSettings';
 import { hasStoredSession, storeSession } from '../../../util/sessions';
 import switchTheme from '../../../util/switchTheme';
 import { getSystemTheme, setSystemThemeChangeCallback } from '../../../util/systemTheme';
 import { startWebsync, stopWebsync } from '../../../util/websync';
-import {
-  IS_ANDROID, IS_ELECTRON, IS_IOS, IS_LINUX,
-  IS_MAC_OS, IS_SAFARI, IS_TOUCH_ENV, IS_WINDOWS,
-} from '../../../util/windowEnvironment';
 import { callApi } from '../../../api/gramjs';
 import { clearCaching, setupCaching } from '../../cache';
 import { addActionHandler, getGlobal, setGlobal } from '../../index';
-import { replaceSettings } from '../../reducers';
+import { updateSharedSettings } from '../../reducers';
+import { updateAuth } from '../../reducers/auth';
 import { updateTabState } from '../../reducers/tabs';
 import {
   selectCanAnimateInterface,
-  selectNotifySettings, selectPerformanceSettings, selectTabState, selectTheme,
+  selectPerformanceSettings,
+  selectSettingsKeys,
+  selectTabState,
+  selectTheme,
 } from '../../selectors';
+import { selectSharedSettings } from '../../selectors/sharedState';
+import { destroySharedStatePort, initSharedState } from '../../shared/sharedStateConnector';
 
 const HISTORY_ANIMATION_DURATION = 450;
 
 setSystemThemeChangeCallback((theme) => {
-  // eslint-disable-next-line eslint-multitab-tt/no-immediate-global
   let global = getGlobal();
 
-  if (!global.settings.byKey.shouldUseSystemTheme) return;
+  if (!global.isInited || !selectSharedSettings(global).shouldUseSystemTheme) return;
 
-  global = replaceSettings(global, { theme });
+  global = updateSharedSettings(global, { theme });
   setGlobal(global);
 });
 
@@ -55,16 +64,17 @@ addActionHandler('switchMultitabRole', async (global, actions, payload): Promise
     void unsubscribe();
     actions.destroyConnection();
     stopWebsync();
+    destroySharedStatePort();
     clearCaching();
     actions.onSomeTabSwitchedMultitabRole();
   } else {
     if (global.passcode.hasPasscode && !global.passcode.isScreenLocked) {
       const { sessionJson } = await decryptSessionByCurrentHash();
       const session = JSON.parse(sessionJson);
-      storeSession(session, session.userId);
+      storeSession(session);
     }
 
-    if (hasStoredSession(true)) {
+    if (hasStoredSession()) {
       setupCaching();
     }
 
@@ -81,6 +91,9 @@ addActionHandler('switchMultitabRole', async (global, actions, payload): Promise
     }
 
     startWebsync();
+    if (IS_MULTIACCOUNT_SUPPORTED) {
+      initSharedState(global.sharedState);
+    }
   }
 });
 
@@ -88,7 +101,7 @@ addActionHandler('onSomeTabSwitchedMultitabRole', async (global): Promise<void> 
   if (global.passcode.hasPasscode && !global.passcode.isScreenLocked) {
     const { sessionJson } = await decryptSessionByCurrentHash();
     const session = JSON.parse(sessionJson);
-    storeSession(session, session.userId);
+    storeSession(session);
   }
 
   callApi('broadcastLocalDbUpdateFull');
@@ -99,7 +112,7 @@ addActionHandler('initShared', (): ActionReturnType => {
 });
 
 addActionHandler('initMain', (global): ActionReturnType => {
-  const { hasWebNotifications, hasPushNotifications } = selectNotifySettings(global);
+  const { hasWebNotifications, hasPushNotifications } = selectSettingsKeys(global);
   if (hasWebNotifications && hasPushNotifications) {
     // Most of the browsers only show the notifications permission prompt after the first user gesture.
     const events = ['click', 'keypress'];
@@ -126,15 +139,15 @@ addCallback((global: GlobalState) => {
     shouldInit: false,
   }, tabState.id);
 
-  const { messageTextSize, language } = global.settings.byKey;
+  const { messageTextSize, language, shouldUseSystemTheme } = selectSharedSettings(global);
 
   const globalTheme = selectTheme(global);
   const systemTheme = getSystemTheme();
-  const theme = global.settings.byKey.shouldUseSystemTheme ? systemTheme : globalTheme;
+  const theme = shouldUseSystemTheme ? systemTheme : globalTheme;
 
   const performanceType = selectPerformanceSettings(global);
 
-  void setLanguage(language, undefined, true);
+  void oldSetLanguage(language as LangCode, undefined);
 
   requestMutation(() => {
     document.documentElement.style.setProperty(
@@ -161,8 +174,11 @@ addCallback((global: GlobalState) => {
     if (IS_SAFARI) {
       document.body.classList.add('is-safari');
     }
-    if (IS_ELECTRON) {
-      document.body.classList.add('is-electron');
+    if (IS_TAURI) {
+      document.body.classList.add('is-tauri');
+    }
+    if (IS_ELECTRON) { // Legacy, pretend to be Tauri
+      document.body.classList.add('is-tauri');
     }
   });
 
@@ -170,7 +186,7 @@ addCallback((global: GlobalState) => {
 
   switchTheme(theme, canAnimate);
   // Make sure global has the latest theme. Will cause `switchTheme` on change
-  global = replaceSettings(global, { theme });
+  global = updateSharedSettings(global, { theme });
 
   startWebsync();
 
@@ -187,7 +203,7 @@ addActionHandler('setInstallPrompt', (global, actions, payload): ActionReturnTyp
 });
 
 addActionHandler('setIsUiReady', (global, actions, payload): ActionReturnType => {
-  const { uiReadyState, tabId = getCurrentTabId() } = payload!;
+  const { uiReadyState, tabId = getCurrentTabId() } = payload;
 
   if (uiReadyState === 2) {
     requestMutation(() => {
@@ -201,26 +217,23 @@ addActionHandler('setIsUiReady', (global, actions, payload): ActionReturnType =>
 });
 
 addActionHandler('setAuthPhoneNumber', (global, actions, payload): ActionReturnType => {
-  const { phoneNumber } = payload!;
+  const { phoneNumber } = payload;
 
-  return {
-    ...global,
-    authPhoneNumber: phoneNumber,
-  };
+  return updateAuth(global, {
+    phoneNumber,
+  });
 });
 
 addActionHandler('setAuthRememberMe', (global, actions, payload): ActionReturnType => {
-  return {
-    ...global,
-    authRememberMe: Boolean(payload),
-  };
+  return updateAuth(global, {
+    rememberMe: Boolean(payload.value),
+  });
 });
 
-addActionHandler('clearAuthError', (global): ActionReturnType => {
-  return {
-    ...global,
-    authError: undefined,
-  };
+addActionHandler('clearAuthErrorKey', (global): ActionReturnType => {
+  return updateAuth(global, {
+    errorKey: undefined,
+  });
 });
 
 addActionHandler('disableHistoryAnimations', (global, actions, payload): ActionReturnType => {
@@ -242,4 +255,34 @@ addActionHandler('disableHistoryAnimations', (global, actions, payload): ActionR
     shouldSkipHistoryAnimations: true,
   }, tabId);
   setGlobal(global, { forceSyncOnIOs: true });
+});
+
+addActionHandler('showNotification', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId(), ...notification } = payload;
+  const hasLocalId = notification.localId;
+  notification.localId ||= generateUniqueId();
+
+  const newNotifications = [...selectTabState(global, tabId).notifications];
+  const existingNotificationIndex = newNotifications.findIndex((n) => (
+    hasLocalId ? n.localId === notification.localId : n.message === notification.message
+  ));
+  if (existingNotificationIndex !== -1) {
+    newNotifications.splice(existingNotificationIndex, 1);
+  }
+
+  newNotifications.push(notification as ApiNotification);
+
+  return updateTabState(global, {
+    notifications: newNotifications,
+  }, tabId);
+});
+
+addActionHandler('dismissNotification', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload;
+  const newNotifications = selectTabState(global, tabId)
+    .notifications.filter(({ localId }) => localId !== payload.localId);
+
+  return updateTabState(global, {
+    notifications: newNotifications,
+  }, tabId);
 });

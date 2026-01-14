@@ -1,20 +1,29 @@
 import type {
-  ApiDimensions,
-  ApiPhoto, ApiSticker, ApiThumbnail, ApiVideo,
+  ApiDimensions, ApiDocument,
+  ApiPhoto, ApiReplyKeyboard,
+  ApiSticker, ApiThumbnail,
+  ApiVideo, MediaContainer,
+  MediaContent,
 } from './messages';
 
 export type ApiInlineResultType = (
   'article' | 'audio' | 'contact' | 'document' | 'game' | 'gif' | 'location' | 'mpeg4_gif' |
-  'photo' | 'sticker' | 'venue' | 'video' | 'voice' | 'file'
+  'photo' | 'sticker' | 'venue' | 'video' | 'voice' | 'file' | 'geo'
 );
 
 export interface ApiWebDocument {
+  mediaType: 'webDocument';
   url: string;
   size: number;
   mimeType: string;
   accessHash?: string;
   dimensions?: ApiDimensions;
 }
+
+export type ApiBotInlineMessage = {
+  content: MediaContent;
+  replyMarkup?: ApiReplyKeyboard;
+};
 
 export interface ApiBotInlineResult {
   id: string;
@@ -23,7 +32,9 @@ export interface ApiBotInlineResult {
   title?: string;
   description?: string;
   url?: string;
+  content?: ApiWebDocument;
   webThumbnail?: ApiWebDocument;
+  sendMessage: ApiBotInlineMessage;
 }
 
 export interface ApiBotInlineMediaResult {
@@ -33,9 +44,11 @@ export interface ApiBotInlineMediaResult {
   title?: string;
   description?: string;
   sticker?: ApiSticker;
+  document?: ApiDocument;
   photo?: ApiPhoto;
   gif?: ApiVideo;
   thumbnail?: ApiThumbnail;
+  sendMessage: ApiBotInlineMessage;
 }
 
 export interface ApiBotInlineSwitchPm {
@@ -66,6 +79,14 @@ type ApiBotMenuButtonWebApp = {
 
 export type ApiBotMenuButton = ApiBotMenuButtonWebApp | ApiBotMenuButtonCommands;
 
+export interface ApiBotAppSettings {
+  placeholderPath?: string;
+  backgroundColor?: string;
+  backgroundDarkColor?: string;
+  headerColor?: string;
+  headerDarkColor?: string;
+}
+
 export interface ApiBotInfo {
   botId: string;
   commands?: ApiBotCommand[];
@@ -73,4 +94,11 @@ export interface ApiBotInfo {
   photo?: ApiPhoto;
   gif?: ApiVideo;
   menuButton: ApiBotMenuButton;
+  privacyPolicyUrl?: string;
+  hasPreviewMedia?: true;
+  appSettings?: ApiBotAppSettings;
+}
+
+export interface ApiBotPreviewMedia extends MediaContainer {
+  date: number;
 }

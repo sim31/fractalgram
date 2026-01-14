@@ -1,6 +1,7 @@
-import type { ChangeEvent, RefObject } from 'react';
-import type { FC } from '../../lib/teact/teact';
-import React, { memo } from '../../lib/teact/teact';
+import type { ChangeEvent } from 'react';
+import type { ElementRef } from '../../lib/teact/teact';
+import type React from '../../lib/teact/teact';
+import { memo } from '../../lib/teact/teact';
 
 import buildClassName from '../../util/buildClassName';
 
@@ -9,15 +10,14 @@ type OwnProps = {
   value?: string;
   label?: string;
   error?: string;
-  ref?: RefObject<HTMLSelectElement>;
+  ref?: ElementRef<HTMLSelectElement>;
   hasArrow?: boolean;
-  placeholder?: string;
   tabIndex?: number;
   onChange?: (e: ChangeEvent<HTMLSelectElement>) => void;
   children: React.ReactNode;
 };
 
-const Select: FC<OwnProps> = (props) => {
+const Select = (props: OwnProps) => {
   const {
     id,
     value,
@@ -25,7 +25,6 @@ const Select: FC<OwnProps> = (props) => {
     hasArrow,
     error,
     ref,
-    placeholder,
     tabIndex,
     onChange,
     children,
@@ -47,7 +46,6 @@ const Select: FC<OwnProps> = (props) => {
         id={id}
         value={value || ''}
         onChange={onChange}
-        placeholder={placeholder || label}
         tabIndex={tabIndex}
         ref={ref}
       >

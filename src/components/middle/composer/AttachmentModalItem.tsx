@@ -1,17 +1,18 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useMemo } from '../../../lib/teact/teact';
+import { memo, useMemo } from '../../../lib/teact/teact';
 
 import type { ApiAttachment } from '../../../api/types';
 
-import { GIF_MIME_TYPE, SUPPORTED_IMAGE_CONTENT_TYPES, SUPPORTED_VIDEO_CONTENT_TYPES } from '../../../config';
+import { SUPPORTED_PHOTO_CONTENT_TYPES, SUPPORTED_VIDEO_CONTENT_TYPES } from '../../../config';
 import buildClassName from '../../../util/buildClassName';
-import { formatMediaDuration } from '../../../util/dateFormat';
+import { formatMediaDuration } from '../../../util/dates/dateFormat';
 import { getFileExtension } from '../../common/helpers/documentInfo';
 import { REM } from '../../common/helpers/mediaDimensions';
 
 import useLastCallback from '../../../hooks/useLastCallback';
 
 import File from '../../common/File';
+import Icon from '../../common/icons/Icon';
 import MediaSpoiler from '../../common/MediaSpoiler';
 
 import styles from './AttachmentModalItem.module.scss';
@@ -47,7 +48,7 @@ const AttachmentModalItem: FC<OwnProps> = ({
 
   const content = useMemo(() => {
     switch (displayType) {
-      case 'image':
+      case 'photo':
         return (
           <img
             className={styles.preview}
@@ -60,7 +61,7 @@ const AttachmentModalItem: FC<OwnProps> = ({
         return (
           <>
             {Boolean(attachment.quick?.duration) && (
-              <div className={styles.duration}>{formatMediaDuration(attachment.quick!.duration)}</div>
+              <div className={styles.duration}>{formatMediaDuration(attachment.quick.duration)}</div>
             )}
             <video
               className={styles.preview}
@@ -84,8 +85,10 @@ const AttachmentModalItem: FC<OwnProps> = ({
               smaller
             />
             {onDelete && (
-              <i
-                className={buildClassName('icon', 'icon-delete', styles.actionItem, styles.deleteFile)}
+              <Icon
+                name="delete"
+                className={buildClassName(styles.actionItem, styles.deleteFile)}
+
                 onClick={() => onDelete(index)}
               />
             )}
@@ -95,9 +98,7 @@ const AttachmentModalItem: FC<OwnProps> = ({
   }, [attachment, displayType, index, onDelete]);
 
   const shouldSkipGrouping = displayType === 'file' || !shouldDisplayGrouped;
-  const canDisplaySpoilerButton = attachment.mimeType !== GIF_MIME_TYPE;
-  const shouldDisplaySpoiler = Boolean(displayType !== 'file' && canDisplaySpoilerButton
-    && attachment.shouldSendAsSpoiler);
+  const shouldDisplaySpoiler = Boolean(displayType !== 'file' && attachment.shouldSendAsSpoiler);
   const shouldRenderOverlay = displayType !== 'file';
 
   const rootClassName = buildClassName(
@@ -115,21 +116,14 @@ const AttachmentModalItem: FC<OwnProps> = ({
       />
       {shouldRenderOverlay && (
         <div className={styles.overlay}>
-          {canDisplaySpoilerButton && (
-            <i
-              className={buildClassName(
-                'icon',
-                attachment.shouldSendAsSpoiler ? 'icon-spoiler-disable' : 'icon-spoiler',
-                styles.actionItem,
-              )}
-              onClick={handleSpoilerClick}
-            />
-          )}
+          <Icon
+            name={attachment.shouldSendAsSpoiler ? 'spoiler-disable' : 'spoiler'}
+            className={styles.actionItem}
+            onClick={handleSpoilerClick}
+          />
           {onDelete && (
-            <i
-              className={buildClassName('icon', 'icon-delete', styles.actionItem)}
-              onClick={() => onDelete(index)}
-            />
+
+            <Icon name="delete" className={styles.actionItem} onClick={() => onDelete(index)} />
           )}
         </div>
       )}
@@ -139,8 +133,8 @@ const AttachmentModalItem: FC<OwnProps> = ({
 
 function getDisplayType(attachment: ApiAttachment, shouldDisplayCompressed?: boolean) {
   if (shouldDisplayCompressed && attachment.quick) {
-    if (SUPPORTED_IMAGE_CONTENT_TYPES.has(attachment.mimeType)) {
-      return 'image';
+    if (SUPPORTED_PHOTO_CONTENT_TYPES.has(attachment.mimeType)) {
+      return 'photo';
     }
     if (SUPPORTED_VIDEO_CONTENT_TYPES.has(attachment.mimeType)) {
       return 'video';

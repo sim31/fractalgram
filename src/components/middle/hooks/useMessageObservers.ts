@@ -1,24 +1,25 @@
-import type { RefObject } from 'react';
+import type { ElementRef } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
-import type { MessageListType } from '../../../global/types';
-import type { PinnedIntersectionChangedCallback } from './usePinnedMessage';
+import type { MessageListType } from '../../../types';
+import type { OnIntersectPinnedMessage } from './usePinnedMessage';
 
-import { IS_ANDROID } from '../../../util/windowEnvironment';
+import { IS_ANDROID } from '../../../util/browser/windowEnvironment';
 
 import useAppLayout from '../../../hooks/useAppLayout';
-import useBackgroundMode, { isBackgroundModeActive } from '../../../hooks/useBackgroundMode';
 import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
+import useBackgroundMode, { isBackgroundModeActive } from '../../../hooks/window/useBackgroundMode';
 
 const INTERSECTION_THROTTLE_FOR_READING = 150;
 const INTERSECTION_THROTTLE_FOR_MEDIA = IS_ANDROID ? 1000 : 350;
 
 export default function useMessageObservers(
   type: MessageListType,
-  containerRef: RefObject<HTMLDivElement>,
+  containerRef: ElementRef<HTMLDivElement>,
   memoFirstUnreadIdRef: { current: number | undefined },
-  onPinnedIntersectionChange: PinnedIntersectionChangedCallback,
+  onIntersectPinnedMessage: OnIntersectPinnedMessage | undefined,
   chatId: string,
+  isQuickPreview?: boolean,
 ) {
   const {
     markMessageListRead, markMentionsRead, animateUnreadReaction,
@@ -44,12 +45,9 @@ export default function useMessageObservers(
     const viewportPinnedIdsToAdd: number[] = [];
     const viewportPinnedIdsToRemove: number[] = [];
     const scheduledToUpdateViews: number[] = [];
-    let isReversed = false;
 
     entries.forEach((entry) => {
-      const {
-        isIntersecting, target, boundingClientRect, rootBounds,
-      } = entry;
+      const { isIntersecting, target } = entry;
 
       const { dataset } = target as HTMLDivElement;
       const messageId = Number(dataset.lastMessageId || dataset.messageId);
@@ -58,9 +56,6 @@ export default function useMessageObservers(
 
       if (!isIntersecting) {
         if (dataset.isPinned) {
-          if (rootBounds && boundingClientRect.bottom < rootBounds.top) {
-            isReversed = true;
-          }
           viewportPinnedIdsToRemove.push(albumMainId || messageId);
         }
         return;
@@ -87,12 +82,18 @@ export default function useMessageObservers(
       }
     });
 
-    if (memoFirstUnreadIdRef.current && maxId >= memoFirstUnreadIdRef.current) {
-      markMessageListRead({ maxId });
-    }
+    if (!isQuickPreview) {
+      if (memoFirstUnreadIdRef.current && maxId && maxId >= memoFirstUnreadIdRef.current) {
+        markMessageListRead({ maxId });
+      }
 
-    if (mentionIds.length) {
-      markMentionsRead({ messageIds: mentionIds });
+      if (mentionIds.length) {
+        markMentionsRead({ chatId, messageIds: mentionIds });
+      }
+
+      if (scheduledToUpdateViews.length) {
+        scheduleForViewsIncrement({ chatId, ids: scheduledToUpdateViews });
+      }
     }
 
     if (reactionIds.length) {
@@ -100,11 +101,7 @@ export default function useMessageObservers(
     }
 
     if (viewportPinnedIdsToAdd.length || viewportPinnedIdsToRemove.length) {
-      onPinnedIntersectionChange({ viewportPinnedIdsToAdd, viewportPinnedIdsToRemove, isReversed });
-    }
-
-    if (scheduledToUpdateViews.length) {
-      scheduleForViewsIncrement({ chatId, ids: scheduledToUpdateViews });
+      onIntersectPinnedMessage?.({ viewportPinnedIdsToAdd, viewportPinnedIdsToRemove });
     }
   });
 

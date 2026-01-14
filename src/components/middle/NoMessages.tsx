@@ -1,15 +1,16 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo } from '../../lib/teact/teact';
+import { memo } from '../../lib/teact/teact';
 
 import type { ApiTopic } from '../../api/types';
-import type { MessageListType } from '../../global/types';
-import type { LangFn } from '../../hooks/useLang';
+import type { OldLangFn } from '../../hooks/useOldLang';
+import type { MessageListType } from '../../types';
 
 import { REM } from '../common/helpers/mediaDimensions';
 import renderText from '../common/helpers/renderText';
 
-import useLang from '../../hooks/useLang';
+import useOldLang from '../../hooks/useOldLang';
 
+import Icon from '../common/icons/Icon';
 import TopicIcon from '../common/TopicIcon';
 
 import './NoMessages.scss';
@@ -30,7 +31,7 @@ const NoMessages: FC<OwnProps> = ({
   isGroupChatJustCreated,
   topic,
 }) => {
-  const lang = useLang();
+  const lang = useOldLang();
 
   if (type === 'scheduled') {
     return renderScheduled(lang);
@@ -53,7 +54,7 @@ const NoMessages: FC<OwnProps> = ({
   );
 };
 
-function renderTopic(lang: LangFn, topic: ApiTopic) {
+function renderTopic(lang: OldLangFn, topic: ApiTopic) {
   return (
     <div className="NoMessages">
       <div className="wrapper">
@@ -69,17 +70,17 @@ function renderTopic(lang: LangFn, topic: ApiTopic) {
   );
 }
 
-function renderScheduled(lang: LangFn) {
+function renderScheduled(lang: OldLangFn) {
   return (
     <div className="empty"><span>{lang('ScheduledMessages.EmptyPlaceholder')}</span></div>
   );
 }
 
-function renderSavedMessages(lang: LangFn) {
+function renderSavedMessages(lang: OldLangFn) {
   return (
     <div className="NoMessages">
       <div className="wrapper">
-        <i className="icon no-messages-icon icon-cloud-download" />
+        <Icon name="cloud-download" className="no-messages-icon" />
         <h3 className="title">{lang('Conversation.CloudStorageInfo.Title')}</h3>
         <ul className="description">
           <li>{lang('Conversation.ClousStorageInfo.Description1')}</li>
@@ -92,7 +93,7 @@ function renderSavedMessages(lang: LangFn) {
   );
 }
 
-function renderGroup(lang: LangFn) {
+function renderGroup(lang: OldLangFn) {
   return (
     <div className="NoMessages">
       <div className="wrapper" dir={lang.isRtl ? 'rtl' : undefined}>

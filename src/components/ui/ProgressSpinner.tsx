@@ -1,45 +1,56 @@
-import type { FC } from '../../lib/teact/teact';
-import React, { memo, useEffect, useRef } from '../../lib/teact/teact';
+import { memo, useEffect, useRef } from '../../lib/teact/teact';
 
 import { requestMutation } from '../../lib/fasterdom/fasterdom';
 import { animate, timingFunctions } from '../../util/animation';
 import buildClassName from '../../util/buildClassName';
-import { DPR } from '../../util/windowEnvironment';
 
+import useDynamicColorListener from '../../hooks/stickers/useDynamicColorListener';
 import { useStateRef } from '../../hooks/useStateRef';
+import useDevicePixelRatio from '../../hooks/window/useDevicePixelRatio';
+
+import Icon from '../common/icons/Icon';
 
 import './ProgressSpinner.scss';
 
-const SIZES = {
-  s: 42, m: 48, l: 54, xl: 52,
-};
-const STROKE_WIDTH = 2 * DPR;
-const STROKE_WIDTH_XL = 3 * DPR;
-const PADDING = 2 * DPR;
-const MIN_PROGRESS = 0.05;
-const MAX_PROGRESS = 1;
-const GROW_DURATION = 600; // 0.6 s
-const ROTATE_DURATION = 2000; // 2 s
-
-const ProgressSpinner: FC<{
+type OwnProps = {
   progress?: number;
   size?: 's' | 'm' | 'l' | 'xl';
   square?: boolean;
   transparent?: boolean;
   noCross?: boolean;
+  rotationOffset?: number;
+  withColor?: boolean;
   onClick?: (e: React.MouseEvent<HTMLElement, MouseEvent>) => void;
-}> = ({
+};
+
+const SIZES = {
+  s: 42, m: 48, l: 54, xl: 52,
+};
+const STROKE_WIDTH = 2;
+const STROKE_WIDTH_XL = 3;
+const PADDING = 2;
+const MIN_PROGRESS = 0.05;
+const MAX_PROGRESS = 1;
+const GROW_DURATION = 600; // 0.6 s
+const ROTATE_DURATION = 2000; // 2 s
+
+const ProgressSpinner = ({
   progress = 0,
   size = 'l',
   square,
   transparent,
   noCross,
+  rotationOffset,
+  withColor,
   onClick,
-}) => {
-  // eslint-disable-next-line no-null/no-null
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+}: OwnProps) => {
+  const canvasRef = useRef<HTMLCanvasElement>();
   const width = SIZES[size];
   const progressRef = useStateRef(progress);
+
+  const dpr = useDevicePixelRatio();
+
+  const color = useDynamicColorListener(canvasRef, undefined, !withColor);
 
   useEffect(() => {
     let isFirst = true;
@@ -65,18 +76,20 @@ const ProgressSpinner: FC<{
 
       drawSpinnerArc(
         canvasRef.current,
-        width * DPR,
-        size === 'xl' ? STROKE_WIDTH_XL : STROKE_WIDTH,
-        'white',
+        width * dpr,
+        (size === 'xl' ? STROKE_WIDTH_XL : STROKE_WIDTH) * dpr,
+        color ?? 'white',
         currentProgress,
+        dpr,
         isFirst,
+        rotationOffset,
       );
 
       isFirst = false;
 
       return currentProgress < 1;
     }, requestMutation);
-  }, [progressRef, size, width]);
+  }, [progressRef, size, width, dpr, rotationOffset, color]);
 
   const className = buildClassName(
     `ProgressSpinner size-${size}`,
@@ -90,6 +103,7 @@ const ProgressSpinner: FC<{
       className={className}
       onClick={onClick}
     >
+      {!noCross && <Icon name="close" />}
       <canvas ref={canvasRef} className="ProgressSpinner_canvas" style={`width: ${width}; height: ${width}px;`} />
     </div>
   );
@@ -101,12 +115,14 @@ function drawSpinnerArc(
   strokeWidth: number,
   color: string,
   progress: number,
+  dpr: number,
   shouldInit = false,
+  rotationOffset?: number,
 ) {
   const centerCoordinate = size / 2;
-  const radius = (size - strokeWidth) / 2 - PADDING;
-  const rotationOffset = (Date.now() % ROTATE_DURATION) / ROTATE_DURATION;
-  const startAngle = (2 * Math.PI) * rotationOffset;
+  const radius = (size - strokeWidth) / 2 - PADDING * dpr;
+  const offset = rotationOffset ?? (Date.now() % ROTATE_DURATION) / ROTATE_DURATION;
+  const startAngle = (2 * Math.PI) * offset;
   const endAngle = startAngle + (2 * Math.PI) * progress;
   const ctx = canvas.getContext('2d')!;
 

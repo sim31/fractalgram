@@ -1,18 +1,20 @@
-import React, {
-  memo, useEffect, useRef, useState,
+import {
+  memo, useEffect, useLayoutEffect, useRef, useState,
 } from '../../lib/teact/teact';
 import { addExtraClass, removeExtraClass } from '../../lib/teact/teact-dom';
 
 import type { ApiStory } from '../../api/types';
 
-import { requestMutation } from '../../lib/fasterdom/fasterdom';
+import { requestForcedReflow, requestMeasure, requestMutation } from '../../lib/fasterdom/fasterdom';
 import buildClassName from '../../util/buildClassName';
-import { REM } from '../common/helpers/mediaDimensions';
+import calcTextLineHeightAndCount from '../../util/element/calcTextLineHeightAndCount';
 
-import useLang from '../../hooks/useLang';
+import useCurrentOrPrev from '../../hooks/useCurrentOrPrev';
+import useOldLang from '../../hooks/useOldLang';
 import usePrevDuringAnimation from '../../hooks/usePrevDuringAnimation';
-import useShowTransition from '../../hooks/useShowTransition';
+import useShowTransitionDeprecated from '../../hooks/useShowTransitionDeprecated';
 
+import EmbeddedStoryForward from '../common/embedded/EmbeddedStoryForward';
 import MessageText from '../common/MessageText';
 
 import styles from './StoryViewer.module.scss';
@@ -26,33 +28,23 @@ interface OwnProps {
 }
 
 const EXPAND_ANIMATION_DURATION_MS = 400;
-const OVERFLOW_THRESHOLD_PX = 5.75 * REM;
+const LINES_TO_SHOW = 3;
 
 function StoryCaption({
   story, isExpanded, className, onExpand, onFold,
 }: OwnProps) {
-  const lang = useLang();
-  // eslint-disable-next-line no-null/no-null
-  const ref = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const contentRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const showMoreButtonRef = useRef<HTMLDivElement>(null);
+  const lang = useOldLang();
+  const ref = useRef<HTMLDivElement>();
+  const contentRef = useRef<HTMLDivElement>();
+  const textRef = useRef<HTMLDivElement>();
+  const showMoreButtonRef = useRef<HTMLDivElement>();
+  const renderingStory = useCurrentOrPrev(story, true);
 
-  const caption = story.content.text;
+  const caption = renderingStory?.content.text;
 
   const [hasOverflow, setHasOverflow] = useState(false);
   const prevIsExpanded = usePrevDuringAnimation(isExpanded || undefined, EXPAND_ANIMATION_DURATION_MS);
   const isInExpandedState = isExpanded || prevIsExpanded;
-
-  useEffect(() => {
-    if (!ref.current) {
-      return;
-    }
-
-    const { clientHeight } = ref.current;
-    setHasOverflow(clientHeight > OVERFLOW_THRESHOLD_PX);
-  }, [caption]);
 
   useEffect(() => {
     requestMutation(() => {
@@ -69,23 +61,51 @@ function StoryCaption({
   }, [isExpanded]);
 
   const canExpand = hasOverflow && !isInExpandedState;
-  const { shouldRender: shouldRenderShowMore, transitionClassNames } = useShowTransition(
+  const { shouldRender: shouldRenderShowMore, transitionClassNames } = useShowTransitionDeprecated(
     canExpand, undefined, true, 'slow', true,
   );
 
-  useEffect(() => {
-    if (!showMoreButtonRef.current || !contentRef.current) {
-      return;
-    }
+  // Setup gradient to clip caption before button
+  useLayoutEffect(() => {
+    requestMeasure(() => {
+      const container = contentRef.current;
+      const button = showMoreButtonRef.current;
+      if (!container || !button) {
+        return;
+      }
 
-    const button = showMoreButtonRef.current;
-    const container = contentRef.current;
+      const { offsetWidth } = button;
 
-    const { offsetWidth } = button;
-    requestMutation(() => {
-      container.style.setProperty('--expand-button-width', `${offsetWidth}px`);
+      requestMutation(() => {
+        container.style.setProperty('--expand-button-width', `${offsetWidth}px`);
+      });
     });
-  }, [canExpand]);
+  }, [shouldRenderShowMore, lang]);
+
+  useLayoutEffect(() => {
+    requestForcedReflow(() => {
+      if (!contentRef.current || !textRef.current) {
+        return undefined;
+      }
+
+      const container = contentRef.current;
+      const textContainer = textRef.current;
+
+      const textOffsetTop = textContainer.offsetTop;
+      const { lineHeight, totalLines } = calcTextLineHeightAndCount(textContainer);
+      const isOverflowing = totalLines > LINES_TO_SHOW;
+      const overflowShift = textOffsetTop + lineHeight * LINES_TO_SHOW;
+
+      return () => {
+        if (isOverflowing) {
+          addExtraClass(container, styles.hasOverflow);
+          setHasOverflow(true);
+        }
+
+        container.style.setProperty('--_overflow-shift', `${overflowShift}px`);
+      };
+    });
+  }, [caption]);
 
   useEffect(() => {
     if (!isExpanded) {
@@ -95,7 +115,6 @@ function StoryCaption({
 
   const fullClassName = buildClassName(
     styles.captionContent,
-    hasOverflow && !isExpanded && styles.hasOverflow,
     isInExpandedState && styles.expanded,
     shouldRenderShowMore && styles.withShowMore,
   );
@@ -112,11 +131,21 @@ function StoryCaption({
           ref={ref}
           className={buildClassName(styles.captionInner, 'allow-selection', 'custom-scroll')}
         >
-          <MessageText
-            messageOrStory={story}
-            withTranslucentThumbs
-            forcePlayback
-          />
+          {renderingStory?.forwardInfo && (
+            <EmbeddedStoryForward
+              forwardInfo={renderingStory.forwardInfo}
+              className={styles.forwardInfo}
+            />
+          )}
+          {renderingStory && caption && (
+            <div ref={textRef} className={styles.captionText}>
+              <MessageText
+                messageOrStory={renderingStory}
+                withTranslucentThumbs
+                forcePlayback
+              />
+            </div>
+          )}
         </div>
       </div>
       {shouldRenderShowMore && (

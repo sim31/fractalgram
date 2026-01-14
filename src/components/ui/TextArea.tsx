@@ -1,15 +1,19 @@
-import type { ChangeEvent, FormEvent, RefObject } from 'react';
-import type { FC } from '../../lib/teact/teact';
-import React, {
-  memo, useCallback, useEffect, useRef,
+import type { ChangeEvent, FormEvent } from 'react';
+import type { ElementRef, FC } from '../../lib/teact/teact';
+import type React from '../../lib/teact/teact';
+import {
+  memo, useCallback, useLayoutEffect, useRef,
 } from '../../lib/teact/teact';
 
+import { requestForcedReflow, requestMutation } from '../../lib/fasterdom/fasterdom';
+import { IS_TAURI } from '../../util/browser/globalEnvironment';
 import buildClassName from '../../util/buildClassName';
 
-import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
+import useOldLang from '../../hooks/useOldLang';
 
 type OwnProps = {
-  ref?: RefObject<HTMLTextAreaElement>;
+  ref?: ElementRef<HTMLTextAreaElement>;
   id?: string;
   className?: string;
   value?: string;
@@ -57,13 +61,12 @@ const TextArea: FC<OwnProps> = ({
   onPaste,
   noReplaceNewlines,
 }) => {
-  // eslint-disable-next-line no-null/no-null
-  let textareaRef = useRef<HTMLTextAreaElement>(null);
+  let textareaRef = useRef<HTMLTextAreaElement>();
   if (ref) {
     textareaRef = ref;
   }
 
-  const lang = useLang();
+  const lang = useOldLang();
   const labelText = error || success || label;
   const fullClassName = buildClassName(
     'input-group',
@@ -75,22 +78,33 @@ const TextArea: FC<OwnProps> = ({
     className,
   );
 
-  useEffect(() => {
+  const resizeHeight = useLastCallback((element: HTMLTextAreaElement) => {
+    requestMutation(() => {
+      element.style.height = '0';
+      requestForcedReflow(() => {
+        const newHeight = element.scrollHeight;
+        return () => {
+          element.style.height = `${newHeight}px`;
+        };
+      });
+    });
+  });
+
+  useLayoutEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
-    textarea.style.height = '0';
-    textarea.style.height = `${textarea.scrollHeight}px`;
+    resizeHeight(textarea);
   }, []);
 
   const handleChange = useCallback((e: ChangeEvent<HTMLTextAreaElement>) => {
+    const target = e.currentTarget;
     if (!noReplaceNewlines) {
-      const previousSelectionEnd = e.currentTarget.selectionEnd;
+      const previousSelectionEnd = target.selectionEnd;
       // TDesktop replaces newlines with spaces as well
-      e.currentTarget.value = e.currentTarget.value.replace(/\n/g, ' ');
-      e.currentTarget.selectionEnd = previousSelectionEnd;
+      target.value = target.value.replace(/\n/g, ' ');
+      target.selectionEnd = previousSelectionEnd;
     }
-    e.currentTarget.style.height = '0';
-    e.currentTarget.style.height = `${e.currentTarget.scrollHeight}px`;
+    resizeHeight(target);
     onChange?.(e);
   }, [noReplaceNewlines, onChange]);
 
@@ -106,6 +120,7 @@ const TextArea: FC<OwnProps> = ({
         placeholder={placeholder}
         maxLength={maxLength}
         autoComplete={autoComplete}
+        spellCheck={IS_TAURI ? false : undefined}
         inputMode={inputMode}
         disabled={disabled}
         readOnly={readOnly}

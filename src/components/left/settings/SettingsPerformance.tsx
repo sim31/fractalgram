@@ -1,21 +1,23 @@
-import React, {
+import type React from '../../../lib/teact/teact';
+import {
   memo, useCallback, useMemo, useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { AnimationLevel, PerformanceType, PerformanceTypeKey } from '../../../types';
+import type { RegularLangKey } from '../../../types/language';
 
 import {
   ANIMATION_LEVEL_CUSTOM, ANIMATION_LEVEL_MAX, ANIMATION_LEVEL_MED, ANIMATION_LEVEL_MIN,
 } from '../../../config';
 import {
   INITIAL_PERFORMANCE_STATE_MAX,
-  INITIAL_PERFORMANCE_STATE_MID,
+  INITIAL_PERFORMANCE_STATE_MED,
   INITIAL_PERFORMANCE_STATE_MIN,
 } from '../../../global/initialState';
 import { selectPerformanceSettings } from '../../../global/selectors';
 import { areDeepEqual } from '../../../util/areDeepEqual';
-import { IS_BACKDROP_BLUR_SUPPORTED } from '../../../util/windowEnvironment';
+import { IS_BACKDROP_BLUR_SUPPORTED, IS_SNAP_EFFECT_SUPPORTED } from '../../../util/browser/windowEnvironment';
 
 import useHistoryBack from '../../../hooks/useHistoryBack';
 import useLang from '../../../hooks/useLang';
@@ -23,10 +25,10 @@ import useLang from '../../../hooks/useLang';
 import Checkbox from '../../ui/Checkbox';
 import RangeSlider from '../../ui/RangeSlider';
 
-type PerformanceSection = [string, PerformanceOption[]];
+type PerformanceSection = [RegularLangKey, PerformanceOption[]];
 type PerformanceOption = {
   key: PerformanceTypeKey;
-  label: string;
+  label: RegularLangKey;
   disabled?: boolean;
 };
 
@@ -39,37 +41,38 @@ type StateProps = {
   performanceSettings: PerformanceType;
 };
 
-const ANIMATION_LEVEL_OPTIONS = [
-  'Power Saving',
-  'Nice and Fast',
-  'Lots of Stuff',
+const ANIMATION_LEVEL_OPTIONS: RegularLangKey[] = [
+  'SettingsPerformanceSliderLow',
+  'SettingsPerformanceSliderMedium',
+  'SettingsPerformanceSliderHigh',
 ];
 
-const ANIMATION_LEVEL_CUSTOM_OPTIONS = [
-  'Power Saving',
-  'Custom',
-  'Lots of Stuff',
+const ANIMATION_LEVEL_CUSTOM_OPTIONS: RegularLangKey[] = [
+  'SettingsPerformanceSliderLow',
+  'SettingsPerformanceSliderCustom',
+  'SettingsPerformanceSliderHigh',
 ];
 
 const PERFORMANCE_OPTIONS: PerformanceSection[] = [
-  ['LiteMode.Key.animations.Title', [
-    { key: 'pageTransitions', label: 'Page Transitions' },
-    { key: 'messageSendingAnimations', label: 'Message Sending Animation' },
-    { key: 'mediaViewerAnimations', label: 'Media Viewer Animations' },
-    { key: 'messageComposerAnimations', label: 'Message Composer Animations' },
-    { key: 'contextMenuAnimations', label: 'Context Menu Animation' },
-    { key: 'contextMenuBlur', label: 'Context Menu Blur', disabled: !IS_BACKDROP_BLUR_SUPPORTED },
-    { key: 'rightColumnAnimations', label: 'Right Column Animation' },
+  ['SettingsPerformanceInterfaceAnimations', [
+    { key: 'pageTransitions', label: 'SettingsPerformancePageTransitions' },
+    { key: 'messageSendingAnimations', label: 'SettingsPerformanceSending' },
+    { key: 'mediaViewerAnimations', label: 'SettingsPerformanceMediaViewer' },
+    { key: 'messageComposerAnimations', label: 'SettingsPerformanceComposer' },
+    { key: 'contextMenuAnimations', label: 'SettingsPerformanceContextAnimation' },
+    { key: 'contextMenuBlur', label: 'SettingsPerformanceContextBlur', disabled: !IS_BACKDROP_BLUR_SUPPORTED },
+    { key: 'rightColumnAnimations', label: 'SettingsPerformanceRightColumn' },
+    { key: 'snapEffect', label: 'SettingsPerformanceThanos' },
   ]],
-  ['Stickers and Emoji', [
-    { key: 'animatedEmoji', label: 'Allow Animated Emoji' },
-    { key: 'loopAnimatedStickers', label: 'Loop Animated Stickers' },
-    { key: 'reactionEffects', label: 'Reaction Effects' },
-    { key: 'stickerEffects', label: 'Full-Screen Sticker and Emoji Effects' },
+  ['SettingsPerformanceStickers', [
+    { key: 'animatedEmoji', label: 'SettingsPerformanceAnimatedEmoji' },
+    { key: 'loopAnimatedStickers', label: 'SettingsPerformanceLoopStickers' },
+    { key: 'reactionEffects', label: 'SettingsPerformanceReactionEffects' },
+    { key: 'stickerEffects', label: 'SettingsPerformanceStickerEffects' },
   ]],
-  ['AutoplayMedia', [
-    { key: 'autoplayGifs', label: 'AutoplayGIF' },
-    { key: 'autoplayVideos', label: 'AutoplayVideo' },
+  ['SettingsPerformanceMediaAutoplay', [
+    { key: 'autoplayGifs', label: 'SettingsPerformanceAutoplayGif' },
+    { key: 'autoplayVideos', label: 'SettingsPerformanceAutoplayVideo' },
   ]],
 ];
 
@@ -79,7 +82,7 @@ function SettingsPerformance({
   onReset,
 }: OwnProps & StateProps) {
   const {
-    setSettingOption,
+    setSharedSettingOption,
     updatePerformanceSettings,
   } = getActions();
 
@@ -106,15 +109,20 @@ function SettingsPerformance({
     if (areDeepEqual(performanceSettings, INITIAL_PERFORMANCE_STATE_MIN)) {
       return ANIMATION_LEVEL_MIN;
     }
-    if (areDeepEqual(performanceSettings, INITIAL_PERFORMANCE_STATE_MID)) {
+    if (areDeepEqual(performanceSettings, INITIAL_PERFORMANCE_STATE_MED)) {
       return ANIMATION_LEVEL_MED;
     }
 
     return ANIMATION_LEVEL_CUSTOM;
   }, [performanceSettings]);
-  const animationLevelOptions = animationLevelState === ANIMATION_LEVEL_CUSTOM
-    ? ANIMATION_LEVEL_CUSTOM_OPTIONS
-    : ANIMATION_LEVEL_OPTIONS;
+
+  const animationLevelOptions = useMemo(() => {
+    const options = animationLevelState === ANIMATION_LEVEL_CUSTOM
+      ? ANIMATION_LEVEL_CUSTOM_OPTIONS
+      : ANIMATION_LEVEL_OPTIONS;
+
+    return options.map((option) => lang(option));
+  }, [animationLevelState, lang]);
 
   const handleToggleSection = useCallback((e: React.MouseEvent, index?: string) => {
     e.preventDefault();
@@ -129,11 +137,11 @@ function SettingsPerformance({
   const handleAnimationLevelChange = useCallback((newLevel: number) => {
     const performance = newLevel === ANIMATION_LEVEL_MIN
       ? INITIAL_PERFORMANCE_STATE_MIN
-      : (newLevel === ANIMATION_LEVEL_MED ? INITIAL_PERFORMANCE_STATE_MID : INITIAL_PERFORMANCE_STATE_MAX);
+      : (newLevel === ANIMATION_LEVEL_MED ? INITIAL_PERFORMANCE_STATE_MED : INITIAL_PERFORMANCE_STATE_MAX);
 
-    setSettingOption({ animationLevel: newLevel as AnimationLevel });
+    setSharedSettingOption({ animationLevel: newLevel as AnimationLevel, wasAnimationLevelSetManually: true });
     updatePerformanceSettings(performance);
-  }, [setSettingOption]);
+  }, []);
 
   const handlePropertyGroupChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, checked } = e.target;
@@ -160,10 +168,10 @@ function SettingsPerformance({
     <div className="settings-content custom-scroll">
       <div className="settings-item">
         <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>
-          Animation Level
+          {lang('SettingsPerformanceSliderTitle')}
         </h4>
         <p className="settings-item-description" dir={lang.isRtl ? 'rtl' : undefined}>
-          Choose the desired animations amount.
+          {lang('SettingsPerformanceSliderSubtitle')}
         </p>
 
         <RangeSlider
@@ -174,7 +182,7 @@ function SettingsPerformance({
       </div>
 
       <div className="settings-item-simple settings-item__with-shifted-dropdown">
-        <h3 className="settings-item-header" dir="auto">Resource-Intensive Processes</h3>
+        <h3 className="settings-item-header" dir="auto">{lang('SettingsPerformanceGranularTitle')}</h3>
 
         {PERFORMANCE_OPTIONS.map(([sectionName, options], index) => {
           return (
@@ -195,16 +203,19 @@ function SettingsPerformance({
               </div>
               {Boolean(sectionExpandedStates[index]) && (
                 <div className="DropdownList DropdownList--open">
-                  {options.map(({ key, label, disabled }) => (
-                    <Checkbox
-                      key={key}
-                      name={key}
-                      checked={performanceSettings[key]}
-                      label={lang(label)}
-                      disabled={disabled}
-                      onChange={handlePropertyChange}
-                    />
-                  ))}
+                  {options.map(({ key, label, disabled }) => {
+                    if (key === 'snapEffect' && !IS_SNAP_EFFECT_SUPPORTED) return undefined;
+                    return (
+                      <Checkbox
+                        key={key}
+                        name={key}
+                        checked={performanceSettings[key]}
+                        label={lang(label)}
+                        disabled={disabled}
+                        onChange={handlePropertyChange}
+                      />
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -215,7 +226,7 @@ function SettingsPerformance({
   );
 }
 
-export default memo(withGlobal<OwnProps>((global): StateProps => {
+export default memo(withGlobal<OwnProps>((global): Complete<StateProps> => {
   return {
     performanceSettings: selectPerformanceSettings(global),
   };

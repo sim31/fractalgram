@@ -4,9 +4,7 @@ type OrderDirection =
   'asc'
   | 'desc';
 
-interface OrderCallback<T> {
-  (member: T): any;
-}
+type OrderCallback<T> = (member: T) => unknown;
 
 export function buildCollectionByKey<T extends AnyLiteral>(collection: T[], key: keyof T) {
   return collection.reduce((byKey: CollectionByKey<T>, member: T) => {
@@ -16,7 +14,7 @@ export function buildCollectionByKey<T extends AnyLiteral>(collection: T[], key:
   }, {});
 }
 
-export function buildCollectionByCallback<T extends AnyLiteral, K extends number | string, R extends unknown>(
+export function buildCollectionByCallback<T extends AnyLiteral, K extends number | string, R>(
   collection: T[],
   callback: (member: T) => [K, R],
 ) {
@@ -28,7 +26,7 @@ export function buildCollectionByCallback<T extends AnyLiteral, K extends number
   }, {} as Record<K, R>);
 }
 
-export function mapValues<R extends any, M extends any>(
+export function mapValues<R, M>(
   byKey: CollectionByKey<M>,
   callback: (member: M, key: string, index: number, originalByKey: CollectionByKey<M>) => R,
 ): CollectionByKey<R> {
@@ -63,6 +61,16 @@ export function omit<T extends object, K extends keyof T>(object: T, keys: K[]):
   return pick(object, savedKeys);
 }
 
+export function omitUndefined<T extends object>(object: T): T {
+  return Object.keys(object).reduce((result, stringKey) => {
+    const key = stringKey as keyof T;
+    if (object[key] !== undefined) {
+      result[key] = object[key];
+    }
+    return result;
+  }, {} as T);
+}
+
 export function orderBy<T>(
   collection: T[],
   orderRule: (keyof T) | OrderCallback<T> | ((keyof T) | OrderCallback<T>)[],
@@ -72,6 +80,7 @@ export function orderBy<T>(
     const aValue = (typeof currentOrderRule === 'function' ? currentOrderRule(a) : a[currentOrderRule]) || 0;
     const bValue = (typeof currentOrderRule === 'function' ? currentOrderRule(b) : b[currentOrderRule]) || 0;
 
+    // @ts-expect-error Rely on the JS to handle the comparison
     return isAsc ? aValue - bValue : bValue - aValue;
   }
 
@@ -92,15 +101,15 @@ export function orderBy<T>(
   });
 }
 
-export function unique<T extends any>(array: T[]): T[] {
+export function unique<T>(array: T[]): T[] {
   return Array.from(new Set(array));
 }
 
-export function uniqueByField<T extends any>(array: T[], field: keyof T): T[] {
+export function uniqueByField<T>(array: T[], field: keyof T): T[] {
   return [...new Map(array.map((item) => [item[field], item])).values()];
 }
 
-export function compact<T extends any>(array: T[]) {
+export function compact<T>(array: T[]) {
   return array.filter(Boolean);
 }
 
@@ -115,12 +124,38 @@ export function areSortedArraysEqual(array1: any[], array2: any[]) {
 export function areSortedArraysIntersecting(array1: any[], array2: any[]) {
   return array1[0] <= array2[array2.length - 1] && array1[array1.length - 1] >= array2[0];
 }
+export function isInsideSortedArrayRange(value: any, array: any[]) {
+  return array[0] <= value && value <= array[array.length - 1];
+}
 
 export function findIntersectionWithSet<T>(array: T[], set: Set<T>): T[] {
   return array.filter((a) => set.has(a));
 }
+/**
+ * Exlude elements from base array. Both arrays should be sorted in same order
+ * @param base
+ * @param toExclude
+ * @returns New array without excluded elements
+ */
+export function excludeSortedArray<T>(base: T[], toExclude: T[]) {
+  if (!base?.length) return base;
 
-export function split<T extends any>(array: T[], chunkSize: number) {
+  const result: T[] = [];
+
+  let excludeIndex = 0;
+
+  for (let i = 0; i < base.length; i++) {
+    if (toExclude[excludeIndex] === base[i]) {
+      excludeIndex += 1;
+    } else {
+      result.push(base[i]);
+    }
+  }
+
+  return result;
+}
+
+export function split<T>(array: T[], chunkSize: number) {
   const result: T[][] = [];
   for (let i = 0; i < array.length; i += chunkSize) {
     result.push(array.slice(i, i + chunkSize));
@@ -129,8 +164,8 @@ export function split<T extends any>(array: T[], chunkSize: number) {
   return result;
 }
 
-export function partition<T extends unknown>(
-  array: T[], filter: (value: T, index: number, array: T[]) => boolean,
+export function partition<T>(
+  array: T[], filter: (value: T, index: number, array: T[]) => boolean | undefined,
 ): [T[], T[]] {
   const pass: T[] = [];
   const fail: T[] = [];
@@ -153,6 +188,10 @@ export function cloneDeep<T>(value: T): T {
     acc[key as keyof T] = cloneDeep(value[key as keyof T]);
     return acc;
   }, {} as T);
+}
+
+export function isLiteralObject(value: any): value is AnyLiteral {
+  return isObject(value) && !Array.isArray(value);
 }
 
 function isObject(value: any): value is object {

@@ -1,4 +1,4 @@
-import type { ApiChat, ApiMessage, ApiReaction } from '../../api/types';
+import type { ApiChat, ApiMessage, ApiReactionWithPaid } from '../../api/types';
 import type { GlobalState } from '../types';
 
 import { MIN_SCREEN_WIDTH_FOR_STATIC_LEFT_COLUMN, MIN_SCREEN_WIDTH_FOR_STATIC_RIGHT_COLUMN } from '../../config';
@@ -8,7 +8,7 @@ import {
   SIDE_COLUMN_MAX_WIDTH,
 } from '../../components/middle/helpers/calculateMiddleFooterTransforms';
 import { updateReactionCount } from '../helpers';
-import { selectSendAs, selectTabState } from '../selectors';
+import { selectIsChatWithSelf, selectSendAs, selectTabState } from '../selectors';
 import { updateChat } from './chats';
 import { updateChatMessage } from './messages';
 
@@ -40,9 +40,10 @@ export function subtractXForEmojiInteraction(global: GlobalState, x: number) {
 }
 
 export function addMessageReaction<T extends GlobalState>(
-  global: T, message: ApiMessage, userReactions: ApiReaction[],
+  global: T, message: ApiMessage, userReactions: ApiReactionWithPaid[],
 ): T {
-  const currentReactions = message.reactions || { results: [] };
+  const isInSavedMessages = selectIsChatWithSelf(global, message.chatId);
+  const currentReactions = message.reactions || { results: [], areTags: isInSavedMessages };
   const currentSendAs = selectSendAs(global, message.chatId);
 
   // Update UI without waiting for server response
@@ -56,6 +57,7 @@ export function addMessageReaction<T extends GlobalState>(
 
   userReactions.forEach((reaction) => {
     const { currentUserId } = global;
+    if (reaction.type === 'paid') return;
     recentReactions.unshift({
       peerId: currentSendAs?.id || currentUserId!,
       reaction,
@@ -76,5 +78,5 @@ export function addMessageReaction<T extends GlobalState>(
 export function updateUnreadReactions<T extends GlobalState>(
   global: T, chatId: string, update: Pick<ApiChat, 'unreadReactionsCount' | 'unreadReactions'>,
 ): T {
-  return updateChat(global, chatId, update, undefined, true);
+  return updateChat(global, chatId, update, true);
 }

@@ -1,7 +1,7 @@
 import { isAddress as isEthAddress } from 'ethers';
 import truncateEthAddress from 'truncate-eth-address';
 
-import type { ChatConsensusMessages, ConsensusResultOption, ConsensusResults } from '../types';
+import type { ChatConsensusMessages, ConsensusResultOption, ConsensusResults } from '../../types/consensus';
 
 import {
   ACCOUNT_PROMPT_RE, ACCOUNT_PROMPT_REPLACE_RE, ACCOUNT_PROMPT_TEMPLATE, ALLOWED_RANKS,

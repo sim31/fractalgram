@@ -1,26 +1,36 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
-  memo, useCallback, useMemo, useState,
+import {
+  memo, useCallback, useEffect,
+  useMemo, useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiChat, ApiChatBannedRights, ApiChatMember } from '../../../api/types';
-import { ManagementScreens } from '../../../types';
+import { ManagementProgress, ManagementScreens } from '../../../types';
 
-import { isChatPublic } from '../../../global/helpers';
-import { selectChat, selectChatFullInfo } from '../../../global/selectors';
+import {
+  DEFAULT_CHARGE_FOR_MESSAGES,
+} from '../../../config';
+import {
+  selectChat,
+  selectChatFullInfo,
+  selectTabState,
+} from '../../../global/selectors';
 import buildClassName from '../../../util/buildClassName';
-import stopEvent from '../../../util/stopEvent';
 
+import useFlag from '../../../hooks/useFlag';
 import useHistoryBack from '../../../hooks/useHistoryBack';
 import useLang from '../../../hooks/useLang';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useOldLang from '../../../hooks/useOldLang';
 import useManagePermissions from '../hooks/useManagePermissions';
 
+import PaidMessagePrice from '../../common/paidMessage/PaidMessagePrice';
 import PrivateChatInfo from '../../common/PrivateChatInfo';
-import Checkbox from '../../ui/Checkbox';
+import PermissionCheckboxList from '../../main/PermissionCheckboxList';
 import FloatingActionButton from '../../ui/FloatingActionButton';
 import ListItem from '../../ui/ListItem';
-import Spinner from '../../ui/Spinner';
+import Switcher from '../../ui/Switcher';
 
 type OwnProps = {
   chatId: string;
@@ -32,13 +42,16 @@ type OwnProps = {
 
 type StateProps = {
   chat?: ApiChat;
+  progress?: ManagementProgress;
   currentUserId?: string;
-  hasLinkedChat?: boolean;
   removedUsersCount: number;
   members?: ApiChatMember[];
+  arePaidMessagesAvailable?: boolean;
+  groupPeersPaidStars: number;
+  canChargeForMessages?: boolean;
 };
 
-const ITEM_HEIGHT = 24 + 32;
+const ITEM_HEIGHT = 48;
 const BEFORE_ITEMS_COUNT = 2;
 const ITEMS_COUNT = 9;
 
@@ -85,22 +98,23 @@ const ManageGroupPermissions: FC<OwnProps & StateProps> = ({
   onScreenSelect,
   onChatMemberSelect,
   chat,
+  progress,
   currentUserId,
-  hasLinkedChat,
   removedUsersCount,
   members,
   onClose,
   isActive,
+  arePaidMessagesAvailable,
+  canChargeForMessages,
+  groupPeersPaidStars,
 }) => {
-  const { updateChatDefaultBannedRights, showNotification } = getActions();
+  const { updateChatDefaultBannedRights, updatePaidMessagesPrice } = getActions();
 
   const {
     permissions, havePermissionChanged, isLoading, handlePermissionChange, setIsLoading,
   } = useManagePermissions(chat?.defaultBannedRights);
+  const oldLang = useOldLang();
   const lang = useLang();
-  const { isForum } = chat || {};
-  const isPublic = useMemo(() => chat && isChatPublic(chat), [chat]);
-  const shouldDisablePermissionForPublicGroup = hasLinkedChat || isPublic;
 
   useHistoryBack({
     isActive,
@@ -121,23 +135,42 @@ const ManageGroupPermissions: FC<OwnProps & StateProps> = ({
   }, [currentUserId, onChatMemberSelect, onScreenSelect]);
 
   const [isMediaDropdownOpen, setIsMediaDropdownOpen] = useState(false);
-  const handleOpenMediaDropdown = useCallback((e: React.MouseEvent) => {
-    stopEvent(e);
-    setIsMediaDropdownOpen(!isMediaDropdownOpen);
-  }, [isMediaDropdownOpen]);
 
-  const handleDisabledClick = useCallback(() => {
-    showNotification({ message: lang('lng_rights_permission_unavailable') });
-  }, [lang, showNotification]);
+  const [isPriceForMessagesChanged, markPriceForMessagesChanged, unmarkPriceForMessagesChanged] = useFlag();
+  const [isPriceForMessagesOpen, setIsPriceForMessagesOpen] = useState(canChargeForMessages);
+  const [chargeForMessages, setChargeForMessages] = useState<number>(groupPeersPaidStars);
 
-  const handleSavePermissions = useCallback(() => {
+  useEffect(() => {
+    if (progress === ManagementProgress.Complete) {
+      unmarkPriceForMessagesChanged();
+    }
+  }, [progress]);
+
+  const handleSavePermissions = useLastCallback(() => {
     if (!chat) {
       return;
     }
 
     setIsLoading(true);
     updateChatDefaultBannedRights({ chatId: chat.id, bannedRights: permissions });
-  }, [chat, permissions, setIsLoading, updateChatDefaultBannedRights]);
+  });
+
+  const handleUpdatePaidMessagesPrice = useLastCallback(() => {
+    if (!chat) return;
+    updatePaidMessagesPrice({
+      chatId: chat?.id,
+      paidMessagesStars: isPriceForMessagesOpen ? chargeForMessages : 0,
+    });
+  });
+
+  const handleUpdatePermissions = useLastCallback(() => {
+    if (isPriceForMessagesChanged) {
+      handleUpdatePaidMessagesPrice();
+    }
+    if (havePermissionChanged) {
+      handleSavePermissions();
+    }
+  });
 
   const exceptionMembers = useMemo(() => {
     if (!members) {
@@ -171,11 +204,24 @@ const ManageGroupPermissions: FC<OwnProps & StateProps> = ({
         return result;
       }
 
-      const translatedString = lang(langKey);
+      const translatedString = oldLang(langKey);
 
       return `${result}${!result.length ? translatedString : `, ${translatedString}`}`;
     }, '');
-  }, [chat, lang]);
+  }, [chat, oldLang]);
+
+  const handleChargeStarsForMessages = useLastCallback(() => {
+    setIsPriceForMessagesOpen(!isPriceForMessagesOpen);
+    markPriceForMessagesChanged();
+  });
+
+  const handleChargeForMessagesChange = useLastCallback((value: number) => {
+    setChargeForMessages(value);
+    markPriceForMessagesChanged();
+  });
+
+  const arePermissionsChanged = isPriceForMessagesChanged || havePermissionChanged;
+  const arePermissionsLoading = progress === ManagementProgress.InProgress || isLoading;
 
   return (
     <div
@@ -183,178 +229,60 @@ const ManageGroupPermissions: FC<OwnProps & StateProps> = ({
       style={`--shift-height: ${ITEMS_COUNT * ITEM_HEIGHT}px;`
         + `--before-shift-height: ${BEFORE_ITEMS_COUNT * ITEM_HEIGHT}px;`}
     >
-      <div className="custom-scroll">
+      <div className="panel-content custom-scroll">
         <div className="section without-bottom-shadow">
           <h3 className="section-heading" dir="auto">{lang('ChannelPermissionsHeader')}</h3>
-
-          <div className="ListItem with-checkbox">
-            <Checkbox
-              name="sendPlain"
-              checked={!permissions.sendPlain}
-              label={lang('UserRestrictionsSend')}
-              blocking
-              onChange={handlePermissionChange}
-            />
-          </div>
-          <div className="ListItem with-checkbox">
-            <Checkbox
-              name="sendMedia"
-              checked={!permissions.sendMedia}
-              label={lang('UserRestrictionsSendMedia')}
-              blocking
-              rightIcon={isMediaDropdownOpen ? 'up' : 'down'}
-              onChange={handlePermissionChange}
-              onClickLabel={handleOpenMediaDropdown}
-            />
-          </div>
-          <div className="DropdownListTrap">
-            <div
-              className={buildClassName(
-                'DropdownList',
-                isMediaDropdownOpen && 'DropdownList--open',
-              )}
-            >
-              <div className="ListItem with-checkbox">
-                <Checkbox
-                  name="sendPhotos"
-                  checked={!permissions.sendPhotos}
-                  label={lang('UserRestrictionsSendPhotos')}
-                  blocking
-                  onChange={handlePermissionChange}
-                />
-              </div>
-
-              <div className="ListItem with-checkbox">
-                <Checkbox
-                  name="sendVideos"
-                  checked={!permissions.sendVideos}
-                  label={lang('UserRestrictionsSendVideos')}
-                  blocking
-                  onChange={handlePermissionChange}
-                />
-              </div>
-
-              <div className="ListItem with-checkbox">
-                <Checkbox
-                  name="sendStickers"
-                  checked={!permissions.sendStickers && !permissions.sendGifs}
-                  label={lang('UserRestrictionsSendStickers')}
-                  blocking
-                  onChange={handlePermissionChange}
-                />
-              </div>
-
-              <div className="ListItem with-checkbox">
-                <Checkbox
-                  name="sendAudios"
-                  checked={!permissions.sendAudios}
-                  label={lang('UserRestrictionsSendMusic')}
-                  blocking
-                  onChange={handlePermissionChange}
-                />
-              </div>
-
-              <div className="ListItem with-checkbox">
-                <Checkbox
-                  name="sendDocs"
-                  checked={!permissions.sendDocs}
-                  label={lang('UserRestrictionsSendFiles')}
-                  blocking
-                  onChange={handlePermissionChange}
-                />
-              </div>
-
-              <div className="ListItem with-checkbox">
-                <Checkbox
-                  name="sendVoices"
-                  checked={!permissions.sendVoices}
-                  label={lang('UserRestrictionsSendVoices')}
-                  blocking
-                  onChange={handlePermissionChange}
-                />
-              </div>
-
-              <div className="ListItem with-checkbox">
-                <Checkbox
-                  name="sendRoundvideos"
-                  checked={!permissions.sendRoundvideos}
-                  label={lang('UserRestrictionsSendRound')}
-                  blocking
-                  onChange={handlePermissionChange}
-                />
-              </div>
-
-              <div className="ListItem with-checkbox">
-                <Checkbox
-                  name="embedLinks"
-                  checked={!permissions.embedLinks}
-                  label={lang('UserRestrictionsEmbedLinks')}
-                  blocking
-                  onChange={handlePermissionChange}
-                />
-              </div>
-
-              <div className="ListItem with-checkbox">
-                <Checkbox
-                  name="sendPolls"
-                  checked={!permissions.sendPolls}
-                  label={lang('UserRestrictionsSendPolls')}
-                  blocking
-                  onChange={handlePermissionChange}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className={buildClassName('part', isMediaDropdownOpen && 'shifted')}>
-            <div className="ListItem with-checkbox">
-              <Checkbox
-                name="inviteUsers"
-                checked={!permissions.inviteUsers}
-                label={lang('UserRestrictionsInviteUsers')}
-                blocking
-                onChange={handlePermissionChange}
-              />
-            </div>
-            <div
-              className="ListItem with-checkbox"
-              onClick={shouldDisablePermissionForPublicGroup ? handleDisabledClick : undefined}
-            >
-              <Checkbox
-                name="pinMessages"
-                checked={!permissions.pinMessages}
-                label={lang('UserRestrictionsPinMessages')}
-                disabled={shouldDisablePermissionForPublicGroup}
-                blocking
-                onChange={handlePermissionChange}
-              />
-            </div>
-            <div
-              className="ListItem with-checkbox"
-              onClick={shouldDisablePermissionForPublicGroup ? handleDisabledClick : undefined}
-            >
-              <Checkbox
-                name="changeInfo"
-                checked={!permissions.changeInfo}
-                label={lang('UserRestrictionsChangeInfo')}
-                blocking
-                disabled={shouldDisablePermissionForPublicGroup}
-                onChange={handlePermissionChange}
-              />
-            </div>
-            {isForum && (
-              <div className="ListItem with-checkbox">
-                <Checkbox
-                  name="manageTopics"
-                  checked={!permissions.manageTopics}
-                  label={lang('CreateTopicsPermission')}
-                  blocking
-                  onChange={handlePermissionChange}
-                />
-              </div>
+          <PermissionCheckboxList
+            chatId={chat?.id}
+            isMediaDropdownOpen={isMediaDropdownOpen}
+            setIsMediaDropdownOpen={setIsMediaDropdownOpen}
+            handlePermissionChange={handlePermissionChange}
+            permissions={permissions}
+            dropdownClassName="DropdownListTrap"
+            className={buildClassName(
+              'DropdownList',
+              isMediaDropdownOpen && 'DropdownList--open',
             )}
-          </div>
+            shiftedClassName={buildClassName('part', isMediaDropdownOpen && 'shifted')}
+          />
         </div>
+
+        {arePaidMessagesAvailable && (
+          <div
+            className={buildClassName(
+              'section',
+              isMediaDropdownOpen && 'shifted',
+            )}
+          >
+            <ListItem onClick={handleChargeStarsForMessages}>
+              <span>{lang('GroupMessagesChargePrice')}</span>
+              <Switcher
+                id="charge_for_messages"
+                label={lang('GroupMessagesChargePrice')}
+                checked={isPriceForMessagesOpen}
+              />
+            </ListItem>
+            <p className="settings-item-description-larger" dir={lang.isRtl ? 'rtl' : undefined}>
+              {lang('RightsChargeStarsAbout')}
+            </p>
+          </div>
+        )}
+
+        {isPriceForMessagesOpen && (
+          <div
+            className={buildClassName(
+              'section',
+              isMediaDropdownOpen && 'shifted',
+            )}
+          >
+            <PaidMessagePrice
+              canChangeChargeForMessages
+              isGroupChat
+              chargeForMessages={chargeForMessages}
+              onChange={handleChargeForMessagesChange}
+            />
+          </div>
+        )}
 
         <div
           className={buildClassName(
@@ -392,7 +320,7 @@ const ManageGroupPermissions: FC<OwnProps & StateProps> = ({
             <ListItem
               key={member.userId}
               className="chat-item-clickable exceptions-member"
-              // eslint-disable-next-line react/jsx-no-bind
+
               onClick={() => handleExceptionMemberClick(member)}
             >
               <PrivateChatInfo
@@ -406,33 +334,35 @@ const ManageGroupPermissions: FC<OwnProps & StateProps> = ({
       </div>
 
       <FloatingActionButton
-        isShown={havePermissionChanged}
-        onClick={handleSavePermissions}
+        isShown={arePermissionsChanged}
+        onClick={handleUpdatePermissions}
         ariaLabel={lang('Save')}
-        disabled={isLoading}
-      >
-        {isLoading ? (
-          <Spinner color="white" />
-        ) : (
-          <i className="icon icon-check" />
-        )}
-      </FloatingActionButton>
+        disabled={arePermissionsLoading}
+        iconName="check"
+        isLoading={arePermissionsLoading}
+      />
     </div>
   );
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { chatId }): StateProps => {
+  (global, { chatId }): Complete<StateProps> => {
     const chat = selectChat(global, chatId);
     const fullInfo = selectChatFullInfo(global, chatId);
-    const hasLinkedChat = Boolean(fullInfo?.linkedChatId);
+    const { progress } = selectTabState(global).management;
+
+    const paidMessagesStars = chat?.paidMessagesStars;
+    const configStarsPaidMessageCommissionPermille = global.appConfig.starsPaidMessageCommissionPermille;
 
     return {
       chat,
+      progress,
       currentUserId: global.currentUserId,
-      hasLinkedChat,
       removedUsersCount: fullInfo?.kickedMembers?.length || 0,
       members: fullInfo?.members,
+      arePaidMessagesAvailable: Boolean(fullInfo?.arePaidMessagesAvailable && configStarsPaidMessageCommissionPermille),
+      canChargeForMessages: Boolean(paidMessagesStars && configStarsPaidMessageCommissionPermille),
+      groupPeersPaidStars: paidMessagesStars || DEFAULT_CHARGE_FOR_MESSAGES,
     };
   },
 )(ManageGroupPermissions));

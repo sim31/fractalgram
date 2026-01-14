@@ -1,8 +1,10 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useEffect, useRef } from '../../../lib/teact/teact';
+import { memo, useEffect, useRef } from '../../../lib/teact/teact';
 
 import buildClassName from '../../../util/buildClassName';
+import renderText from '../../common/helpers/renderText';
 
+import Icon from '../../common/icons/Icon';
 import Button from '../../ui/Button';
 
 type OwnProps = {
@@ -18,8 +20,7 @@ const BotMenuButton: FC<OwnProps> = ({
   text,
   isDisabled,
 }) => {
-  // eslint-disable-next-line no-null/no-null
-  const textRef = useRef<HTMLSpanElement>(null);
+  const textRef = useRef<HTMLSpanElement>();
 
   useEffect(() => {
     const textEl = textRef.current;
@@ -44,15 +45,15 @@ const BotMenuButton: FC<OwnProps> = ({
 
   return (
     <Button
-      className={buildClassName('bot-menu', isOpen && 'open')}
+      className={buildClassName('composer-action-button bot-menu', isOpen && 'open')}
       round
       color="translucent"
       disabled={isDisabled}
       onClick={onClick}
       ariaLabel="Open bot command keyboard"
     >
-      <i className={buildClassName('bot-menu-icon', 'icon', 'icon-webapp', isOpen && 'open')} />
-      <span ref={textRef} className="bot-menu-text">{text}</span>
+      <Icon name="webapp" className={buildClassName('bot-menu-icon', isOpen && 'open')} />
+      <span ref={textRef} className="bot-menu-text">{renderText(text)}</span>
     </Button>
   );
 };

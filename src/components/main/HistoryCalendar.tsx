@@ -1,10 +1,10 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useCallback } from '../../lib/teact/teact';
+import { memo, useCallback } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import { selectTabState } from '../../global/selectors';
 
-import useLang from '../../hooks/useLang';
+import useOldLang from '../../hooks/useOldLang';
 
 import CalendarModal from '../common/CalendarModal';
 
@@ -22,11 +22,11 @@ const HistoryCalendar: FC<OwnProps & StateProps> = ({
   const { searchMessagesByDate, closeHistoryCalendar } = getActions();
 
   const handleJumpToDate = useCallback((date: Date) => {
-    searchMessagesByDate({ timestamp: date.valueOf() / 1000 });
+    searchMessagesByDate({ timestamp: date.getTime() / 1000 });
     closeHistoryCalendar();
   }, [closeHistoryCalendar, searchMessagesByDate]);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   return (
     <CalendarModal
@@ -41,7 +41,7 @@ const HistoryCalendar: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     return { selectedAt: selectTabState(global).historyCalendarSelectedAt };
   },
 )(HistoryCalendar));

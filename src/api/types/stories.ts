@@ -1,8 +1,15 @@
-import type { ApiPrivacySettings } from '../../types';
 import type {
-  ApiGeoPoint, ApiMessage, ApiReaction, ApiReactionCount,
+  ApiDocument,
+  ApiGeoPoint,
+  ApiMessage,
+  ApiPhoto,
+  ApiReaction,
+  ApiReactionCount,
+  ApiSticker,
+  ApiStoryForwardInfo,
+  MediaContent,
 } from './messages';
-import type { StatisticsOverviewPercentage } from './statistics';
+import type { ApiPrivacySettings } from './settings';
 
 export interface ApiStory {
   '@type'?: 'story';
@@ -10,8 +17,8 @@ export interface ApiStory {
   peerId: string;
   date: number;
   expireDate: number;
-  content: ApiMessage['content'];
-  isPinned?: boolean;
+  content: MediaContent;
+  isInProfile?: boolean;
   isEdited?: boolean;
   isForCloseFriends?: boolean;
   isForContacts?: boolean;
@@ -19,13 +26,21 @@ export interface ApiStory {
   isPublic?: boolean;
   isOut?: true;
   noForwards?: boolean;
-  viewsCount?: number;
-  reactionsCount?: number;
-  reactions?: ApiReactionCount[];
-  recentViewerIds?: string[];
+  views?: ApiStoryViews;
   visibility?: ApiPrivacySettings;
   sentReaction?: ApiReaction;
   mediaAreas?: ApiMediaArea[];
+  forwardInfo?: ApiStoryForwardInfo;
+  fromId?: string;
+}
+
+export interface ApiStoryViews {
+  hasViewers?: true;
+  viewsCount?: number;
+  forwardsCount?: number;
+  reactionsCount?: number;
+  reactions?: ApiReactionCount[];
+  recentViewerIds?: string[];
 }
 
 export interface ApiStorySkipped {
@@ -49,13 +64,21 @@ export type ApiTypeStory = ApiStory | ApiStorySkipped | ApiStoryDeleted;
 export type ApiPeerStories = {
   byId: Record<number, ApiTypeStory>;
   orderedIds: number[]; // Actual peer stories
-  pinnedIds: number[]; // Profile Shared Media: Pinned Stories tab
+  profileIds: number[]; // Profile Shared Media: Profile Stories tab
+  isFullyLoaded?: boolean;
+  pinnedIds?: number[]; // Profile Shared Media: Pinned profile stories
   archiveIds?: number[]; // Profile Shared Media: Archive Stories tab
+  isArchiveFullyLoaded?: boolean;
   lastUpdatedAt?: number;
   lastReadId?: number;
+  idsByAlbumId?: Record<number, {
+    ids: number[];
+    isFullyLoaded?: boolean;
+  }>; // Story IDs grouped by album ID with loading state
 };
 
 export type ApiMessageStoryData = {
+  mediaType: 'storyData';
   id: number;
   peerId: string;
   isMention?: boolean;
@@ -66,13 +89,42 @@ export type ApiWebPageStoryData = {
   peerId: string;
 };
 
+export type ApiWebPageStickerData = {
+  documents: ApiSticker[];
+  isEmoji?: boolean;
+  isWithTextColor?: boolean;
+};
+
+export type ApiStoryViewPublicForward = {
+  type: 'forward';
+  peerId: string;
+  messageId: number;
+  message: ApiMessage;
+  date: number;
+  isUserBlocked?: true;
+  areStoriesBlocked?: true;
+};
+
+export type ApiStoryViewPublicRepost = {
+  type: 'repost';
+  isUserBlocked?: true;
+  areStoriesBlocked?: true;
+  date: number;
+  peerId: string;
+  storyId: number;
+  story: ApiStory;
+};
+
 export type ApiStoryView = {
-  userId: string;
+  type: 'user';
+  peerId: string;
   date: number;
   reaction?: ApiReaction;
   isUserBlocked?: true;
   areStoriesBlocked?: true;
 };
+
+export type ApiTypeStoryView = ApiStoryView | ApiStoryViewPublicForward | ApiStoryViewPublicRepost;
 
 export type ApiStealthMode = {
   activeUntil?: number;
@@ -85,6 +137,7 @@ export type ApiMediaAreaCoordinates = {
   width: number;
   height: number;
   rotation: number;
+  radius?: number;
 };
 
 export type ApiMediaAreaVenue = {
@@ -108,34 +161,39 @@ export type ApiMediaAreaSuggestedReaction = {
   isFlipped?: boolean;
 };
 
-export type ApiMediaArea = ApiMediaAreaVenue | ApiMediaAreaGeoPoint | ApiMediaAreaSuggestedReaction;
-
-export type ApiApplyBoostOk = {
-  type: 'ok';
+export type ApiMediaAreaChannelPost = {
+  type: 'channelPost';
+  coordinates: ApiMediaAreaCoordinates;
+  channelId: string;
+  messageId: number;
 };
 
-export type ApiApplyBoostReplace = {
-  type: 'replace';
-  boostedChatId: string;
+export type ApiMediaAreaUrl = {
+  type: 'url';
+  coordinates: ApiMediaAreaCoordinates;
+  url: string;
 };
 
-export type ApiApplyBoostWait = {
-  type: 'wait';
-  waitUntil: number;
+export type ApiMediaAreaWeather = {
+  type: 'weather';
+  coordinates: ApiMediaAreaCoordinates;
+  emoji: string;
+  temperatureC: number;
+  color: number;
 };
 
-export type ApiApplyBoostAlready = {
-  type: 'already';
+export type ApiMediaAreaUniqueGift = {
+  type: 'uniqueGift';
+  coordinates: ApiMediaAreaCoordinates;
+  slug: string;
 };
 
-export type ApiApplyBoostInfo = ApiApplyBoostOk | ApiApplyBoostReplace | ApiApplyBoostWait | ApiApplyBoostAlready;
+export type ApiMediaArea = ApiMediaAreaVenue | ApiMediaAreaGeoPoint | ApiMediaAreaSuggestedReaction
+  | ApiMediaAreaChannelPost | ApiMediaAreaUrl | ApiMediaAreaWeather | ApiMediaAreaUniqueGift;
 
-export type ApiBoostsStatus = {
-  level: number;
-  currentLevelBoosts: number;
-  boosts: number;
-  nextLevelBoosts?: number;
-  hasMyBoost?: boolean;
-  boostUrl: string;
-  premiumAudience?: StatisticsOverviewPercentage;
+export type ApiStoryAlbum = {
+  albumId: number;
+  title: string;
+  iconPhoto?: ApiPhoto;
+  iconVideo?: ApiDocument;
 };

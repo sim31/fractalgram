@@ -1,13 +1,13 @@
-import type { ApiStoryView } from '../../../api/types';
 import type { ActionReturnType } from '../../types';
 
 import { copyTextToClipboard } from '../../../util/clipboard';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
-import { buildCollectionByKey, omit } from '../../../util/iteratees';
-import * as langProvider from '../../../util/langProvider';
+import { omit } from '../../../util/iteratees';
+import * as langProvider from '../../../util/oldLangProvider';
 import { callApi } from '../../../api/gramjs';
+import { addTabStateResetterAction } from '../../helpers/meta';
 import { addActionHandler, getGlobal, setGlobal } from '../../index';
-import { addChats, addStoriesForPeer, addUsers } from '../../reducers';
+import { addStoriesForPeer } from '../../reducers';
 import { updateTabState } from '../../reducers/tabs';
 import {
   selectCurrentViewedStory,
@@ -15,9 +15,11 @@ import {
   selectPeerFirstStoryId,
   selectPeerFirstUnreadStoryId,
   selectPeerStories,
+  selectStoryListForViewer,
   selectTabState,
 } from '../../selectors';
 import { fetchChatByUsername } from '../api/chats';
+import { getPeerStarsForMessage } from '../api/messages';
 
 addActionHandler('openStoryViewer', async (global, actions, payload): Promise<void> => {
   const {
@@ -39,10 +41,11 @@ addActionHandler('openStoryViewer', async (global, actions, payload): Promise<vo
       return;
     }
     global = getGlobal();
-    global = addUsers(global, buildCollectionByKey(result.users, 'id'));
-    global = addChats(global, buildCollectionByKey(result.chats, 'id'));
     global = addStoriesForPeer(global, peerId, result.stories);
   }
+
+  const storyList = tabState.storyViewer.storyList
+    || selectStoryListForViewer(global, peerId, storyId, isSingleStory, isSinglePeer, isPrivate, isArchive);
 
   global = updateTabState(global, {
     storyViewer: {
@@ -55,6 +58,7 @@ addActionHandler('openStoryViewer', async (global, actions, payload): Promise<vo
       isSingleStory,
       viewModal: undefined,
       origin,
+      storyList,
     },
   }, tabId);
   setGlobal(global);
@@ -94,7 +98,8 @@ addActionHandler('closeStoryViewer', (global, actions, payload): ActionReturnTyp
       isMuted,
       isRibbonShown,
       isArchivedRibbonShown,
-      lastViewedByPeerIds: undefined,
+      lastViewedByPeerId: undefined,
+      storyList: undefined,
     },
   }, tabId);
 
@@ -135,15 +140,14 @@ addActionHandler('openPreviousStory', (global, actions, payload): ActionReturnTy
   const { tabId = getCurrentTabId() } = payload || {};
   const tabState = selectTabState(global, tabId);
   const {
-    peerId, storyId, isSinglePeer, isSingleStory, isPrivate, isArchive,
+    peerId, storyId, isSinglePeer, isSingleStory, storyList,
   } = tabState.storyViewer;
 
-  if (isSingleStory) {
+  if (isSingleStory || !storyList) {
     actions.closeStoryViewer({ tabId });
     return undefined;
   }
 
-  const { orderedPeerIds: { active, archived } } = global.stories;
   if (!peerId || !storyId) {
     return undefined;
   }
@@ -154,9 +158,8 @@ addActionHandler('openPreviousStory', (global, actions, payload): ActionReturnTy
     return undefined;
   }
 
-  const orderedPeerIds = (peer.areStoriesHidden ? archived : active) ?? [];
-  const storySourceProp = isArchive ? 'archiveIds' : isPrivate ? 'pinnedIds' : 'orderedIds';
-  const peerStoryIds = peerStories[storySourceProp] ?? [];
+  const { peerIds: orderedPeerIds, storyIdsByPeerId } = storyList;
+  const peerStoryIds = storyIdsByPeerId[peerId] ?? [];
   const currentStoryIndex = peerStoryIds.indexOf(storyId);
   let previousStoryIndex: number;
   let previousPeerId: string;
@@ -171,10 +174,10 @@ addActionHandler('openPreviousStory', (global, actions, payload): ActionReturnTy
     }
 
     previousPeerId = orderedPeerIds[previousPeerIdIndex];
-    previousStoryIndex = (selectPeerStories(global, previousPeerId)?.orderedIds.length || 1) - 1;
+    previousStoryIndex = (storyIdsByPeerId?.[previousPeerId]?.length || 1) - 1;
   }
 
-  const previousStoryId = selectPeerStories(global, previousPeerId)?.[storySourceProp]?.[previousStoryIndex];
+  const previousStoryId = storyIdsByPeerId?.[previousPeerId]?.[previousStoryIndex];
   if (!previousStoryId) {
     return undefined;
   }
@@ -192,14 +195,13 @@ addActionHandler('openNextStory', (global, actions, payload): ActionReturnType =
   const { tabId = getCurrentTabId() } = payload || {};
   const tabState = selectTabState(global, tabId);
   const {
-    peerId, storyId, isSinglePeer, isSingleStory, isPrivate, isArchive,
+    peerId, storyId, isSinglePeer, isSingleStory, storyList,
   } = tabState.storyViewer;
-  if (isSingleStory) {
+  if (isSingleStory || !storyList) {
     actions.closeStoryViewer({ tabId });
     return undefined;
   }
 
-  const { orderedPeerIds: { active, archived } } = global.stories;
   if (!peerId || !storyId) {
     return undefined;
   }
@@ -210,9 +212,8 @@ addActionHandler('openNextStory', (global, actions, payload): ActionReturnType =
     return undefined;
   }
 
-  const orderedPeerIds = (peer.areStoriesHidden ? archived : active) ?? [];
-  const storySourceProp = isArchive ? 'archiveIds' : isPrivate ? 'pinnedIds' : 'orderedIds';
-  const peerStoryIds = peerStories[storySourceProp] ?? [];
+  const { peerIds: orderedPeerIds, storyIdsByPeerId } = storyList;
+  const peerStoryIds = storyIdsByPeerId[peerId] ?? [];
   const currentStoryIndex = peerStoryIds.indexOf(storyId);
   let nextStoryIndex: number;
   let nextPeerId: string;
@@ -231,7 +232,7 @@ addActionHandler('openNextStory', (global, actions, payload): ActionReturnType =
     nextStoryIndex = 0;
   }
 
-  const nextStoryId = selectPeerStories(global, nextPeerId)?.[storySourceProp]?.[nextStoryIndex];
+  const nextStoryId = storyIdsByPeerId?.[nextPeerId]?.[nextStoryIndex];
   if (!nextStoryId) {
     return undefined;
   }
@@ -285,12 +286,12 @@ addActionHandler('copyStoryLink', async (global, actions, payload): Promise<void
 
   copyTextToClipboard(link);
   actions.showNotification({
-    message: langProvider.translate('LinkCopied'),
+    message: langProvider.oldTranslate('LinkCopied'),
     tabId,
   });
 });
 
-addActionHandler('sendMessage', (global, actions, payload): ActionReturnType => {
+addActionHandler('sendMessage', async (global, actions, payload): Promise<void> => {
   const { tabId = getCurrentTabId() } = payload;
   const { storyId, peerId: storyPeerId } = selectCurrentViewedStory(global, tabId);
   const isStoryReply = Boolean(storyId && storyPeerId);
@@ -298,6 +299,8 @@ addActionHandler('sendMessage', (global, actions, payload): ActionReturnType => 
   if (!isStoryReply) {
     return;
   }
+  const messagePriceInStars = await getPeerStarsForMessage(global, storyPeerId!);
+  if (messagePriceInStars === undefined) return;
 
   const { gif, sticker, isReaction } = payload;
 
@@ -313,8 +316,8 @@ addActionHandler('sendMessage', (global, actions, payload): ActionReturnType => 
   }
 
   actions.showNotification({
-    message: langProvider.translate(message),
-    actionText: langProvider.translate('Story.ToastViewInChat'),
+    message: langProvider.oldTranslate(message),
+    actionText: langProvider.oldTranslate('Story.ToastViewInChat'),
     action: [{
       action: 'closeStoryViewer',
       payload: undefined,
@@ -350,17 +353,17 @@ addActionHandler('closeStoryPrivacyEditor', (global, actions, payload): ActionRe
   }, tabId);
 });
 
-addActionHandler('toggleStealthModal', (global, actions, payload): ActionReturnType => {
-  const { isOpen, tabId = getCurrentTabId() } = payload || {};
-  const tabState = selectTabState(global, tabId);
+addActionHandler('openStealthModal', (global, actions, payload): ActionReturnType => {
+  const { targetPeerId, tabId = getCurrentTabId() } = payload;
 
   return updateTabState(global, {
-    storyViewer: {
-      ...tabState.storyViewer,
-      isStealthModalOpen: isOpen,
+    storyStealthModal: {
+      targetPeerId,
     },
   }, tabId);
 });
+
+addTabStateResetterAction('closeStealthModal', 'storyStealthModal');
 
 addActionHandler('clearStoryViews', (global, actions, payload): ActionReturnType => {
   const { isLoading, tabId = getCurrentTabId() } = payload || {};
@@ -374,7 +377,7 @@ addActionHandler('clearStoryViews', (global, actions, payload): ActionReturnType
       ...tabState.storyViewer,
       viewModal: {
         ...tabState.storyViewer.viewModal,
-        viewsById: {},
+        views: undefined,
         isLoading,
         nextOffset: '',
       },
@@ -389,24 +392,26 @@ addActionHandler('updateStoryView', (global, actions, payload): ActionReturnType
 
   const tabState = selectTabState(global, tabId);
   const { viewModal } = tabState.storyViewer;
+  if (!viewModal?.storyId) return undefined;
 
-  if (!viewModal?.viewsById?.[userId]) return global;
+  const updatedViews = viewModal?.views?.map((view) => {
+    if (view.peerId === userId) {
+      return {
+        ...view,
+        isUserBlocked: isUserBlocked || undefined,
+        areStoriesBlocked: areStoriesBlocked || undefined,
+      };
+    }
 
-  const updatedViewsById: Record<string, ApiStoryView> = {
-    ...viewModal.viewsById,
-    [userId]: {
-      ...viewModal.viewsById[userId],
-      isUserBlocked: isUserBlocked || undefined,
-      areStoriesBlocked: areStoriesBlocked || undefined,
-    },
-  };
+    return view;
+  });
 
   return updateTabState(global, {
     storyViewer: {
       ...tabState.storyViewer,
       viewModal: {
         ...viewModal,
-        viewsById: updatedViewsById,
+        views: updatedViews,
       },
     },
   }, tabId);
@@ -417,5 +422,13 @@ addActionHandler('closeBoostModal', (global, actions, payload): ActionReturnType
 
   return updateTabState(global, {
     boostModal: undefined,
+  }, tabId);
+});
+
+addActionHandler('closeBoostStatistics', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+
+  return updateTabState(global, {
+    boostStatistics: undefined,
   }, tabId);
 });

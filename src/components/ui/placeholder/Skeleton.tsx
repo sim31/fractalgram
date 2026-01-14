@@ -1,5 +1,5 @@
-import type { FC } from '../../../lib/teact/teact';
-import React from '../../../lib/teact/teact';
+import type { FC } from '@teact';
+import { memo } from '@teact';
 
 import buildClassName from '../../../util/buildClassName';
 import buildStyle from '../../../util/buildStyle';
@@ -37,4 +37,4 @@ const Skeleton: FC<OwnProps> = ({
   );
 };
 
-export default Skeleton;
+export default memo(Skeleton);

@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useRef } from '../../../lib/teact/teact';
+import { memo, useRef } from '../../../lib/teact/teact';
 
 import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
 
@@ -10,8 +10,8 @@ import { REM } from '../../common/helpers/mediaDimensions';
 
 import useAppLayout from '../../../hooks/useAppLayout';
 import { useOnIntersect } from '../../../hooks/useIntersectionObserver';
-import useLang from '../../../hooks/useLang';
-import useMediaTransition from '../../../hooks/useMediaTransition';
+import useMediaTransitionDeprecated from '../../../hooks/useMediaTransitionDeprecated';
+import useOldLang from '../../../hooks/useOldLang';
 
 import EmojiButton from './EmojiButton';
 
@@ -33,14 +33,13 @@ type OwnProps = {
 const EmojiCategory: FC<OwnProps> = ({
   category, index, allEmojis, observeIntersection, shouldRender, onEmojiSelect,
 }) => {
-  // eslint-disable-next-line no-null/no-null
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement>();
 
   useOnIntersect(ref, observeIntersection);
 
-  const transitionClassNames = useMediaTransition(shouldRender);
+  const transitionClassNames = useMediaTransitionDeprecated(shouldRender);
 
-  const lang = useLang();
+  const lang = useOldLang();
   const { isMobile } = useAppLayout();
 
   const emojisPerRow = isMobile

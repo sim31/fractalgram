@@ -1,7 +1,7 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
-  useCallback, useMemo,
-  useRef, useState,
+import type React from '../../lib/teact/teact';
+import {
+  useCallback, useMemo, useRef, useState,
 } from '../../lib/teact/teact';
 
 import Button from './Button';
@@ -11,6 +11,7 @@ import './DropdownMenu.scss';
 
 type OwnProps = {
   className?: string;
+  bubbleClassName?: string;
   trigger?: FC<{ onTrigger: () => void; isOpen?: boolean }>;
   transformOriginX?: number;
   transformOriginY?: number;
@@ -24,11 +25,13 @@ type OwnProps = {
   onTransitionEnd?: NoneToVoidFunction;
   onMouseEnterBackdrop?: (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => void;
   children: React.ReactNode;
+  autoClose?: boolean;
 };
 
 const DropdownMenu: FC<OwnProps> = ({
   trigger,
   className,
+  bubbleClassName,
   children,
   transformOriginX,
   transformOriginY,
@@ -41,15 +44,14 @@ const DropdownMenu: FC<OwnProps> = ({
   onTransitionEnd,
   onMouseEnterBackdrop,
   onHide,
+  autoClose = true,
 }) => {
-  // eslint-disable-next-line no-null/no-null
-  const menuRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>();
   const [isOpen, setIsOpen] = useState(false);
 
   const toggleIsOpen = () => {
     setIsOpen(!isOpen);
+
     if (isOpen) {
       onClose?.();
     } else {
@@ -86,17 +88,15 @@ const DropdownMenu: FC<OwnProps> = ({
         size="smaller"
         color="translucent"
         className={isMenuOpen ? 'active' : ''}
+        iconName="more"
         onClick={onTrigger}
         ariaLabel="More actions"
-      >
-        <i className="icon icon-more" />
-      </Button>
+      />
     );
   }, [trigger]);
 
   return (
     <div
-      ref={dropdownRef}
       className={`DropdownMenu ${className || ''}`}
       onKeyDown={handleKeyDown}
       onTransitionEnd={onTransitionEnd}
@@ -105,17 +105,16 @@ const DropdownMenu: FC<OwnProps> = ({
 
       <Menu
         ref={menuRef}
-        containerRef={dropdownRef}
         isOpen={isOpen || Boolean(forceOpen)}
         className={className || ''}
+        bubbleClassName={bubbleClassName || ''}
         transformOriginX={transformOriginX}
         transformOriginY={transformOriginY}
         positionX={positionX}
         positionY={positionY}
         footer={footer}
-        autoClose
+        autoClose={autoClose}
         onClose={handleClose}
-        shouldSkipTransition={forceOpen}
         onCloseAnimationEnd={onHide}
         onMouseEnterBackdrop={onMouseEnterBackdrop}
       >

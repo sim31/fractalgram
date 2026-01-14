@@ -16,7 +16,6 @@ export function debounce<F extends AnyToVoidFunction>(
       fn(...args);
     }
 
-    // eslint-disable-next-line no-restricted-globals
     waitingTimeout = self.setTimeout(() => {
       if (shouldRunLast) {
         fn(...args);
@@ -46,11 +45,9 @@ export function throttle<F extends AnyToVoidFunction>(
         fn(...args);
       }
 
-      // eslint-disable-next-line no-restricted-globals
       interval = self.setInterval(() => {
         if (!isPending) {
-          // eslint-disable-next-line no-restricted-globals
-          self.clearInterval(interval!);
+          self.clearInterval(interval);
           interval = undefined;
           return;
         }
@@ -84,16 +81,6 @@ export function throttleWith<F extends AnyToVoidFunction>(schedulerFn: Scheduler
   };
 }
 
-export function onIdle(cb: NoneToVoidFunction, timeout?: number) {
-  // eslint-disable-next-line no-restricted-globals
-  if (self.requestIdleCallback) {
-    // eslint-disable-next-line no-restricted-globals
-    self.requestIdleCallback(cb, { timeout });
-  } else {
-    onTickEnd(cb);
-  }
-}
-
 export const pause = (ms: number) => new Promise<void>((resolve) => {
   setTimeout(() => resolve(), ms);
 });
@@ -104,7 +91,7 @@ export function rafPromise() {
   });
 }
 
-const FAST_RAF_TIMEOUT_FALLBACK_MS = 300;
+const FAST_RAF_TIMEOUT_FALLBACK_MS = 35; // < 30 FPS
 
 let fastRafCallbacks: Set<NoneToVoidFunction> | undefined;
 let fastRafFallbackCallbacks: Set<NoneToVoidFunction> | undefined;
@@ -145,7 +132,8 @@ export function fastRaf(callback: NoneToVoidFunction, withTimeoutFallback = fals
         const currentTimeoutCallbacks = fastRafFallbackCallbacks!;
 
         if (fastRafCallbacks) {
-          currentTimeoutCallbacks.forEach(fastRafCallbacks.delete, fastRafCallbacks);
+          const currentCallbacks = fastRafCallbacks;
+          currentTimeoutCallbacks.forEach((c) => currentCallbacks.delete(c));
         }
         fastRafFallbackCallbacks = undefined;
 
@@ -176,12 +164,50 @@ export function onTickEnd(callback: NoneToVoidFunction) {
   }
 }
 
+const IDLE_TIMEOUT = 500;
+
+let onIdleCallbacks: NoneToVoidFunction[] | undefined;
+
+export function onIdle(callback: NoneToVoidFunction) {
+  if (!self.requestIdleCallback) {
+    onTickEnd(callback);
+    return;
+  }
+
+  if (!onIdleCallbacks) {
+    onIdleCallbacks = [callback];
+
+    requestIdleCallback((deadline) => {
+      const currentCallbacks = onIdleCallbacks!;
+      onIdleCallbacks = undefined;
+
+      while (currentCallbacks.length) {
+        const cb = currentCallbacks.shift()!;
+        cb();
+
+        if (!deadline.timeRemaining()) break;
+      }
+
+      if (currentCallbacks.length) {
+        if (onIdleCallbacks) {
+          // Prepend the remaining callbacks if the next pass is already planned
+          onIdleCallbacks = currentCallbacks.concat(onIdleCallbacks);
+        } else {
+          currentCallbacks.forEach(onIdle);
+        }
+      }
+    }, { timeout: IDLE_TIMEOUT });
+  } else {
+    onIdleCallbacks.push(callback);
+  }
+}
+
 let beforeUnloadCallbacks: NoneToVoidFunction[] | undefined;
 
 export function onBeforeUnload(callback: NoneToVoidFunction, isLast = false) {
   if (!beforeUnloadCallbacks) {
     beforeUnloadCallbacks = [];
-    // eslint-disable-next-line no-restricted-globals
+
     self.addEventListener('beforeunload', () => {
       beforeUnloadCallbacks!.forEach((cb) => cb());
     });

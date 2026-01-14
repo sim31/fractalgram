@@ -1,4 +1,8 @@
-import { useEffect, useRef, useState } from '../lib/teact/teact';
+import type {
+  ElementRef } from '../lib/teact/teact';
+import {
+  useEffect, useMemo, useRef, useState,
+} from '../lib/teact/teact';
 import { getActions, getGlobal } from '../global';
 
 import type { Track, TrackId } from '../util/audioPlayer';
@@ -20,7 +24,7 @@ type Handler = (e: Event) => void;
 const DEFAULT_SKIP_TIME = 10;
 
 const useAudioPlayer = (
-  trackId: TrackId,
+  trackId: TrackId | undefined,
   originalDuration: number, // Sometimes incorrect for voice messages
   trackType: Track['type'],
   src?: string,
@@ -32,9 +36,11 @@ const useAudioPlayer = (
   onTrackChange?: NoneToVoidFunction,
   noPlaylist = false,
   noProgressUpdates = false,
+  onPause?: NoneToVoidFunction,
+  noReset = false,
+  noHandleEvents = false,
 ) => {
-  // eslint-disable-next-line no-null/no-null
-  const controllerRef = useRef<ReturnType<typeof register>>(null);
+  const controllerRef = useRef<ReturnType<typeof register>>();
 
   const [isPlaying, setIsPlaying] = useState(false);
   let isPlayingSync = isPlaying;
@@ -47,24 +53,34 @@ const useAudioPlayer = (
   });
 
   useSyncEffect(() => {
+    if (!trackId) {
+      return;
+    }
     controllerRef.current = register(trackId, trackType, (eventName, e) => {
+      if (noHandleEvents) {
+        return;
+      }
       switch (eventName) {
         case 'onPlay': {
           const {
             setVolume, setPlaybackRate, toggleMuted, proxy,
           } = controllerRef.current!;
-          setIsPlaying(true);
+          const global = getGlobal();
 
-          registerMediaSession(metadata, makeMediaHandlers(controllerRef));
+          setIsPlaying(true);
+          if (trackType !== 'oneTimeVoice') {
+            registerMediaSession(metadata, makeMediaHandlers(controllerRef));
+          }
           setPlaybackState('playing');
-          const { audioPlayer } = selectTabState(getGlobal());
-          setVolume(audioPlayer.volume);
-          toggleMuted(Boolean(audioPlayer.isMuted));
+
+          const { audioPlayer: tabAudioPlayerState } = selectTabState(global);
+          const { audioPlayer: globalAudioPlayerState } = global;
+          setVolume(globalAudioPlayerState.volume);
+          toggleMuted(Boolean(tabAudioPlayerState.isMuted));
           const duration = proxy.duration && Number.isFinite(proxy.duration) ? proxy.duration : originalDuration;
           if (trackType === 'voice' || duration > PLAYBACK_RATE_FOR_AUDIO_MIN_DURATION) {
-            setPlaybackRate(audioPlayer.playbackRate);
+            setPlaybackRate(tabAudioPlayerState.playbackRate);
           }
-
           setPositionState({
             duration: proxy.duration || 0,
             playbackRate: proxy.playbackRate,
@@ -84,9 +100,13 @@ const useAudioPlayer = (
         case 'onPause':
           setIsPlaying(false);
           setPlaybackState('paused');
+          onPause?.();
           break;
         case 'onTimeUpdate': {
           const { proxy } = controllerRef.current!;
+          if (noReset && proxy.currentTime === 0) {
+            break;
+          }
           const duration = proxy.duration && Number.isFinite(proxy.duration) ? proxy.duration : originalDuration;
           if (!noProgressUpdates) setPlayProgress(proxy.currentTime / duration);
           break;
@@ -96,11 +116,10 @@ const useAudioPlayer = (
           break;
         }
       }
-
       handlers?.[eventName]?.(e);
     }, onForcePlay, handleTrackChange);
 
-    const { proxy } = controllerRef.current!;
+    const { proxy } = controllerRef.current;
 
     if (!isPlaying && !proxy.paused) {
       setIsPlaying(true);
@@ -109,7 +128,7 @@ const useAudioPlayer = (
       isPlayingSync = true;
     }
 
-    if (onInit) {
+    if (onInit && !noHandleEvents) {
       onInit(proxy);
     }
   }, [trackId]);
@@ -132,19 +151,28 @@ const useAudioPlayer = (
     requestPreviousTrack,
     setPlaybackRate,
     toggleMuted,
-  } = controllerRef.current!;
-  const duration = proxy.duration && Number.isFinite(proxy.duration) ? proxy.duration : originalDuration;
+  } = controllerRef.current ?? {};
+
+  const duration = useMemo(() => {
+    return proxy?.duration && Number.isFinite(proxy.duration) ? proxy.duration : originalDuration;
+  }, [proxy?.duration, originalDuration]);
 
   // RAF progress
   useEffect(() => {
+    if (!proxy) {
+      return;
+    }
+    if (noReset && proxy.currentTime === 0) {
+      return;
+    }
     if (duration && !isSafariPatchInProgress(proxy) && !noProgressUpdates) {
       setPlayProgress(proxy.currentTime / duration);
     }
-  }, [duration, playProgress, proxy, noProgressUpdates]);
+  }, [duration, playProgress, proxy, noProgressUpdates, noReset]);
 
   // Cleanup
   useEffect(() => () => {
-    destroy(noPlaylist);
+    destroy?.(noPlaylist);
   }, [destroy, noPlaylist]);
 
   // Autoplay once `src` is present
@@ -154,32 +182,32 @@ const useAudioPlayer = (
     }
 
     // When paused by another player
-    if (proxy.src && proxy.paused) {
+    if (proxy?.src && proxy?.paused) {
       return;
     }
 
     if (shouldPlay && src && !isPlaying) {
-      play(src);
+      play?.(src);
     }
-  }, [shouldPlay, src, isPlaying, play, proxy.src, proxy.paused]);
+  }, [shouldPlay, src, isPlaying, play, proxy?.src, proxy?.paused, trackType]);
 
   const playIfPresent = useLastCallback(() => {
     if (src) {
-      play(src);
+      play?.(src);
     }
   });
 
   const playPause = useLastCallback(() => {
     if (isPlaying) {
-      pause();
+      pause?.();
     } else {
       playIfPresent();
     }
   });
 
   const setTime = useLastCallback((time: number) => {
-    setCurrentTime(time);
-    if (duration) {
+    setCurrentTime?.(time);
+    if (duration && proxy) {
       setPlayProgress(proxy.currentTime / duration);
     }
   });
@@ -204,7 +232,7 @@ const useAudioPlayer = (
   };
 };
 
-function makeMediaHandlers(controllerRef: React.RefObject<ReturnType<typeof register>>) {
+function makeMediaHandlers(controllerRef: ElementRef<ReturnType<typeof register>>) {
   let mediaHandlers: MediaSessionHandlers = {};
   if (controllerRef && controllerRef.current) {
     const {

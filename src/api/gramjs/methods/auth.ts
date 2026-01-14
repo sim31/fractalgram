@@ -1,42 +1,36 @@
-import { errors } from '../../../lib/gramjs';
+import { PasskeyLoginRequestedError, UserAlreadyAuthorizedError } from '../../../lib/gramjs/errors';
 
 import type {
+  ApiPasskeyOption,
   ApiUpdateAuthorizationState,
   ApiUpdateAuthorizationStateType,
   ApiUser,
   ApiUserFullInfo,
-  OnApiUpdate,
 } from '../../types';
 
-import { DEBUG } from '../../../config';
-
-const ApiErrors: { [k: string]: string } = {
-  PHONE_NUMBER_INVALID: 'Invalid phone number.',
-  PHONE_CODE_INVALID: 'Invalid code.',
-  PASSWORD_HASH_INVALID: 'Incorrect password.',
-  PHONE_PASSWORD_FLOOD: 'Limit exceeded. Please try again later.',
-  PHONE_NUMBER_BANNED: 'This phone number is banned.',
-};
+import { wrapError } from '../helpers/misc';
+import { sendApiUpdate } from '../updates/apiUpdateEmitter';
 
 const authController: {
-  resolve?: Function;
-  reject?: Function;
+  resolve?: AnyToVoidFunction;
+  reject?: (error: Error) => void;
 } = {};
 
-let onUpdate: OnApiUpdate;
-
-export function init(_onUpdate: OnApiUpdate) {
-  onUpdate = _onUpdate;
-}
-
 export function onWebAuthTokenFailed() {
-  onUpdate({
+  sendApiUpdate({
     '@type': 'updateWebAuthTokenFailed',
   });
 }
 
+export function onPasskeyOption(option: ApiPasskeyOption) {
+  sendApiUpdate({
+    '@type': 'updatePasskeyOption',
+    option,
+  });
+}
+
 export function onRequestPhoneNumber() {
-  onUpdate(buildAuthStateUpdate('authorizationStateWaitPhoneNumber'));
+  sendApiUpdate(buildAuthStateUpdate('authorizationStateWaitPhoneNumber'));
 
   return new Promise<string>((resolve, reject) => {
     authController.resolve = resolve;
@@ -45,7 +39,7 @@ export function onRequestPhoneNumber() {
 }
 
 export function onRequestCode(isCodeViaApp = false) {
-  onUpdate({
+  sendApiUpdate({
     ...buildAuthStateUpdate('authorizationStateWaitCode'),
     isCodeViaApp,
   });
@@ -57,7 +51,7 @@ export function onRequestCode(isCodeViaApp = false) {
 }
 
 export function onRequestPassword(hint?: string, noReset?: boolean) {
-  onUpdate({
+  sendApiUpdate({
     ...buildAuthStateUpdate('authorizationStateWaitPassword'),
     hint,
     noReset,
@@ -69,7 +63,7 @@ export function onRequestPassword(hint?: string, noReset?: boolean) {
 }
 
 export function onRequestRegistration() {
-  onUpdate(buildAuthStateUpdate('authorizationStateWaitRegistration'));
+  sendApiUpdate(buildAuthStateUpdate('authorizationStateWaitRegistration'));
 
   return new Promise<[string, string?]>((resolve) => {
     authController.resolve = resolve;
@@ -77,7 +71,7 @@ export function onRequestRegistration() {
 }
 
 export function onRequestQrCode(qrCode: { token: Buffer; expires: number }) {
-  onUpdate({
+  sendApiUpdate({
     ...buildAuthStateUpdate('authorizationStateWaitQrCode'),
     qrCode: {
       token: btoa(String.fromCharCode(...qrCode.token)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
@@ -91,36 +85,29 @@ export function onRequestQrCode(qrCode: { token: Buffer; expires: number }) {
 }
 
 export function onAuthError(err: Error) {
-  let message: string;
-
-  if (err instanceof errors.FloodWaitError) {
-    const hours = Math.ceil(Number(err.seconds) / 60 / 60);
-    message = `Too many attempts. Try again in ${hours > 1 ? `${hours} hours` : 'an hour'}`;
-  } else {
-    message = ApiErrors[err.message];
+  if (err instanceof UserAlreadyAuthorizedError) {
+    sendApiUpdate({
+      '@type': 'updateUserAlreadyAuthorized',
+      userId: err.userId,
+    });
+    return;
   }
 
-  if (!message) {
-    message = 'Unexpected Error';
+  const { messageKey, errorMessage } = wrapError(err);
 
-    if (DEBUG) {
-      // eslint-disable-next-line no-console
-      console.error(err);
-    }
-  }
-
-  onUpdate({
+  sendApiUpdate({
     '@type': 'updateAuthorizationError',
-    message,
+    errorKey: messageKey,
+    errorCode: errorMessage,
   });
 }
 
 export function onAuthReady() {
-  onUpdate(buildAuthStateUpdate('authorizationStateReady'));
+  sendApiUpdate(buildAuthStateUpdate('authorizationStateReady'));
 }
 
 export function onCurrentUserUpdate(currentUser: ApiUser, currentUserFullInfo: ApiUserFullInfo) {
-  onUpdate({
+  sendApiUpdate({
     '@type': 'updateCurrentUser',
     currentUser,
     currentUserFullInfo,
@@ -182,4 +169,12 @@ export function restartAuthWithQr() {
   }
 
   authController.reject(new Error('RESTART_AUTH_WITH_QR'));
+}
+
+export function restartAuthWithPasskey(credentialJson: PublicKeyCredentialJSON) {
+  if (!authController.reject) {
+    return;
+  }
+
+  authController.reject(new PasskeyLoginRequestedError(credentialJson));
 }

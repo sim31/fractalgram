@@ -1,30 +1,31 @@
-import Api from "../../tl/api";
-import BigInt from "big-integer";
-import {MockTypes} from "./MockTypes";
+import type { MockTypes } from './MockTypes';
+
+import { CHANNEL_ID_BASE } from '../../../../config';
+import Api from '../../tl/api';
 
 export default function createMockedTypeInputPeer(id: string, mockData: MockTypes): Api.TypeInputPeer {
-    const user = mockData.users.find((user) => user.id === id);
-    if(user) {
-        return new Api.InputPeerUser({
-            userId: BigInt(id),
-            accessHash: BigInt(1),
-        })
-    }
+  const user = mockData.users.find((u) => u.id === id);
+  if (user) {
+    return new Api.InputPeerUser({
+      userId: BigInt(id),
+      accessHash: 1n,
+    });
+  }
 
-    const chat = mockData.chats.find((chat) => chat.id === id);
-    if(chat) {
-        return new Api.InputPeerChat({
-            chatId: BigInt(id),
-        })
-    }
+  const chat = mockData.chats.find((c) => c.id === id);
+  if (chat) {
+    return new Api.InputPeerChat({
+      chatId: BigInt(id),
+    });
+  }
 
-    const channel = mockData.channels.find((channel) => channel.id === id);
-    if(channel) {
-        return new Api.InputPeerChannel({
-            channelId: BigInt(Number(id) + 1000000000),
-            accessHash: BigInt(1),
-        })
-    }
+  const channel = mockData.channels.find((c) => c.id === id);
+  if (channel) {
+    return new Api.InputPeerChannel({
+      channelId: -BigInt(id) - CHANNEL_ID_BASE,
+      accessHash: 1n,
+    });
+  }
 
-    throw Error("No such peer " + id);
+  throw Error('No such peer ' + id);
 }

@@ -1,23 +1,27 @@
-import type { RefObject } from 'react';
-import type { FC } from '../../lib/teact/teact';
-import React, {
-  memo, useEffect, useRef, useState,
+import type { ElementRef, FC } from '../../lib/teact/teact';
+import {
+  getIsHeavyAnimating,
+  memo,
+  useEffect,
+  useRef,
+  useState,
+  useUnmountCleanup,
 } from '../../lib/teact/teact';
 
 import type RLottieInstance from '../../lib/rlottie/RLottie';
 
 import { requestMeasure } from '../../lib/fasterdom/fasterdom';
 import { ensureRLottie, getRLottie } from '../../lib/rlottie/RLottie.async';
+import { IS_TAURI } from '../../util/browser/globalEnvironment';
 import buildClassName from '../../util/buildClassName';
 import buildStyle from '../../util/buildStyle';
+import { hex2rgbaObj } from '../../util/colors.ts';
 import generateUniqueId from '../../util/generateUniqueId';
-import { hexToRgb } from '../../util/switchTheme';
-import { IS_ELECTRON } from '../../util/windowEnvironment';
 
 import useColorFilter from '../../hooks/stickers/useColorFilter';
-import useBackgroundMode, { isBackgroundModeActive } from '../../hooks/useBackgroundMode';
 import useEffectWithPrevDeps from '../../hooks/useEffectWithPrevDeps';
-import useHeavyAnimationCheck, { isHeavyAnimating } from '../../hooks/useHeavyAnimationCheck';
+import useFlag from '../../hooks/useFlag';
+import useHeavyAnimation from '../../hooks/useHeavyAnimation';
 import useLastCallback from '../../hooks/useLastCallback';
 import usePriorityPlaybackCheck, { isPriorityPlaybackActive } from '../../hooks/usePriorityPlaybackCheck';
 import useSharedIntersectionObserver from '../../hooks/useSharedIntersectionObserver';
@@ -25,9 +29,10 @@ import { useStateRef } from '../../hooks/useStateRef';
 import useSyncEffect from '../../hooks/useSyncEffect';
 import useThrottledCallback from '../../hooks/useThrottledCallback';
 import useUniqueId from '../../hooks/useUniqueId';
+import useBackgroundMode, { isBackgroundModeActive } from '../../hooks/window/useBackgroundMode';
 
 export type OwnProps = {
-  ref?: RefObject<HTMLDivElement>;
+  ref?: ElementRef<HTMLDivElement>;
   renderId?: string;
   className?: string;
   style?: string;
@@ -45,6 +50,8 @@ export type OwnProps = {
   sharedCanvas?: HTMLCanvasElement;
   sharedCanvasCoords?: { x: number; y: number };
   onClick?: NoneToVoidFunction;
+  onMouseEnter?: NoneToVoidFunction;
+  onMouseLeave?: NoneToVoidFunction;
   onLoad?: NoneToVoidFunction;
   onEnded?: NoneToVoidFunction;
   onLoop?: NoneToVoidFunction;
@@ -71,12 +78,13 @@ const AnimatedSticker: FC<OwnProps> = ({
   sharedCanvas,
   sharedCanvasCoords,
   onClick,
+  onMouseEnter,
+  onMouseLeave,
   onLoad,
   onEnded,
   onLoop,
 }) => {
-  // eslint-disable-next-line no-null/no-null
-  let containerRef = useRef<HTMLDivElement>(null);
+  let containerRef = useRef<HTMLDivElement>();
   if (ref) {
     containerRef = ref;
   }
@@ -96,9 +104,19 @@ const AnimatedSticker: FC<OwnProps> = ({
 
   const rgbColor = useRef<[number, number, number] | undefined>();
 
+  const shouldForceOnHeavyAnimation = forceAlways || forceOnHeavyAnimation;
+  // Delay initialization until heavy animation ends
+  const [
+    canInitialize, markCanInitialize, unmarkCanInitialize,
+  ] = useFlag(!getIsHeavyAnimating() || shouldForceOnHeavyAnimation);
+  useHeavyAnimation(unmarkCanInitialize, markCanInitialize, shouldForceOnHeavyAnimation);
+  useEffect(() => {
+    if (shouldForceOnHeavyAnimation) markCanInitialize();
+  }, [shouldForceOnHeavyAnimation]);
+
   useSyncEffect(() => {
     if (color && !shouldUseColorFilter) {
-      const { r, g, b } = hexToRgb(color);
+      const { r, g, b } = hex2rgbaObj(color);
       rgbColor.current = [r, g, b];
     } else {
       rgbColor.current = undefined;
@@ -106,11 +124,9 @@ const AnimatedSticker: FC<OwnProps> = ({
   }, [color, shouldUseColorFilter]);
 
   const isUnmountedRef = useRef(false);
-  useEffect(() => {
-    return () => {
-      isUnmountedRef.current = true;
-    };
-  }, []);
+  useUnmountCleanup(() => {
+    isUnmountedRef.current = true;
+  });
 
   const init = useLastCallback(() => {
     if (
@@ -118,6 +134,7 @@ const AnimatedSticker: FC<OwnProps> = ({
       || isUnmountedRef.current
       || !tgsUrl
       || (sharedCanvas && (!sharedCanvasCoords || !sharedCanvas.offsetWidth || !sharedCanvas.offsetHeight))
+      || (getIsHeavyAnimating() && !shouldForceOnHeavyAnimation)
     ) {
       return;
     }
@@ -154,27 +171,30 @@ const AnimatedSticker: FC<OwnProps> = ({
   });
 
   useEffect(() => {
+    if (!canInitialize) return;
     if (getRLottie()) {
       init();
     } else {
       ensureRLottie().then(init);
     }
-  }, [init, tgsUrl, sharedCanvas, sharedCanvasCoords]);
+  }, [init, tgsUrl, sharedCanvas, sharedCanvasCoords, canInitialize]);
 
   const throttledInit = useThrottledCallback(init, [init], THROTTLE_MS);
   useSharedIntersectionObserver(sharedCanvas, throttledInit);
 
   useEffect(() => {
-    if (!animation) return;
-
-    animation.setColor(rgbColor.current);
+    animation?.setColor(rgbColor.current);
   }, [color, animation]);
 
   useEffect(() => {
-    return () => {
-      animationRef.current?.removeView(viewId);
-    };
-  }, [viewId]);
+    if (typeof speed === 'number') {
+      animation?.setSpeed(speed);
+    }
+  }, [speed, animation]);
+
+  useUnmountCleanup(() => {
+    animationRef.current?.removeView(viewId);
+  });
 
   const playAnimation = useLastCallback((shouldRestart = false) => {
     if (
@@ -239,7 +259,7 @@ const AnimatedSticker: FC<OwnProps> = ({
     }
   }, [playAnimation, animation, tgsUrl]);
 
-  useHeavyAnimationCheck(pauseAnimation, playAnimation, !playKey || forceAlways || forceOnHeavyAnimation);
+  useHeavyAnimation(pauseAnimation, playAnimation, !playKey || shouldForceOnHeavyAnimation);
   usePriorityPlaybackCheck(pauseAnimation, playAnimation, !playKey || forceAlways);
   // Pausing frame may not happen in background,
   // so we need to make sure it happens right after focusing,
@@ -256,11 +276,13 @@ const AnimatedSticker: FC<OwnProps> = ({
       className={buildClassName('AnimatedSticker', className)}
       style={buildStyle(
         size !== undefined && `width: ${size}px; height: ${size}px;`,
-        onClick && !IS_ELECTRON && 'cursor: pointer',
+        onClick && !IS_TAURI && 'cursor: pointer',
         colorFilter,
         style,
       )}
       onClick={onClick}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
     />
   );
 };
@@ -269,5 +291,5 @@ export default memo(AnimatedSticker);
 
 function isFrozen(forceAlways = false, forceOnHeavyAnimation = false) {
   if (forceAlways) return false;
-  return (!forceOnHeavyAnimation && isHeavyAnimating()) || isPriorityPlaybackActive() || isBackgroundModeActive();
+  return (!forceOnHeavyAnimation && getIsHeavyAnimating()) || isPriorityPlaybackActive() || isBackgroundModeActive();
 }

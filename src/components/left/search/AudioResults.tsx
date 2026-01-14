@@ -1,25 +1,29 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback, useMemo } from '../../../lib/teact/teact';
-import { getActions, withGlobal } from '../../../global';
+import { memo, useCallback, useMemo } from '../../../lib/teact/teact';
+import { getActions, getGlobal, withGlobal } from '../../../global';
 
+import type { ApiMessage } from '../../../api/types';
 import type { StateProps } from './helpers/createMapStateToProps';
 import { AudioOrigin, LoadMoreDirection } from '../../../types';
 
 import { SLIDE_TRANSITION_DURATION } from '../../../config';
-import buildClassName from '../../../util/buildClassName';
-import { formatMonthAndYear, toYearMonth } from '../../../util/dateFormat';
+import { getIsDownloading } from '../../../global/helpers';
+import { selectMessageDownloadableMedia } from '../../../global/selectors/media';
+import { formatMonthAndYear, toYearMonth } from '../../../util/dates/dateFormat';
+import { parseSearchResultKey } from '../../../util/keys/searchResultKey';
 import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
 import { throttle } from '../../../util/schedulers';
 import { createMapStateToProps } from './helpers/createMapStateToProps';
 import { getSenderName } from './helpers/getSenderName';
 
-import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 import useAsyncRendering from '../../right/hooks/useAsyncRendering';
 
 import Audio from '../../common/Audio';
 import NothingFound from '../../common/NothingFound';
 import InfiniteScroll from '../../ui/InfiniteScroll';
 import Loading from '../../ui/Loading';
+import Transition from '../../ui/Transition.tsx';
 
 export type OwnProps = {
   isVoice?: boolean;
@@ -45,7 +49,7 @@ const AudioResults: FC<OwnProps & StateProps> = ({
     openAudioPlayer,
   } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
   const currentType = isVoice ? 'voice' : 'audio';
   const handleLoadMore = useCallback(({ direction }: { direction: LoadMoreDirection }) => {
     if (direction === LoadMoreDirection.Backwards) {
@@ -55,7 +59,7 @@ const AudioResults: FC<OwnProps & StateProps> = ({
         });
       });
     }
-  // eslint-disable-next-line react-hooks-static-deps/exhaustive-deps -- `searchQuery` is required to prevent infinite message loading
+    // eslint-disable-next-line react-hooks-static-deps/exhaustive-deps -- `searchQuery` is required to prevent infinite message loading
   }, [currentType, searchMessagesGlobal, searchQuery]);
 
   const foundMessages = useMemo(() => {
@@ -64,14 +68,14 @@ const AudioResults: FC<OwnProps & StateProps> = ({
     }
 
     return foundIds.map((id) => {
-      const [chatId, messageId] = id.split('_');
+      const [chatId, messageId] = parseSearchResultKey(id);
 
-      return globalMessagesByChatId[chatId]?.byId[Number(messageId)];
+      return globalMessagesByChatId[chatId]?.byId[messageId];
     }).filter(Boolean);
   }, [globalMessagesByChatId, foundIds]);
 
-  const handleMessageFocus = useCallback((messageId: number, chatId: string) => {
-    focusMessage({ chatId, messageId });
+  const handleMessageFocus = useCallback((message: ApiMessage) => {
+    focusMessage({ chatId: message.chatId, messageId: message.id });
   }, [focusMessage]);
 
   const handlePlayAudio = useCallback((messageId: number, chatId: string) => {
@@ -80,40 +84,42 @@ const AudioResults: FC<OwnProps & StateProps> = ({
 
   function renderList() {
     return foundMessages.map((message, index) => {
+      const global = getGlobal();
       const isFirst = index === 0;
       const shouldDrawDateDivider = isFirst
         || toYearMonth(message.date) !== toYearMonth(foundMessages[index - 1].date);
+
+      const media = selectMessageDownloadableMedia(global, message)!;
       return (
-        <div
-          className="ListItem small-icon"
-          key={message.id}
-        >
+        <>
           {shouldDrawDateDivider && (
             <p
-              className={buildClassName(
-                'section-heading',
-                isFirst && 'section-heading-first',
-                !isFirst && 'section-heading-with-border',
-              )}
+              className="section-heading"
+              key={message.date}
               dir={lang.isRtl ? 'rtl' : undefined}
             >
               {formatMonthAndYear(lang, new Date(message.date * 1000))}
             </p>
           )}
-          <Audio
+          <div
+            className="ListItem small-icon"
             key={message.id}
-            theme={theme}
-            message={message}
-            origin={AudioOrigin.Search}
-            senderTitle={getSenderName(lang, message, chatsById, usersById)}
-            date={message.date}
-            className="scroll-item"
-            onPlay={handlePlayAudio}
-            onDateClick={handleMessageFocus}
-            canDownload={!chatsById[message.chatId]?.isProtected && !message.isProtected}
-            isDownloading={activeDownloads[message.chatId]?.ids?.includes(message.id)}
-          />
-        </div>
+          >
+            <Audio
+              key={message.id}
+              theme={theme}
+              message={message}
+              origin={AudioOrigin.Search}
+              senderTitle={getSenderName(lang, message, chatsById, usersById)}
+              date={message.date}
+              className="scroll-item"
+              onPlay={handlePlayAudio}
+              onDateClick={handleMessageFocus}
+              canDownload={!chatsById[message.chatId]?.isProtected && !message.isProtected}
+              isDownloading={getIsDownloading(activeDownloads, media)}
+            />
+          </div>
+        </>
       );
     });
   }
@@ -121,23 +127,29 @@ const AudioResults: FC<OwnProps & StateProps> = ({
   const canRenderContents = useAsyncRendering([searchQuery], SLIDE_TRANSITION_DURATION) && !isLoading;
 
   return (
-    <div className="LeftSearch">
+    <Transition
+      slideClassName="LeftSearch--content"
+      name="fade"
+      activeKey={canRenderContents ? 1 : 0}
+      shouldCleanup
+    >
       <InfiniteScroll
         className="search-content documents-list custom-scroll"
-        items={foundMessages}
+        items={canRenderContents ? foundMessages : undefined}
         onLoadMore={handleLoadMore}
         noFastList
       >
         {!canRenderContents && <Loading />}
         {canRenderContents && (!foundIds || foundIds.length === 0) && (
           <NothingFound
+            withSticker
             text={lang('ChatList.Search.NoResults')}
             description={lang('ChatList.Search.NoResultsDescription')}
           />
         )}
         {canRenderContents && foundIds && foundIds.length > 0 && renderList()}
       </InfiniteScroll>
-    </div>
+    </Transition>
   );
 };
 

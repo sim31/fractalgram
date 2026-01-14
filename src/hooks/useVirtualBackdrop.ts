@@ -1,5 +1,7 @@
-import type { RefObject } from 'react';
+import type { ElementRef } from '../lib/teact/teact';
 import { useEffect } from '../lib/teact/teact';
+
+import { hasActiveViewTransition } from './animations/useViewTransition';
 
 const BACKDROP_CLASSNAME = 'backdrop';
 
@@ -7,7 +9,7 @@ const BACKDROP_CLASSNAME = 'backdrop';
 // without adding extra elements to the DOM
 export default function useVirtualBackdrop(
   isOpen: boolean,
-  menuRef: RefObject<HTMLElement>,
+  containerRef: ElementRef<HTMLElement>,
   onClose?: () => void | undefined,
   ignoreRightClick?: boolean,
   excludedClosestSelector?: string,
@@ -18,14 +20,14 @@ export default function useVirtualBackdrop(
     }
 
     const handleEvent = (e: MouseEvent) => {
-      const menu = menuRef.current;
+      const container = containerRef.current;
       const target = e.target as HTMLElement | null;
-      if (!menu || !target || (ignoreRightClick && e.button === 2)) {
+      if (!container || !target || (ignoreRightClick && e.button === 2) || hasActiveViewTransition()) {
         return;
       }
 
       if ((
-        !menu.contains(e.target as Node | null)
+        !container.contains(e.target as Node | null)
         || target.classList.contains(BACKDROP_CLASSNAME)
       ) && !(excludedClosestSelector && (
         target.matches(excludedClosestSelector) || target.closest(excludedClosestSelector)
@@ -41,5 +43,5 @@ export default function useVirtualBackdrop(
     return () => {
       document.removeEventListener('mousedown', handleEvent);
     };
-  }, [excludedClosestSelector, ignoreRightClick, isOpen, menuRef, onClose]);
+  }, [excludedClosestSelector, ignoreRightClick, isOpen, containerRef, onClose]);
 }

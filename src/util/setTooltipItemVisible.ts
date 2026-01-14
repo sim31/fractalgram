@@ -1,11 +1,13 @@
+import { type ElementRef } from '../lib/teact/teact';
+
+import isFullyVisible from './visibility/isFullyVisible';
 import animateScroll from './animateScroll';
 import findInViewport from './findInViewport';
-import isFullyVisible from './isFullyVisible';
 
 const VIEWPORT_MARGIN = 8;
 const SCROLL_MARGIN = 10;
 
-export default function setTooltipItemVisible(selector: string, index: number, containerRef: Record<string, any>) {
+export default function setTooltipItemVisible(selector: string, index: number, containerRef: ElementRef<HTMLElement>) {
   const container = containerRef.current!;
   if (!container || index < 0) {
     return;
@@ -25,6 +27,11 @@ export default function setTooltipItemVisible(selector: string, index: number, c
   if (!visibleIndexes.includes(index)
     || (index === first && !isFullyVisible(container, allElements[first]))) {
     const position = index > visibleIndexes[visibleIndexes.length - 1] ? 'start' : 'end';
-    animateScroll(container, allElements[index], position, SCROLL_MARGIN);
+    animateScroll({
+      container,
+      element: allElements[index],
+      position,
+      margin: SCROLL_MARGIN,
+    });
   }
 }

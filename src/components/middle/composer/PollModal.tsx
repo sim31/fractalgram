@@ -1,18 +1,18 @@
-import type { ChangeEvent, RefObject } from 'react';
-import type { FC } from '../../../lib/teact/teact';
-import React, {
-  memo, useCallback, useEffect, useRef, useState,
+import type { ChangeEvent } from 'react';
+import type { ElementRef } from '../../../lib/teact/teact';
+import {
+  memo, useEffect, useRef, useState, useCallback,
 } from '../../../lib/teact/teact';
 
 import type { ApiNewPoll } from '../../../api/types';
-import type { ConsensusResults, PollModalDefaults } from '../../../global/types';
+import type { ConsensusResults, PollModalDefaults } from '../../../types';
 
-import { requestNextMutation } from '../../../lib/fasterdom/fasterdom';
+import { requestMeasure, requestNextMutation } from '../../../lib/fasterdom/fasterdom';
 import captureEscKeyListener from '../../../util/captureEscKeyListener';
-import parseMessageInput from '../../../util/parseMessageInput';
+import parseHtmlAsFormattedText from '../../../util/parseHtmlAsFormattedText';
 
-import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
+import useOldLang from '../../../hooks/useOldLang';
 
 import Button from '../../ui/Button';
 import Checkbox from '../../ui/Checkbox';
@@ -27,6 +27,7 @@ export type OwnProps = {
   isOpen: boolean;
   shouldBeAnonymous?: boolean;
   isQuiz?: boolean;
+  maxOptionsCount?: number;
   defaultValues?: PollModalDefaults;
   consensusResults?: ConsensusResults;
   onSend: (pollSummary: ApiNewPoll, pinned: boolean) => void;
@@ -34,18 +35,23 @@ export type OwnProps = {
 };
 
 const MAX_LIST_HEIGHT = 320;
-const MAX_OPTIONS_COUNT = 10;
+const FALLBACK_MAX_OPTIONS_COUNT = 12;
 const MAX_OPTION_LENGTH = 100;
 const MAX_QUESTION_LENGTH = 255;
 const MAX_SOLUTION_LENGTH = 200;
 
-const PollModal: FC<OwnProps> = ({
-  isOpen, isQuiz, shouldBeAnonymous, defaultValues, onSend, onClear, consensusResults,
-}) => {
-  // eslint-disable-next-line no-null/no-null
-  const questionInputRef = useRef<HTMLInputElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const optionsListRef = useRef<HTMLDivElement>(null);
+const PollModal = ({
+  isOpen,
+  isQuiz,
+  shouldBeAnonymous,
+  maxOptionsCount = FALLBACK_MAX_OPTIONS_COUNT,
+  defaultValues,
+  onSend,
+  onClear,
+  consensusResults
+}: OwnProps) => {
+  const questionInputRef = useRef<HTMLInputElement>();
+  const optionsListRef = useRef<HTMLDivElement>();
 
   const [question, setQuestion] = useState<string>(defaultValues?.question ?? '');
   const [options, setOptions] = useState<string[]>(defaultValues?.options ?? ['']);
@@ -58,13 +64,13 @@ const PollModal: FC<OwnProps> = ({
   const [correctOption, setCorrectOption] = useState<number | undefined>();
   const [hasErrors, setHasErrors] = useState<boolean>(false);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const handleSolutionChange = useLastCallback((e: ChangeEvent<HTMLTextAreaElement>) => {
     setSolution(e.target.value);
   });
 
-  const focusInput = useLastCallback((ref: RefObject<HTMLInputElement>) => {
+  const focusInput = useLastCallback((ref: ElementRef<HTMLInputElement>) => {
     if (isOpen && ref.current) {
       ref.current.focus();
     }
@@ -125,8 +131,9 @@ const PollModal: FC<OwnProps> = ({
         return;
       }
 
-      list.classList.toggle('overflown', list.scrollHeight > MAX_LIST_HEIGHT);
-      list.scrollTo({ top: list.scrollHeight, behavior: 'smooth' });
+      requestMeasure(() => {
+        list.scrollTo({ top: list.scrollHeight, behavior: 'smooth' });
+      });
     });
   });
 
@@ -136,12 +143,28 @@ const PollModal: FC<OwnProps> = ({
       return;
     }
 
-    const questionTrimmed = question.trim().substring(0, MAX_QUESTION_LENGTH);
-    const optionsTrimmed = options.map((o) => o.trim().substring(0, MAX_OPTION_LENGTH)).filter((o) => o.length);
+    const isNoCorrectOptionError = isQuizMode && (correctOption === undefined || !options[correctOption].trim());
 
-    if (!questionTrimmed || optionsTrimmed.length < 2) {
+    const answers = options
+      .map((text, index) => {
+        text = text.trim();
+
+        if (!text) return undefined;
+
+        return {
+          text: {
+            text,
+          },
+          option: String(index),
+          ...(index === correctOption && { correct: true }),
+        };
+      }).filter(Boolean);
+
+    const questionTrimmed = question.trim().substring(0, MAX_QUESTION_LENGTH);
+    if (!questionTrimmed || answers.length < 2) {
       setQuestion(questionTrimmed);
-      if (optionsTrimmed.length) {
+      if (answers.length) {
+        const optionsTrimmed = options.map((o) => o.trim().substring(0, MAX_OPTION_LENGTH)).filter(Boolean);
         if (optionsTrimmed.length < 2) {
           addNewOption(optionsTrimmed);
         } else {
@@ -154,21 +177,16 @@ const PollModal: FC<OwnProps> = ({
       return;
     }
 
-    if (isQuizMode && (correctOption === undefined || !optionsTrimmed[correctOption])) {
+    if (isNoCorrectOptionError) {
       setHasErrors(true);
       return;
     }
 
-    const answers = optionsTrimmed
-      .map((text, index) => ({
-        text: text.trim(),
-        option: String(index),
-        ...(index === correctOption && { correct: true }),
-      }));
-
     const payload: ApiNewPoll = {
       summary: {
-        question: questionTrimmed,
+        question: {
+          text: questionTrimmed,
+        },
         answers,
         ...(!isAnonymous && { isPublic: true }),
         ...(isMultipleAnswers && { multipleChoice: true }),
@@ -177,7 +195,8 @@ const PollModal: FC<OwnProps> = ({
     };
 
     if (isQuizMode) {
-      const { text, entities } = (solution && parseMessageInput(solution.substring(0, MAX_SOLUTION_LENGTH))) || {};
+      const { text, entities } = (solution && parseHtmlAsFormattedText(solution.substring(0, MAX_SOLUTION_LENGTH)))
+        || {};
 
       payload.quiz = {
         correctAnswers: [String(correctOption)],
@@ -192,7 +211,7 @@ const PollModal: FC<OwnProps> = ({
   const updateOption = useLastCallback((index: number, text: string) => {
     const newOptions = [...options];
     newOptions[index] = text;
-    if (newOptions[newOptions.length - 1].trim().length && newOptions.length < MAX_OPTIONS_COUNT) {
+    if (newOptions[newOptions.length - 1].trim().length && newOptions.length < maxOptionsCount) {
       addNewOption(newOptions);
     } else {
       setOptions(newOptions);
@@ -281,9 +300,14 @@ const PollModal: FC<OwnProps> = ({
   function renderHeader() {
     return (
       <div className="modal-header-condensed">
-        <Button round color="translucent" size="smaller" ariaLabel="Cancel poll creation" onClick={onClear}>
-          <i className="icon icon-close" />
-        </Button>
+        <Button
+          round
+          color="translucent"
+          size="tiny"
+          ariaLabel="Cancel poll creation"
+          onClick={onClear}
+          iconName="close"
+        />
         <div className="modal-title">{lang('NewPoll')}</div>
         <Button
           color="primary"
@@ -301,12 +325,13 @@ const PollModal: FC<OwnProps> = ({
     return options.map((option, index) => (
       <div className="option-wrapper">
         <InputText
-          label={index !== options.length - 1 || options.length === MAX_OPTIONS_COUNT
+          maxLength={MAX_OPTION_LENGTH}
+          label={index !== options.length - 1 || options.length === maxOptionsCount
             ? lang('OptionHint')
             : lang('CreatePoll.AddOption')}
           error={getOptionsError(index)}
           value={option}
-          // eslint-disable-next-line react/jsx-no-bind
+
           onChange={(e) => updateOption(index, e.currentTarget.value)}
           onKeyPress={handleKeyPress}
         />
@@ -317,11 +342,9 @@ const PollModal: FC<OwnProps> = ({
             color="translucent"
             size="smaller"
             ariaLabel={lang('Delete')}
-            // eslint-disable-next-line react/jsx-no-bind
             onClick={() => removeOption(index)}
-          >
-            <i className="icon icon-close" />
-          </Button>
+            iconName="close"
+          />
         )}
       </div>
     ));
@@ -329,7 +352,7 @@ const PollModal: FC<OwnProps> = ({
 
   function renderRadioOptions() {
     return renderOptions()
-      .map((label, index) => ({ value: String(index), label, hidden: index === options.length - 1 }));
+      .map((label, index) => ({ value: String(index), label, hidden: !options[index].trim() }));
   }
 
   function renderQuizNoOptionError() {
@@ -384,25 +407,27 @@ const PollModal: FC<OwnProps> = ({
             onChange={handleIncludeRankedChange}
           />
         )}
-        {!shouldBeAnonymous && (
+        <div className="dialog-checkbox-group">
+          {!shouldBeAnonymous && (
+            <Checkbox
+              label={lang('PollAnonymous')}
+              checked={isAnonymous}
+              onChange={handleIsAnonymousChange}
+            />
+          )}
           <Checkbox
-            label={lang('PollAnonymous')}
-            checked={isAnonymous}
-            onChange={handleIsAnonymousChange}
+            label={lang('PollMultiple')}
+            checked={isMultipleAnswers}
+            disabled={isQuizMode}
+            onChange={handleMultipleAnswersChange}
           />
-        )}
-        <Checkbox
-          label={lang('PollMultiple')}
-          checked={isMultipleAnswers}
-          disabled={isQuizMode}
-          onChange={handleMultipleAnswersChange}
-        />
-        <Checkbox
-          label={lang('PollQuiz')}
-          checked={isQuizMode}
-          disabled={isMultipleAnswers || isQuiz !== undefined}
-          onChange={handleQuizModeChange}
-        />
+          <Checkbox
+            label={lang('PollQuiz')}
+            checked={isQuizMode}
+            disabled={isMultipleAnswers || isQuiz !== undefined}
+            onChange={handleQuizModeChange}
+          />
+        </div>
         {isQuizMode && (
           <>
             <h3 className="options-header">{lang('lng_polls_solution_title')}</h3>

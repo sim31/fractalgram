@@ -1,5 +1,4 @@
-import type { FC } from '../../lib/teact/teact';
-import React, { memo, useCallback, useState } from '../../lib/teact/teact';
+import { memo, useCallback, useState } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type { GlobalState } from '../../global/types';
@@ -11,12 +10,15 @@ import useLang from '../../hooks/useLang';
 import PasswordForm from '../common/PasswordForm';
 import MonkeyPassword from '../common/PasswordMonkey';
 
-type StateProps = Pick<GlobalState, 'authIsLoading' | 'authError' | 'authHint'>;
+type StateProps = {
+  auth: GlobalState['auth'];
+};
 
-const AuthPassword: FC<StateProps> = ({
-  authIsLoading, authError, authHint,
-}) => {
-  const { setAuthPassword, clearAuthError } = getActions();
+const AuthPassword = ({
+  auth,
+}: StateProps) => {
+  const { setAuthPassword, clearAuthErrorKey } = getActions();
+  const { isLoading, errorKey, hint } = auth;
 
   const lang = useLang();
   const [showPassword, setShowPassword] = useState(false);
@@ -33,13 +35,13 @@ const AuthPassword: FC<StateProps> = ({
     <div id="auth-password-form" className="custom-scroll">
       <div className="auth-form">
         <MonkeyPassword isPasswordVisible={showPassword} />
-        <h1>{lang('Login.Header.Password')}</h1>
-        <p className="note">{lang('Login.EnterPasswordDescription')}</p>
+        <h1>{lang('LoginHeaderPassword')}</h1>
+        <p className="note">{lang('LoginEnterPasswordDescription')}</p>
         <PasswordForm
-          clearError={clearAuthError}
-          error={authError && lang(authError)}
-          hint={authHint}
-          isLoading={authIsLoading}
+          onClearError={clearAuthErrorKey}
+          error={errorKey && lang.withRegular(errorKey)}
+          hint={hint}
+          isLoading={isLoading}
           isPasswordVisible={showPassword}
           onChangePasswordVisibility={handleChangePasswordVisibility}
           onSubmit={handleSubmit}
@@ -50,5 +52,7 @@ const AuthPassword: FC<StateProps> = ({
 };
 
 export default memo(withGlobal(
-  (global): StateProps => pick(global, ['authIsLoading', 'authError', 'authHint']),
+  (global): Complete<StateProps> => (
+    pick(global, ['auth'])
+  ),
 )(AuthPassword));

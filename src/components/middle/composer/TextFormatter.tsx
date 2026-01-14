@@ -1,5 +1,6 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import type React from '../../../lib/teact/teact';
+import {
   memo, useEffect, useRef, useState,
 } from '../../../lib/teact/teact';
 
@@ -7,9 +8,10 @@ import type { IAnchorPosition } from '../../../types';
 import { ApiMessageEntityTypes } from '../../../api/types';
 
 import { EDITABLE_INPUT_ID } from '../../../config';
+import { IS_TAURI } from '../../../util/browser/globalEnvironment';
+import { ensureProtocol } from '../../../util/browser/url';
 import buildClassName from '../../../util/buildClassName';
 import captureEscKeyListener from '../../../util/captureEscKeyListener';
-import { ensureProtocol } from '../../../util/ensureProtocol';
 import getKeyFromEvent from '../../../util/getKeyFromEvent';
 import stopEvent from '../../../util/stopEvent';
 import { INPUT_CUSTOM_EMOJI_SELECTOR } from './helpers/customEmoji';
@@ -17,7 +19,7 @@ import { INPUT_CUSTOM_EMOJI_SELECTOR } from './helpers/customEmoji';
 import useFlag from '../../../hooks/useFlag';
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
-import useShowTransition from '../../../hooks/useShowTransition';
+import useShowTransitionDeprecated from '../../../hooks/useShowTransitionDeprecated';
 import useVirtualBackdrop from '../../../hooks/useVirtualBackdrop';
 
 import Button from '../../ui/Button';
@@ -60,16 +62,16 @@ const TextFormatter: FC<OwnProps> = ({
   setSelectedRange,
   onClose,
 }) => {
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const linkUrlInputRef = useRef<HTMLInputElement>(null);
-  const { shouldRender, transitionClassNames } = useShowTransition(isOpen);
+  const containerRef = useRef<HTMLDivElement>();
+  const linkUrlInputRef = useRef<HTMLInputElement>();
+  const { shouldRender, transitionClassNames } = useShowTransitionDeprecated(isOpen);
   const [isLinkControlOpen, openLinkControl, closeLinkControl] = useFlag();
   const [linkUrl, setLinkUrl] = useState('');
   const [isEditingLink, setIsEditingLink] = useState(false);
   const [inputClassName, setInputClassName] = useState<string | undefined>();
   const [selectedTextFormats, setSelectedTextFormats] = useState<ISelectedTextFormats>({});
+
+  const lang = useLang();
 
   useEffect(() => (isOpen ? captureEscKeyListener(onClose) : undefined), [isOpen, onClose]);
   useVirtualBackdrop(
@@ -338,7 +340,7 @@ const TextFormatter: FC<OwnProps> = ({
     document.execCommand(
       'insertHTML',
       false,
-      `<a href=${formattedLinkUrl} class="text-entity-link" dir="auto">${text}</a>`,
+      `<a href="${formattedLinkUrl}" class="text-entity-link" dir="auto">${text}</a>`,
     );
     onClose();
   });
@@ -377,10 +379,9 @@ const TextFormatter: FC<OwnProps> = ({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, handleKeyDown]);
 
-  const lang = useLang();
-
   function handleContainerKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
     if (e.key === 'Enter' && isLinkControlOpen) {
+      if (!linkUrl.trim()) return;
       handleLinkUrlConfirm();
       e.preventDefault();
     }
@@ -417,64 +418,64 @@ const TextFormatter: FC<OwnProps> = ({
       <div className="TextFormatter-buttons">
         <Button
           color="translucent"
-          ariaLabel="Spoiler text"
+          ariaLabel={lang('FormattingSpoilerAria')}
           className={getFormatButtonClassName('spoiler')}
           onClick={handleSpoilerText}
-        >
-          <i className="icon icon-eye-closed" />
-        </Button>
+          iconName="eye-crossed"
+        />
         <div className="TextFormatter-divider" />
         <Button
           color="translucent"
-          ariaLabel="Bold text"
+          ariaLabel={lang('FormattingBoldAria')}
           className={getFormatButtonClassName('bold')}
           onClick={handleBoldText}
-        >
-          <i className="icon icon-bold" />
-        </Button>
+          iconName="bold"
+        />
         <Button
           color="translucent"
-          ariaLabel="Italic text"
+          ariaLabel={lang('FormattingItalicAria')}
           className={getFormatButtonClassName('italic')}
           onClick={handleItalicText}
-        >
-          <i className="icon icon-italic" />
-        </Button>
+          iconName="italic"
+        />
         <Button
           color="translucent"
-          ariaLabel="Underlined text"
+          ariaLabel={lang('FormattingUnderlineAria')}
           className={getFormatButtonClassName('underline')}
           onClick={handleUnderlineText}
-        >
-          <i className="icon icon-underlined" />
-        </Button>
+          iconName="underlined"
+        />
         <Button
           color="translucent"
-          ariaLabel="Strikethrough text"
+          ariaLabel={lang('FormattingStrikethroughAria')}
           className={getFormatButtonClassName('strikethrough')}
           onClick={handleStrikethroughText}
-        >
-          <i className="icon icon-strikethrough" />
-        </Button>
+          iconName="strikethrough"
+        />
         <Button
           color="translucent"
-          ariaLabel="Monospace text"
+          ariaLabel={lang('FormattingMonospaceAria')}
           className={getFormatButtonClassName('monospace')}
           onClick={handleMonospaceText}
-        >
-          <i className="icon icon-monospace" />
-        </Button>
+          iconName="monospace"
+        />
         <div className="TextFormatter-divider" />
-        <Button color="translucent" ariaLabel={lang('TextFormat.AddLinkTitle')} onClick={openLinkControl}>
-          <i className="icon icon-link" />
-        </Button>
+        <Button
+          color="translucent"
+          ariaLabel={lang('FormattingAddLinkAria')}
+          onClick={openLinkControl}
+          iconName="link"
+        />
       </div>
 
       <div className="TextFormatter-link-control">
         <div className="TextFormatter-buttons">
-          <Button color="translucent" ariaLabel={lang('Cancel')} onClick={closeLinkControl}>
-            <i className="icon icon-arrow-left" />
-          </Button>
+          <Button
+            color="translucent"
+            ariaLabel={lang('Cancel')}
+            onClick={closeLinkControl}
+            iconName="arrow-left"
+          />
           <div className="TextFormatter-divider" />
 
           <div
@@ -485,8 +486,9 @@ const TextFormatter: FC<OwnProps> = ({
               className="TextFormatter-link-url-input"
               type="text"
               value={linkUrl}
-              placeholder="Enter URL..."
+              placeholder={lang('FormattingEnterUrl')}
               autoComplete="off"
+              spellCheck={IS_TAURI ? false : undefined}
               inputMode="url"
               dir="auto"
               onChange={handleLinkUrlChange}
@@ -501,9 +503,8 @@ const TextFormatter: FC<OwnProps> = ({
               ariaLabel={lang('Save')}
               className="color-primary"
               onClick={handleLinkUrlConfirm}
-            >
-              <i className="icon icon-check" />
-            </Button>
+              iconName="check"
+            />
           </div>
         </div>
       </div>

@@ -1,9 +1,9 @@
 import type { OnApiUpdate } from '../types';
 
-import { MAX_INT_32 } from '../../config';
+import { MUTE_INDEFINITE_TIMESTAMP } from '../../config';
 import { getServerTime } from '../../util/serverTime';
 
-type UnmuteQueueItem = { chatId: string; topicId?: number; muteUntil: number };
+type UnmuteQueueItem = { chatId: string; topicId?: number; mutedUntil: number };
 const unmuteTimers = new Map<string, any>();
 const unmuteQueue: Array<UnmuteQueueItem> = [];
 const scheduleUnmute = (item: UnmuteQueueItem, onUpdate: NoneToVoidFunction) => {
@@ -12,9 +12,9 @@ const scheduleUnmute = (item: UnmuteQueueItem, onUpdate: NoneToVoidFunction) => 
     clearTimeout(unmuteTimers.get(id));
     unmuteTimers.delete(id);
   }
-  if (item.muteUntil === MAX_INT_32 || item.muteUntil <= getServerTime()) return;
+  if (item.mutedUntil === MUTE_INDEFINITE_TIMESTAMP || item.mutedUntil <= getServerTime()) return;
   unmuteQueue.push(item);
-  unmuteQueue.sort((a, b) => b.muteUntil - a.muteUntil);
+  unmuteQueue.sort((a, b) => b.mutedUntil - a.mutedUntil);
   const next = unmuteQueue.pop();
   if (!next) return;
   const timer = setTimeout(() => {
@@ -23,30 +23,34 @@ const scheduleUnmute = (item: UnmuteQueueItem, onUpdate: NoneToVoidFunction) => 
       const afterNext = unmuteQueue.pop();
       if (afterNext) scheduleUnmute(afterNext, onUpdate);
     }
-  }, (item.muteUntil - getServerTime()) * 1000);
+  }, (item.mutedUntil - getServerTime()) * 1000);
   unmuteTimers.set(id, timer);
 };
 
-export function scheduleMutedChatUpdate(chatId: string, muteUntil = 0, onUpdate: OnApiUpdate) {
+export function scheduleMutedChatUpdate(chatId: string, mutedUntil: number, onUpdate: OnApiUpdate) {
   scheduleUnmute({
     chatId,
-    muteUntil,
+    mutedUntil,
   }, () => onUpdate({
-    '@type': 'updateNotifyExceptions',
+    '@type': 'updateChatNotifySettings',
     chatId,
-    isMuted: false,
+    settings: {
+      mutedUntil: undefined,
+    },
   }));
 }
 
-export function scheduleMutedTopicUpdate(chatId: string, topicId: number, muteUntil = 0, onUpdate: OnApiUpdate) {
+export function scheduleMutedTopicUpdate(chatId: string, topicId: number, mutedUntil: number, onUpdate: OnApiUpdate) {
   scheduleUnmute({
     chatId,
     topicId,
-    muteUntil,
+    mutedUntil,
   }, () => onUpdate({
-    '@type': 'updateTopicNotifyExceptions',
+    '@type': 'updateTopicNotifySettings',
     chatId,
     topicId,
-    isMuted: false,
+    settings: {
+      mutedUntil: undefined,
+    },
   }));
 }

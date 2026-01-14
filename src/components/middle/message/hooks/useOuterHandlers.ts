@@ -1,14 +1,14 @@
-import type { RefObject } from 'react';
 import type React from '../../../../lib/teact/teact';
+import type { ElementRef } from '../../../../lib/teact/teact';
 import { useEffect, useRef } from '../../../../lib/teact/teact';
 import { getActions } from '../../../../global';
 
 import type { Signal } from '../../../../util/signals';
 
 import { requestMeasure } from '../../../../lib/fasterdom/fasterdom';
+import { IS_ANDROID, IS_TOUCH_ENV } from '../../../../util/browser/windowEnvironment';
 import { captureEvents, SwipeDirection } from '../../../../util/captureEvents';
 import stopEvent from '../../../../util/stopEvent';
-import { IS_ANDROID, IS_TOUCH_ENV } from '../../../../util/windowEnvironment';
 import windowSize from '../../../../util/windowSize';
 import { REM } from '../../../common/helpers/mediaDimensions';
 import { preventMessageInputBlur } from '../../helpers/preventMessageInputBlur';
@@ -25,7 +25,7 @@ const GROUP_MESSAGE_HOVER_ATTRIBUTE = 'data-is-document-group-hover';
 
 export default function useOuterHandlers(
   selectMessage: (e?: React.MouseEvent<HTMLDivElement, MouseEvent>, groupedId?: string) => void,
-  containerRef: RefObject<HTMLDivElement>,
+  containerRef: ElementRef<HTMLDivElement>,
   messageId: number,
   isInSelectMode: boolean,
   canReply: boolean,
@@ -34,11 +34,11 @@ export default function useOuterHandlers(
   handleBeforeContextMenu: (e: React.MouseEvent) => void,
   chatId: string,
   isContextMenuShown: boolean,
-  quickReactionRef: RefObject<HTMLDivElement>,
+  quickReactionRef: ElementRef<HTMLDivElement>,
   shouldHandleMouseLeave: boolean,
-  getIsMessageListReady: Signal<boolean>,
+  getIsMessageListReady?: Signal<boolean>,
 ) {
-  const { setReplyingToId, sendDefaultReaction } = getActions();
+  const { updateDraftReplyInfo, sendDefaultReaction } = getActions();
 
   const [isQuickReactionVisible, markQuickReactionVisible, unmarkQuickReactionVisible] = useFlag();
   const [isSwiped, markSwiped, unmarkSwiped] = useFlag();
@@ -138,7 +138,9 @@ export default function useOuterHandlers(
   function handleContainerDoubleClick() {
     if (IS_TOUCH_ENV || !canReply) return;
 
-    setReplyingToId({ messageId });
+    updateDraftReplyInfo({
+      replyToMsgId: messageId, replyToPeerId: undefined, quoteText: undefined, quoteOffset: undefined,
+    });
   }
 
   function stopPropagation(e: React.MouseEvent<HTMLDivElement, MouseEvent>) {
@@ -146,7 +148,7 @@ export default function useOuterHandlers(
   }
 
   useEffect(() => {
-    if (!IS_TOUCH_ENV || isInSelectMode || !canReply || isContextMenuShown || !getIsMessageListReady()) {
+    if (!IS_TOUCH_ENV || isInSelectMode || !canReply || isContextMenuShown || !getIsMessageListReady?.()) {
       return undefined;
     }
 
@@ -154,7 +156,7 @@ export default function useOuterHandlers(
     return captureEvents(containerRef.current!, {
       selectorToPreventScroll: '.MessageList',
       excludedClosestSelector: '.no-word-wrap',
-      onSwipe: ((e, direction) => {
+      onSwipe: (e, direction) => {
         if (direction === SwipeDirection.Left) {
           if (!startedAt) {
             startedAt = Date.now();
@@ -166,20 +168,20 @@ export default function useOuterHandlers(
         }
 
         return false;
-      }),
+      },
       onRelease: () => {
         if (!startedAt || !canReply) {
           return;
         }
 
-        setReplyingToId({ messageId });
+        updateDraftReplyInfo({ replyToMsgId: messageId });
 
         setTimeout(unmarkSwiped, Math.max(0, SWIPE_ANIMATION_DURATION - (Date.now() - startedAt)));
         startedAt = undefined;
       },
     });
   }, [
-    containerRef, isInSelectMode, messageId, setReplyingToId, markSwiped, unmarkSwiped, canReply, isContextMenuShown,
+    containerRef, isInSelectMode, messageId, markSwiped, unmarkSwiped, canReply, isContextMenuShown,
     getIsMessageListReady,
   ]);
 

@@ -1,21 +1,26 @@
-import React, {
+import type React from '../../lib/teact/teact';
+import {
   memo, useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { ApiStory, ApiUser } from '../../api/types';
-import type { ApiPrivacySettings, PrivacyVisibility } from '../../types';
+import type {
+  ApiPrivacySettings, ApiStory, ApiUser, PrivacyVisibility,
+} from '../../api/types';
 import type { IconName } from '../../types/icons';
 
-import { getSenderTitle, getUserFullName } from '../../global/helpers';
+import { getUserFullName } from '../../global/helpers';
+import { getPeerTitle } from '../../global/helpers/peers';
 import { selectPeerStory, selectTabState } from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
+import { getHours } from '../../util/dates/units';
 import stopEvent from '../../util/stopEvent';
 
 import useFlag from '../../hooks/useFlag';
-import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
+import useOldLang from '../../hooks/useOldLang';
 
+import Icon from '../common/icons/Icon';
 import Button from '../ui/Button';
 import ListItem from '../ui/ListItem';
 import Modal from '../ui/Modal';
@@ -91,12 +96,12 @@ function StorySettings({
   currentUserId,
   onClose,
 }: OwnProps & StateProps) {
-  const { editStoryPrivacy, toggleStoryPinned } = getActions();
+  const { editStoryPrivacy, toggleStoryInProfile } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
   const [isOpenModal, openModal, closeModal] = useFlag(false);
   const [privacy, setPrivacy] = useState<ApiPrivacySettings | undefined>(visibility);
-  const [isPinned, setIsPinned] = useState(story?.isPinned);
+  const [isPinned, setIsPinned] = useState(story?.isInProfile);
   const [activeKey, setActiveKey] = useState<Screens>(Screens.privacy);
   const [editingBlockingCategory, setEditingBlockingCategory] = useState<PrivacyVisibility>('everybody');
   const isBackButton = activeKey !== Screens.privacy;
@@ -195,8 +200,8 @@ function StorySettings({
       storyId: story!.id,
       privacy: privacy!,
     });
-    if (story!.isPinned !== isPinned) {
-      toggleStoryPinned({ peerId: story!.peerId, storyId: story!.id, isPinned });
+    if (story!.isInProfile !== isPinned) {
+      toggleStoryInProfile({ peerId: story!.peerId, storyId: story!.id, isInProfile: isPinned });
     }
     closeModal();
   });
@@ -208,7 +213,7 @@ function StorySettings({
       }
 
       if (closeFriendIds.length === 1) {
-        return getSenderTitle(lang, usersById[closeFriendIds[0]]);
+        return getPeerTitle(lang, usersById[closeFriendIds[0]]);
       }
 
       return lang('StoryPrivacyOptionPeople', closeFriendIds.length, 'i');
@@ -238,7 +243,6 @@ function StorySettings({
     return lang('StoryPrivacyOptionPeople', privacy.allowUserIds.length, 'i');
   }
 
-  // eslint-disable-next-line consistent-return
   function renderHeaderContent() {
     switch (activeKey) {
       case Screens.privacy:
@@ -252,7 +256,6 @@ function StorySettings({
     }
   }
 
-  // eslint-disable-next-line consistent-return
   function renderContent(isActive: boolean) {
     switch (activeKey) {
       case Screens.privacy:
@@ -275,7 +278,6 @@ function StorySettings({
             id="deny-list"
             contactListIds={contactListIds}
             currentUserId={currentUserId}
-            usersById={usersById}
             selectedIds={selectedBlockedIds}
             onSelect={handleDenyUserIdsChange}
           />
@@ -288,7 +290,6 @@ function StorySettings({
             contactListIds={contactListIds}
             lockedIds={lockedIds}
             currentUserId={currentUserId}
-            usersById={usersById}
             selectedIds={privacy?.allowUserIds}
             onSelect={handleAllowUserIdsChange}
           />
@@ -297,7 +298,7 @@ function StorySettings({
   }
 
   function renderPrivacyList() {
-    const storyLifeTime = story ? convertSecondsToHours(story.expireDate - story.date) : 0;
+    const storyLifeTime = story ? getHours(story.expireDate - story.date) : 0;
 
     return (
       <>
@@ -322,7 +323,7 @@ function StorySettings({
                   className={styles.icon}
                   style={`--color-from: ${option.color[0]}; --color-to: ${option.color[1]}`}
                 >
-                  <i className={`icon icon-${option.icon}`} />
+                  <Icon name={option.icon} />
                 </span>
                 <div className={styles.optionContent}>
                   <span className={buildClassName(styles.option_name)}>{lang(option.name)}</span>
@@ -335,7 +336,7 @@ function StorySettings({
                       onClick={(e) => { handleActionClick(e, option.actions!); }}
                     >
                       <span className={styles.actionInner}>{renderActionName(option.actions)}</span>
-                      <i className="icon icon-next" aria-hidden />
+                      <Icon name="next" />
                     </div>
                   )}
                 </div>
@@ -377,7 +378,7 @@ function StorySettings({
           className={buildClassName(styles.closeButton, 'close-button')}
           round
           color="translucent"
-          size="smaller"
+          size="tiny"
           onClick={handleCloseButtonClick}
           ariaLabel={isBackButton ? lang('Common.Back') : lang('Common.Close')}
         >
@@ -399,7 +400,7 @@ function StorySettings({
   );
 }
 
-export default memo(withGlobal<OwnProps>((global): StateProps => {
+export default memo(withGlobal<OwnProps>((global): Complete<StateProps> => {
   const {
     storyViewer: {
       storyId, peerId,
@@ -410,22 +411,10 @@ export default memo(withGlobal<OwnProps>((global): StateProps => {
     : undefined;
 
   return {
-    story: story && 'content' in story ? story as ApiStory : undefined,
+    story: story && 'content' in story ? story : undefined,
     visibility: story && 'visibility' in story ? story.visibility : undefined,
     contactListIds: global.contactList?.userIds,
     usersById: global.users.byId,
     currentUserId: global.currentUserId!,
   };
 })(StorySettings));
-
-function convertSecondsToHours(seconds: number): number {
-  const secondsInHour = 3600;
-  const minutesInHour = 60;
-
-  const hours = Math.floor(seconds / secondsInHour);
-  const remainingSeconds = seconds % secondsInHour;
-  const remainingMinutes = Math.floor(remainingSeconds / minutesInHour);
-
-  // If remaining minutes are greater than or equal to 30, round up the hours
-  return remainingMinutes >= 30 ? hours + 1 : hours;
-}

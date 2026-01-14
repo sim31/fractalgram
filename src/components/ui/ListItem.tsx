@@ -1,12 +1,12 @@
-import type { RefObject } from 'react';
-import type { FC, TeactNode } from '../../lib/teact/teact';
-import React, { useRef } from '../../lib/teact/teact';
+import type { ElementRef, TeactNode } from '../../lib/teact/teact';
+import type React from '../../lib/teact/teact';
+import { useRef } from '../../lib/teact/teact';
 
 import type { IconName } from '../../types/icons';
 
 import { requestMeasure } from '../../lib/fasterdom/fasterdom';
+import { IS_TOUCH_ENV, MouseButton } from '../../util/browser/windowEnvironment';
 import buildClassName from '../../util/buildClassName';
-import { IS_TOUCH_ENV, MouseButton } from '../../util/windowEnvironment';
 import renderText from '../common/helpers/renderText';
 
 import useContextMenuHandlers from '../../hooks/useContextMenuHandlers';
@@ -14,8 +14,8 @@ import { useFastClick } from '../../hooks/useFastClick';
 import useFlag from '../../hooks/useFlag';
 import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
-import useMenuPosition from '../../hooks/useMenuPosition';
 
+import Icon from '../common/icons/Icon';
 import Button from './Button';
 import Menu from './Menu';
 import MenuItem from './MenuItem';
@@ -41,12 +41,13 @@ export type MenuItemContextAction =
   | MenuItemContextActionSeparator;
 
 interface OwnProps {
-  ref?: RefObject<HTMLDivElement>;
-  buttonRef?: RefObject<HTMLDivElement | HTMLAnchorElement>;
+  ref?: ElementRef<HTMLDivElement>;
+  buttonRef?: ElementRef<HTMLDivElement | HTMLAnchorElement>;
   icon?: IconName;
   iconClassName?: string;
   leftElement?: TeactNode;
   secondaryIcon?: IconName;
+  secondaryIconClassName?: string;
   rightElement?: TeactNode;
   buttonClassName?: string;
   className?: string;
@@ -59,21 +60,26 @@ interface OwnProps {
   inactive?: boolean;
   focus?: boolean;
   destructive?: boolean;
+  withPrimaryColor?: boolean;
   multiline?: boolean;
   isStatic?: boolean;
+  allowSelection?: boolean;
+  withColorTransition?: boolean;
   contextActions?: MenuItemContextAction[];
   withPortalForMenu?: boolean;
   menuBubbleClassName?: string;
   href?: string;
-  onMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void;
+  nonInteractive?: boolean;
   onClick?: (e: React.MouseEvent<HTMLElement>, arg?: any) => void;
-  onContextMenu?: (e: React.MouseEvent<HTMLElement>) => void;
   clickArg?: any;
+  onMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void;
+  onContextMenu?: (e: React.MouseEvent<HTMLElement>) => void;
   onSecondaryIconClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   onDragEnter?: (e: React.DragEvent<HTMLDivElement>) => void;
+  onDragLeave?: NoneToVoidFunction;
 }
 
-const ListItem: FC<OwnProps> = ({
+const ListItem = ({
   ref,
   buttonRef,
   icon,
@@ -82,6 +88,7 @@ const ListItem: FC<OwnProps> = ({
   buttonClassName,
   menuBubbleClassName,
   secondaryIcon,
+  secondaryIconClassName,
   rightElement,
   className,
   style,
@@ -93,27 +100,31 @@ const ListItem: FC<OwnProps> = ({
   inactive,
   focus,
   destructive,
+  withPrimaryColor,
   multiline,
   isStatic,
+  allowSelection,
+  withColorTransition,
   contextActions,
   withPortalForMenu,
   href,
-  onMouseDown,
+  nonInteractive,
   onClick,
-  onContextMenu,
   clickArg,
+  onMouseDown,
+  onContextMenu,
   onSecondaryIconClick,
   onDragEnter,
-}) => {
-  // eslint-disable-next-line no-null/no-null
-  let containerRef = useRef<HTMLDivElement>(null);
+  onDragLeave,
+}: OwnProps) => {
+  let containerRef = useRef<HTMLDivElement>();
   if (ref) {
     containerRef = ref;
   }
   const [isTouched, markIsTouched, unmarkIsTouched] = useFlag();
 
   const {
-    isContextMenuOpen, contextMenuPosition,
+    isContextMenuOpen, contextMenuAnchor,
     handleBeforeContextMenu, handleContextMenu,
     handleContextMenuClose, handleContextMenuHide,
   } = useContextMenuHandlers(containerRef, !contextActions);
@@ -126,25 +137,16 @@ const ListItem: FC<OwnProps> = ({
   });
   const getLayout = useLastCallback(() => ({ withPortal: withPortalForMenu }));
 
-  const {
-    positionX, positionY, transformOriginX, transformOriginY, style: menuStyle,
-  } = useMenuPosition(
-    contextMenuPosition,
-    getTriggerElement,
-    getRootElement,
-    getMenuElement,
-    getLayout,
-  );
-
   const handleClickEvent = useLastCallback((e: React.MouseEvent<HTMLElement, MouseEvent>) => {
     const hasModifierKey = e.ctrlKey || e.metaKey || e.shiftKey;
     if (!hasModifierKey && e.button === MouseButton.Main) {
+      if (href && !onClick) return; // Allow default behavior for opening links
       e.preventDefault();
     }
   });
 
   const handleClick = useLastCallback((e: React.MouseEvent<HTMLElement, MouseEvent>) => {
-    if ((disabled && !allowDisabledClick) || !onClick) {
+    if ((disabled && !allowDisabledClick)) {
       return;
     }
 
@@ -155,8 +157,10 @@ const ListItem: FC<OwnProps> = ({
         return;
       }
 
-      e.preventDefault();
+      if (onClick) e.preventDefault();
     }
+
+    if (!onClick) return;
 
     onClick(e, clickArg);
 
@@ -202,17 +206,19 @@ const ListItem: FC<OwnProps> = ({
   const fullClassName = buildClassName(
     'ListItem',
     className,
-    isStatic && 'allow-selection',
+    allowSelection && 'allow-selection',
     ripple && 'has-ripple',
     narrow && 'narrow',
     disabled && 'disabled',
     allowDisabledClick && 'click-allowed',
     inactive && 'inactive',
-    contextMenuPosition && 'has-menu-open',
+    contextMenuAnchor && 'has-menu-open',
     focus && 'focus',
     destructive && 'destructive',
+    withPrimaryColor && 'primary',
     multiline && 'multiline',
     isStatic && 'is-static',
+    withColorTransition && 'with-color-transition',
   );
 
   const ButtonElementTag = href ? 'a' : 'div';
@@ -225,48 +231,52 @@ const ListItem: FC<OwnProps> = ({
       style={style}
       onMouseDown={onMouseDown}
       onDragEnter={onDragEnter}
+      onDragLeave={onDragLeave}
     >
       <ButtonElementTag
         className={buildClassName('ListItem-button', isTouched && 'active', buttonClassName)}
-        role={!isStatic ? 'button' : undefined}
+        role={!isStatic && !href ? 'button' : undefined}
         href={href}
-        ref={buttonRef as any /* TS requires specific types for refs */}
+        // @ts-expect-error TS requires specific types for refs
+        ref={buttonRef}
+        rel={href ? 'noopener noreferrer' : undefined}
         tabIndex={!isStatic ? 0 : undefined}
         onClick={(!inactive && IS_TOUCH_ENV) ? handleClick : handleClickEvent}
         onMouseDown={handleMouseDown}
         onContextMenu={onContextMenu || ((!inactive && contextActions) ? handleContextMenu : undefined)}
+        aria-disabled={disabled || undefined}
       >
-        {leftElement}
-        {icon && (
-          <i className={buildClassName('icon', `icon-${icon}`, iconClassName)} />
-        )}
-        {multiline && (<div className="multiline-item">{children}</div>)}
-        {!multiline && children}
         {!disabled && !inactive && ripple && (
           <RippleEffect />
         )}
+        {leftElement}
+        {icon && (
+          <Icon name={icon} className={buildClassName('ListItem-main-icon', iconClassName)} />
+        )}
+        {multiline && (<div className="multiline-item">{children}</div>)}
+        {!multiline && children}
         {secondaryIcon && (
           <Button
-            className="secondary-icon"
+            nonInteractive={nonInteractive}
+            className={buildClassName('secondary-icon', secondaryIconClassName)}
             round
             color="translucent"
             size="smaller"
             onClick={handleSecondaryIconClick}
             onMouseDown={handleSecondaryIconMouseDown}
-          >
-            <i className={`icon icon-${secondaryIcon}`} />
-          </Button>
+            iconName={secondaryIcon}
+          />
         )}
         {rightElement}
       </ButtonElementTag>
-      {contextActions && contextMenuPosition !== undefined && (
+      {contextActions && contextMenuAnchor !== undefined && (
         <Menu
           isOpen={isContextMenuOpen}
-          transformOriginX={transformOriginX}
-          transformOriginY={transformOriginY}
-          positionX={positionX}
-          positionY={positionY}
-          style={menuStyle}
+          anchor={contextMenuAnchor}
+          getTriggerElement={getTriggerElement}
+          getRootElement={getRootElement}
+          getMenuElement={getMenuElement}
+          getLayout={getLayout}
           className="ListItem-context-menu with-menu-transitions"
           autoClose
           onClose={handleContextMenuClose}

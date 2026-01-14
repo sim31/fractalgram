@@ -1,61 +1,68 @@
+@use "../../../styles/mixins";
+
 .LeftSearch {
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   height: 100%;
-  overflow: hidden;
 
   & > .Transition {
-    flex: 1;
     overflow: hidden;
+    flex: 1;
   }
 
   .TabList {
-    padding-bottom: 1px;
     z-index: 1;
   }
 
+  &--content {
+    overflow-y: auto;
+    height: 100%;
+    padding-top: 0.5rem;
+  }
+
+  &--media {
+    padding-top: 0;
+  }
+
   .documents-list {
-    padding: 0 1.25rem 1.25rem;
+    padding-bottom: 1.25rem;
+    padding-left: 0.75rem;
 
     .ListItem {
-      padding: 0.625rem 0;
+      padding-inline: 0.5rem;
+    }
+
+    .ListItem + .ListItem {
+      padding-block: 0.5rem;
     }
   }
 
   .section-heading {
     position: relative;
-    padding-top: 1.25rem;
-    padding-left: 1.25rem;
-    margin: 0 0 1rem -1.25rem !important;
 
-    font-weight: 500;
-    font-size: 0.9375rem;
+    margin-bottom: 1rem;
+    padding-top: 0.625rem;
+    padding-left: 0.5rem;
+
+    font-size: 1rem;
+    font-weight: var(--font-weight-medium);
     color: var(--color-text-secondary);
 
     &-first {
       padding-top: 0.75rem;
     }
 
-    &-with-border::before {
-      content: "";
-      position: absolute;
-      width: calc(100% + 1.25rem);
-      height: 1px;
-      background: var(--color-borders);
-      left: 0;
-      top: 0;
-    }
-
     &[dir="rtl"],
     &[dir="auto"] {
-      padding-left: 0;
-      padding-right: 1.25rem;
       margin: 0 -1.25rem 0 1rem !important;
+      padding-right: 1.25rem;
+      padding-left: 0;
       text-align: initial;
 
       &::before {
-        left: auto;
         right: 0.625rem;
+        left: auto;
       }
     }
 
@@ -67,11 +74,6 @@
 
   .LeftSearch .search-section .section-heading,
   .RecentContacts .search-section .section-heading {
-    margin-left: -0.5rem !important;
-    padding-left: 1.5rem;
-    width: calc(100% + 0.625rem);
-    box-shadow: 0 -1px 0 0 var(--color-borders);
-
     &::before {
       display: none;
     }
@@ -86,27 +88,32 @@
   }
 
   .content:not(.with-seekline) {
-    align-self: center;
-    min-width: 0;
-    flex-grow: 1;
     overflow: hidden;
+    flex-grow: 1;
+    align-self: center;
+
+    min-width: 0;
+
     text-overflow: ellipsis;
-    word-break: break-word;
+    overflow-wrap: anywhere;
   }
 
   .message-date {
+    padding-left: 1rem;
     font-size: 0.75rem;
     color: var(--color-text-secondary);
-    padding-left: 1rem;
     white-space: nowrap;
   }
 
   .media-list {
     display: grid;
-    padding: 0.5rem;
-    grid-template-columns: repeat(3, 1fr);
     grid-auto-rows: 1fr;
-    grid-gap: 0.25rem;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.25rem;
+
+    padding: 0.5rem;
+
+    @include mixins.adapt-padding-to-scrollbar(0.5rem);
   }
 
   .Audio {
@@ -116,10 +123,14 @@
   }
 
   .ListItem.search-result {
+    .ListItem-button {
+      padding: 0.375rem;
+    }
+
     .ChatInfo {
+      margin: -0.0625rem;
       // Fix for overflow hidden and stories indicator
       padding: 0.0625rem;
-      margin: -0.0625rem;
 
       .handle {
         unicode-bidi: plaintext;
@@ -133,7 +144,7 @@
           }
         }
 
-        &::after {
+        &.withStatus::after {
           content: ", ";
           color: var(--color-text-secondary);
 
@@ -155,18 +166,20 @@
     }
 
     .topic-item {
+      overflow: hidden;
       display: flex;
       align-items: center;
+
       font-size: 1rem;
+      font-weight: var(--font-weight-medium);
       line-height: 1.6875rem;
-      font-weight: 500;
-      overflow: hidden;
 
       .topic-icon {
         --custom-emoji-size: 2rem;
-        margin-inline-end: 0.25rem !important;
+
         width: 2rem;
         height: 2rem;
+        margin-inline-end: 0.25rem !important;
         font-size: 2rem !important;
       }
 
@@ -175,44 +188,46 @@
         text-overflow: ellipsis;
       }
     }
-  }
 
-  .ListItem.search-result-message {
-    .sender-name {
-      color: var(--color-text);
-
-      &::after {
-        content: ": ";
-        white-space: pre;
+    .search-sponsored-badge {
+      cursor: pointer;
+      display: flex;
+      align-self: flex-start;
+      &:hover {
+        filter: brightness(1.1);
       }
     }
-  }
 
-  @media (max-width: 600px) {
-    .ListItem {
-      margin: 0 -0.125rem 0 -0.5rem;
+    .search-result-miniapp-button {
+      height: auto !important;
+      padding: 0 0.4375rem !important;
+      font-size: 0.875rem !important;
+      line-height: 1.5rem;
     }
   }
 
   .search-section {
-    padding: 0 0.125rem 0.5rem 0.5rem;
+    padding: 0.5rem;
+
+    @include mixins.adapt-padding-to-scrollbar(0.5rem);
 
     .section-heading {
-      color: var(--color-text-secondary);
-      font-size: 0.9375rem;
-      font-weight: 500;
-      margin-bottom: 0 !important;
-      padding-top: 0.875rem;
+      margin-bottom: 0.625rem !important;
 
       .Link {
         float: right;
-        color: var(--color-links);
-        font-weight: 400;
-        margin-right: 1rem;
 
-        &:focus,
+        margin-right: 0.5rem;
+
+        font-weight: var(--font-weight-medium);
+        color: var(--color-links);
+
+        transition: opacity 0.15s ease-in;
+
+        &:active,
         &:hover {
-          text-decoration: underline;
+          text-decoration: none;
+          opacity: 0.85;
         }
       }
 
@@ -220,8 +235,8 @@
       &[dir="auto"] {
         .Link {
           float: left;
-          margin-left: 1rem;
           margin-right: 0;
+          margin-left: 1rem;
         }
       }
     }
@@ -233,33 +248,29 @@
   }
 
   .chat-selection {
-    padding-top: 0.5rem;
+    overflow-x: auto;
+    overflow-y: hidden;
     display: flex;
     flex-shrink: 0;
     flex-wrap: nowrap;
-    justify-content: space-between;
     align-items: flex-end;
-    box-shadow: inset 0 -1px 0 0 var(--color-borders);
+    justify-content: space-between;
+
+    padding-bottom: 0.5rem;
+    padding-inline: 0.25rem;
+
     background-color: var(--color-background);
+    box-shadow: inset 0 -1px 0 0 var(--color-borders);
+
     -webkit-overflow-scrolling: touch;
-    overflow-x: auto;
-    overflow-y: hidden;
 
-    scrollbar-color: rgba(0, 0, 0, 0);
-
-    > .PickerSelectedItem {
-      flex: 0 0 auto;
-
-      &:last-child {
-        margin-right: auto;
-      }
+    &::after {
+      content: "";
+      flex-grow: 1;
     }
 
-    &[dir="rtl"] {
-      > .PickerSelectedItem:last-child {
-        margin-left: auto;
-        margin-right: 0;
-      }
+    .left-search-local-suggestion {
+      flex-shrink: 0;
     }
   }
 
@@ -269,8 +280,8 @@
 
   [dir="rtl"] {
     .message-date {
-      padding-left: 0;
       padding-right: 1rem;
+      padding-left: 0;
     }
   }
 }

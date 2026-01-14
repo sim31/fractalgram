@@ -1,10 +1,11 @@
-import type { RefObject } from 'react';
+import type {
+  ElementRef } from '../../../../lib/teact/teact';
 import {
   useEffect, useMemo, useState,
 } from '../../../../lib/teact/teact';
 
 import useLastCallback from '../../../../hooks/useLastCallback';
-import usePrevious from '../../../../hooks/usePrevious';
+import usePreviousDeprecated from '../../../../hooks/usePreviousDeprecated';
 import useResizeObserver from '../../../../hooks/useResizeObserver';
 
 const PADDING_HORIZONTAL = 10;
@@ -37,8 +38,8 @@ export default function useGroupCallVideoLayout({
   isLandscapeLayout,
   pinnedVideo,
 }: {
-  primaryContainerRef: RefObject<HTMLDivElement>;
-  secondaryContainerRef: RefObject<HTMLDivElement>;
+  primaryContainerRef: ElementRef<HTMLDivElement>;
+  secondaryContainerRef: ElementRef<HTMLDivElement>;
   videoParticipants: VideoParticipant[];
   isLandscapeLayout: boolean;
   pinnedVideo: VideoParticipant | undefined;
@@ -46,8 +47,8 @@ export default function useGroupCallVideoLayout({
   const [videoLayout, setVideoLayout] = useState<VideoLayout[]>([]);
   const [panelOffset, setPanelOffset] = useState(0);
   const videosCount = videoParticipants.length;
-  const prevVideosCount = usePrevious(videosCount);
-  const prevVideoParticipants = usePrevious(videoParticipants);
+  const prevVideosCount = usePreviousDeprecated(videosCount);
+  const prevVideoParticipants = usePreviousDeprecated(videoParticipants);
   const removedVideoParticipants = useMemo(() => {
     return prevVideoParticipants?.filter(
       ({ id, type }) => !videoParticipants.some((p) => p.id === id && p.type === type),

@@ -1,15 +1,16 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import type React from '../../../lib/teact/teact';
+import {
   memo, useMemo, useState,
 } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
 import type { ApiAttachBot } from '../../../api/types';
-import type { IAnchorPosition, ISettings } from '../../../types';
+import type { IAnchorPosition, ThemeKey, ThreadId } from '../../../types';
 
 import useFlag from '../../../hooks/useFlag';
-import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
+import useOldLang from '../../../hooks/useOldLang';
 
 import Menu from '../../ui/Menu';
 import MenuItem from '../../ui/MenuItem';
@@ -17,10 +18,11 @@ import AttachBotIcon from './AttachBotIcon';
 
 type OwnProps = {
   bot: ApiAttachBot;
-  theme: ISettings['theme'];
+  theme: ThemeKey;
   isInSideMenu?: true;
   chatId?: string;
-  threadId?: number;
+  threadId?: ThreadId;
+  canShowNew?: boolean;
   onMenuOpened: VoidFunction;
   onMenuClosed: VoidFunction;
 };
@@ -31,12 +33,13 @@ const AttachBotItem: FC<OwnProps> = ({
   chatId,
   threadId,
   isInSideMenu,
+  canShowNew,
   onMenuOpened,
   onMenuClosed,
 }) => {
   const { callAttachBot, toggleAttachBot } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const icon = useMemo(() => {
     return bot.icons.find(({ name }) => name === 'default_static')?.document;
@@ -93,6 +96,7 @@ const AttachBotItem: FC<OwnProps> = ({
       onContextMenu={handleContextMenu}
     >
       {bot.shortName}
+      {canShowNew && bot.isDisclaimerNeeded && <span className="menu-item-badge">{lang('New')}</span>}
       {menuPosition && (
         <Menu
           isOpen={isMenuOpen}

@@ -1,13 +1,15 @@
 import {
-  useEffect, useMemo, useRef, useState,
+  useEffect, useRef, useState,
 } from '../lib/teact/teact';
 
 import { ApiMediaFormat } from '../api/types';
 
+import { selectIsSynced } from '../global/selectors';
+import { IS_PROGRESSIVE_SUPPORTED } from '../util/browser/windowEnvironment';
 import * as mediaLoader from '../util/mediaLoader';
-import { throttle } from '../util/schedulers';
-import { IS_PROGRESSIVE_SUPPORTED } from '../util/windowEnvironment';
+import useSelector from './data/useSelector';
 import useForceUpdate from './useForceUpdate';
+import useThrottledCallback from './useThrottledCallback';
 import useUniqueId from './useUniqueId';
 
 const STREAMING_PROGRESS = 0.75;
@@ -21,20 +23,22 @@ export default function useMediaWithLoadProgress(
   delay?: number | false,
   isHtmlAllowed = false,
 ) {
-  const mediaData = mediaHash ? mediaLoader.getFromMemory(mediaHash) : undefined;
   const isStreaming = IS_PROGRESSIVE_SUPPORTED && mediaFormat === ApiMediaFormat.Progressive;
+  const mediaData = mediaHash
+    ? (isStreaming && !noLoad ? mediaLoader.getProgressiveUrl(mediaHash)
+      : mediaLoader.getFromMemory(mediaHash)) : undefined;
+
   const forceUpdate = useForceUpdate();
+  const isSynced = useSelector(selectIsSynced);
   const id = useUniqueId();
   const [loadProgress, setLoadProgress] = useState(mediaData && !isStreaming ? 1 : 0);
   const startedAtRef = useRef<number>();
 
-  const handleProgress = useMemo(() => {
-    return throttle((progress: number) => {
-      if (startedAtRef.current && (!delay || (Date.now() - startedAtRef.current > delay))) {
-        setLoadProgress(progress);
-      }
-    }, PROGRESS_THROTTLE, true);
-  }, [delay]);
+  const handleProgress = useThrottledCallback((progress: number) => {
+    if (startedAtRef.current && id && (!delay || (Date.now() - startedAtRef.current > delay))) {
+      setLoadProgress(progress);
+    }
+  }, [delay, id], PROGRESS_THROTTLE, true);
 
   useEffect(() => {
     if (!noLoad && mediaHash) {
@@ -64,7 +68,7 @@ export default function useMediaWithLoadProgress(
       }
     }
   }, [
-    noLoad, mediaHash, mediaData, mediaFormat, forceUpdate, isStreaming, delay, handleProgress, isHtmlAllowed, id,
+    noLoad, mediaHash, mediaData, mediaFormat, isStreaming, delay, handleProgress, isHtmlAllowed, id, isSynced,
   ]);
 
   useEffect(() => {

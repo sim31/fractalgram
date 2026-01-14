@@ -1,6 +1,6 @@
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { FC } from '../../../../lib/teact/teact';
-import React, { memo, useMemo } from '../../../../lib/teact/teact';
+import { memo, useMemo } from '../../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../../global';
 
 import type { OwnProps as PhotoProps } from '../Photo';
@@ -14,9 +14,13 @@ import buildClassName from '../../../../util/buildClassName';
 
 import useLastCallback from '../../../../hooks/useLastCallback';
 
-type OwnProps =
-  PhotoProps
-  & VideoProps;
+import Icon from '../../../common/icons/Icon';
+
+type OwnProps<T> =
+  (PhotoProps<T> | VideoProps<T>) & {
+    clickArg: number;
+    noSelectControls?: boolean;
+  };
 
 type StateProps = {
   isInSelectMode?: boolean;
@@ -24,18 +28,18 @@ type StateProps = {
 };
 
 export default function withSelectControl(WrappedComponent: FC) {
-  const ComponentWithSelectControl: FC<OwnProps & StateProps> = (props) => {
+  const ComponentWithSelectControl = <T,>(props: OwnProps<T> & StateProps) => {
     const {
       isInSelectMode,
       isSelected,
-      message,
       dimensions,
+      clickArg,
     } = props;
     const { toggleMessageSelection } = getActions();
 
     const handleMessageSelect = useLastCallback((e: ReactMouseEvent<HTMLDivElement, MouseEvent>) => {
       e.stopPropagation();
-      toggleMessageSelection({ messageId: message.id, withShift: e?.shiftKey });
+      toggleMessageSelection({ messageId: clickArg, withShift: e?.shiftKey });
     });
 
     const newProps = useMemo(() => {
@@ -62,23 +66,23 @@ export default function withSelectControl(WrappedComponent: FC) {
         {isInSelectMode && (
           <div className="message-select-control">
             {isSelected && (
-              <i className="icon icon-select" />
+              <Icon name="select" />
             )}
           </div>
         )}
-        {/* eslint-disable-next-line react/jsx-props-no-spreading */}
+        {}
         <WrappedComponent {...newProps} />
       </div>
     );
   };
 
-  return memo(withGlobal<OwnProps>(
+  return memo(withGlobal<OwnProps<unknown>>(
     (global, ownProps) => {
-      const { message } = ownProps;
+      const { clickArg, noSelectControls } = ownProps;
       return {
-        isInSelectMode: selectIsInSelectMode(global),
-        isSelected: selectIsMessageSelected(global, message.id),
+        isInSelectMode: !noSelectControls && selectIsInSelectMode(global),
+        isSelected: !noSelectControls && selectIsMessageSelected(global, clickArg),
       };
     },
-  )(ComponentWithSelectControl));
+  )(ComponentWithSelectControl)) as typeof ComponentWithSelectControl;
 }

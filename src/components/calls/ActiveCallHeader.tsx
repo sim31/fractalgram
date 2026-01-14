@@ -1,5 +1,4 @@
-import type { FC } from '../../lib/teact/teact';
-import React, { memo, useEffect } from '../../lib/teact/teact';
+import { memo, useEffect } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type { ApiGroupCall, ApiUser } from '../../api/types';
@@ -8,7 +7,7 @@ import { selectTabState } from '../../global/selectors';
 import { selectActiveGroupCall, selectPhoneCallUser } from '../../global/selectors/calls';
 import buildClassName from '../../util/buildClassName';
 
-import useLang from '../../hooks/useLang';
+import useOldLang from '../../hooks/useOldLang';
 
 import './ActiveCallHeader.scss';
 
@@ -18,22 +17,22 @@ type StateProps = {
   phoneCallUser?: ApiUser;
 };
 
-const ActiveCallHeader: FC<StateProps> = ({
+const ActiveCallHeader = ({
   groupCall,
   phoneCallUser,
   isCallPanelVisible,
-}) => {
+}: StateProps) => {
   const { toggleGroupCallPanel } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   useEffect(() => {
     document.body.classList.toggle('has-call-header', Boolean(isCallPanelVisible));
-    window.electron?.setTrafficLightPosition(isCallPanelVisible ? 'lowered' : 'standard');
+    window.tauri?.markTitleBarOverlay(!isCallPanelVisible);
 
     return () => {
       document.body.classList.toggle('has-call-header', false);
-      window.electron?.setTrafficLightPosition('standard');
+      window.tauri?.markTitleBarOverlay(true);
     };
   }, [isCallPanelVisible]);
 
@@ -57,7 +56,7 @@ const ActiveCallHeader: FC<StateProps> = ({
 };
 
 export default memo(withGlobal(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const tabState = selectTabState(global);
     return {
       groupCall: tabState.isMasterTab ? selectActiveGroupCall(global) : undefined,

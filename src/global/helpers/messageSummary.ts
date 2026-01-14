@@ -1,37 +1,44 @@
 import type { TeactNode } from '../../lib/teact/teact';
 
-import type { ApiMessage } from '../../api/types';
-import type { LangFn } from '../../hooks/useLang';
+import type {
+  ApiMediaExtendedPreview, ApiMessage, MediaContent, StatefulMediaContent,
+} from '../../api/types';
 import { ApiMessageEntityTypes } from '../../api/types';
 
-import { CONTENT_NOT_SUPPORTED } from '../../config';
+import { type LangFn } from '../../util/localization';
 import trimText from '../../util/trimText';
-import { getGlobal } from '../index';
-import { getMessageText, getMessageTranscription } from './messages';
-import { getUserFirstOrLastName } from './users';
+import { renderTextWithEntities } from '../../components/common/helpers/renderTextWithEntities';
+import {
+  getMessageTextWithFallback, getMessageTranscription,
+} from './messages';
 
 const SPOILER_CHARS = ['⠺', '⠵', '⠞', '⠟'];
-export const TRUNCATED_SUMMARY_LENGTH = 80;
+export const TRUNCATED_SUMMARY_LENGTH = 200;
 
 export function getMessageSummaryText(
   lang: LangFn,
   message: ApiMessage,
+  statefulContent: StatefulMediaContent | undefined,
   noEmoji = false,
   truncateLength = TRUNCATED_SUMMARY_LENGTH,
   isExtended = false,
 ) {
   const emoji = !noEmoji && getMessageSummaryEmoji(message);
   const emojiWithSpace = emoji ? `${emoji} ` : '';
-  const text = trimText(getMessageTextWithSpoilers(message), truncateLength);
-  const description = getMessageSummaryDescription(lang, message, text, isExtended);
+  const text = trimText(getMessageTextWithSpoilers(lang, message, statefulContent), truncateLength);
+  const description = getMessageSummaryDescription(lang, message, statefulContent, text, isExtended) as string;
 
   return `${emojiWithSpace}${description}`;
 }
 
-export function getMessageTextWithSpoilers(message: ApiMessage) {
+export function getMessageTextWithSpoilers(
+  lang: LangFn,
+  message: ApiMessage,
+  statefulContent: StatefulMediaContent | undefined,
+) {
   const transcription = getMessageTranscription(message);
 
-  const textWithoutTranscription = getMessageText(message);
+  const textWithoutTranscription = getMessageTextWithFallback(lang, statefulContent?.story || message)?.text;
   if (!textWithoutTranscription) {
     return transcription;
   }
@@ -52,7 +59,7 @@ export function getMessageTextWithSpoilers(message: ApiMessage) {
 
     const spoiler = generateBrailleSpoiler(length);
 
-    return `${accText.substr(0, offset)}${spoiler}${accText.substr(offset + length, accText.length)}`;
+    return `${accText.slice(0, offset)}${spoiler}${accText.slice(offset + length)}`;
   }, textWithoutTranscription);
 
   return transcription ? `${transcription}\n${text}` : text;
@@ -66,10 +73,12 @@ export function getMessageSummaryEmoji(message: ApiMessage) {
     voice,
     document,
     sticker,
-    poll,
+    pollId,
+    paidMedia,
+    todo,
   } = message.content;
 
-  if (message.groupedId || photo) {
+  if (message.groupedId || photo || paidMedia) {
     return '🖼';
   }
 
@@ -93,16 +102,36 @@ export function getMessageSummaryEmoji(message: ApiMessage) {
     return '📎';
   }
 
-  if (poll) {
+  if (pollId) {
     return '📊';
+  }
+
+  if (todo) {
+    return '📝';
   }
 
   return undefined;
 }
 
+export function getMediaContentTypeDescription(
+  lang: LangFn, content: MediaContent, statefulContent: StatefulMediaContent | undefined,
+) {
+  return getSummaryDescription(lang, content, statefulContent);
+}
 export function getMessageSummaryDescription(
   lang: LangFn,
   message: ApiMessage,
+  statefulContent: StatefulMediaContent | undefined,
+  truncatedText?: string | TeactNode,
+  isExtended = false,
+) {
+  return getSummaryDescription(lang, message.content, statefulContent, message, truncatedText, isExtended);
+}
+function getSummaryDescription(
+  lang: LangFn,
+  mediaContent: MediaContent,
+  statefulContent: StatefulMediaContent | undefined,
+  message?: ApiMessage,
   truncatedText?: string | TeactNode,
   isExtended = false,
 ) {
@@ -115,29 +144,42 @@ export function getMessageSummaryDescription(
     document,
     sticker,
     contact,
-    poll,
     invoice,
     location,
     game,
     storyData,
-  } = message.content;
+    giveaway,
+    giveawayResults,
+    paidMedia,
+    todo,
+  } = mediaContent;
+  const { poll } = statefulContent || {};
 
   let hasUsedTruncatedText = false;
-  let summary: string | TeactNode | undefined;
+  let summary: TeactNode | undefined;
 
-  if (message.groupedId) {
+  const boughtExtendedMedia = paidMedia?.isBought && paidMedia.extendedMedia;
+  const previewExtendedMedia = paidMedia && !paidMedia.isBought
+    ? paidMedia.extendedMedia as ApiMediaExtendedPreview[] : undefined;
+
+  const isPaidMediaAlbum = paidMedia && paidMedia.extendedMedia.length > 1;
+  const isPaidMediaSingleVideo = !isPaidMediaAlbum
+    && (boughtExtendedMedia?.[0].video || previewExtendedMedia?.[0].duration);
+  const isPaidMediaSinglePhoto = !isPaidMediaAlbum && !isPaidMediaSingleVideo;
+
+  if (message?.groupedId || isPaidMediaAlbum) {
     hasUsedTruncatedText = true;
-    summary = truncatedText || lang('lng_in_dlg_album');
+    summary = truncatedText || lang('Album');
   }
 
-  if (photo) {
+  if (photo || isPaidMediaSinglePhoto) {
     hasUsedTruncatedText = true;
     summary = truncatedText || lang('AttachPhoto');
   }
 
-  if (video) {
+  if (video || isPaidMediaSingleVideo) {
     hasUsedTruncatedText = true;
-    summary = truncatedText || lang(video.isGif ? 'AttachGif' : 'AttachVideo');
+    summary = truncatedText || lang(video?.isGif ? 'AttachGif' : 'AttachVideo');
   }
 
   if (sticker) {
@@ -145,7 +187,7 @@ export function getMessageSummaryDescription(
   }
 
   if (audio) {
-    summary = getMessageAudioCaption(message) || lang('AttachMusic');
+    summary = getMessageAudioCaption(mediaContent) || lang('AttachMusic');
   }
 
   if (voice) {
@@ -163,47 +205,58 @@ export function getMessageSummaryDescription(
   }
 
   if (poll) {
-    summary = poll.summary.question;
+    summary = renderTextWithEntities({
+      text: poll.summary.question.text,
+      entities: poll.summary.question.entities,
+      asPreview: true,
+    });
   }
 
   if (invoice) {
-    summary = invoice.extendedMedia ? invoice.title : `${lang('PaymentInvoice')}: ${invoice.text}`;
+    summary = invoice.extendedMedia ? invoice.title : lang('AttachInvoice', { description: invoice.description });
   }
 
   if (text) {
     if (isExtended && summary && !hasUsedTruncatedText) {
-      summary += `\n${truncatedText}`;
+      (summary as string) += `\n${truncatedText as string}`;
     } else {
-      summary = truncatedText;
+      summary = truncatedText as string;
     }
   }
 
-  if (location?.type === 'geo' || location?.type === 'venue') {
-    summary = lang('Message.Location');
+  if (location?.mediaType === 'geo' || location?.mediaType === 'venue') {
+    summary = lang('AttachLocation');
   }
 
-  if (location?.type === 'geoLive') {
-    summary = lang('Message.LiveLocation');
+  if (location?.mediaType === 'geoLive') {
+    summary = lang('AttachLiveLocation');
   }
 
   if (game) {
     summary = `🎮 ${game.title}`;
   }
 
-  if (storyData) {
-    if (storyData.isMention) {
-      // eslint-disable-next-line eslint-multitab-tt/no-immediate-global
-      const global = getGlobal();
-      const firstName = getUserFirstOrLastName(global.users.byId[message.chatId]);
-      summary = message.isOutgoing
-        ? lang('Chat.Service.StoryMentioned.You', firstName)
-        : lang('Chat.Service.StoryMentioned', firstName);
-    } else {
-      summary = lang('ForwardedStory');
-    }
+  if (giveaway) {
+    summary = lang('AttachGiveaway');
   }
 
-  return summary || CONTENT_NOT_SUPPORTED;
+  if (giveawayResults) {
+    summary = lang('AttachGiveawayResults');
+  }
+
+  if (storyData) {
+    summary = truncatedText || lang('AttachStory');
+  }
+
+  if (todo) {
+    summary = renderTextWithEntities({
+      text: todo.todo.title.text,
+      entities: todo.todo.title.entities,
+      asPreview: true,
+    });
+  }
+
+  return summary || lang('MessageUnsupported');
 }
 
 export function generateBrailleSpoiler(length: number) {
@@ -213,11 +266,11 @@ export function generateBrailleSpoiler(length: number) {
     .join('');
 }
 
-function getMessageAudioCaption(message: ApiMessage) {
+function getMessageAudioCaption(mediaContent: MediaContent) {
   const {
     audio,
     text,
-  } = message.content;
+  } = mediaContent;
 
   return (audio && [audio.title, audio.performer].filter(Boolean)
     .join(' — ')) || (text?.text);

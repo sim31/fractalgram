@@ -5,11 +5,14 @@
   body.is-android & {
     &::after {
       content: "";
+
       position: absolute;
+      right: 0;
       bottom: 0;
       left: 4.5rem;
-      right: 0;
+
       height: 0.0625rem;
+
       /* stylelint-disable-next-line plugin/whole-pixel */
       box-shadow: inset 0 -0.03125rem 0 0 var(--color-dividers);
     }
@@ -22,10 +25,12 @@
     // Conceal above item divider
     &.selected::before {
       content: "";
+
       position: absolute;
       top: -0.0625rem;
-      left: 4.5rem;
       right: 0;
+      left: 4.5rem;
+
       height: 0.0625rem;
       /* stylelint-disable-next-line plugin/whole-pixel */
       box-shadow: inset 0 -0.03125rem 0 0 var(--color-background);
@@ -43,8 +48,12 @@
       left: 3.25rem;
     }
 
+    &.narrow::after {
+      left: 4.1875rem;
+    }
+
     &.no-icon::after {
-      left: 0;
+      left: 1rem;
     }
   }
 
@@ -54,45 +63,51 @@
   }
 
   .ListItem-button {
-    width: 100%;
-    height: 100%;
-    background-color: var(--background-color);
-    border: none !important;
-    box-shadow: none !important;
-    outline: none !important;
+    --ripple-color: rgba(0, 0, 0, 0.08);
+
+    position: relative;
+
+    overflow: hidden;
     display: flex;
     align-items: center;
-    padding: 1rem;
-    position: relative;
-    overflow: hidden;
-    white-space: nowrap;
-    color: var(--color-text);
+
+    min-height: 3rem;
+    padding: 0 1rem;
+    border: none !important;
     border-radius: var(--border-radius-default);
-    --ripple-color: rgba(0, 0, 0, 0.08);
+
+    color: var(--color-text);
     text-decoration: none;
+    white-space: nowrap;
+
+    background-color: var(--background-color);
+    outline: none !important;
+    box-shadow: none !important;
 
     body.is-ios &,
     body.is-android & {
-      border-radius: 0 ;
+      border-radius: 0;
     }
 
-    @media (max-width: 600px) {
-      border-radius: 0 ;
-    }
-
-    > .icon {
+    > .ListItem-main-icon {
+      margin-inline-end: 1.75rem;
       font-size: 1.5rem;
-      margin-right: 2rem;
       color: var(--color-text-secondary);
     }
 
     > .Switcher {
-      margin-left: auto;
+      margin-inline-start: auto;
+    }
+
+    @media (max-width: 600px) {
+      border-radius: 0;
     }
   }
 
-  .title, .subtitle {
-    line-height: 1.5rem;
+  &.with-color-transition {
+    .ListItem-button {
+      transition: background-color 150ms ease-in-out;
+    }
   }
 
   .user-status,
@@ -100,16 +115,15 @@
   .title,
   .other-usernames,
   .subtitle {
-    text-align: initial;
     unicode-bidi: plaintext;
+    text-align: initial;
     text-overflow: ellipsis;
-    overflow: hidden;
   }
 
   .other-usernames {
     display: block;
-    white-space: normal;
     line-height: 1.25rem;
+    white-space: normal;
   }
 
   .username-link {
@@ -118,7 +132,7 @@
   }
 
   &.multiline {
-    .ListItem-button > .icon {
+    .ListItem-button > .ListItem-main-icon {
       position: relative;
     }
   }
@@ -141,7 +155,7 @@
 
       @media (hover: hover) {
         &:hover,
-        &:focus {
+        &:focus-visible {
           --background-color: var(--color-chat-hover);
         }
       }
@@ -154,25 +168,8 @@
     }
   }
 
-  @media (min-width: 600px) {
-    &:not(.has-ripple):not(.is-static),
-    body.no-page-transitions & {
-      .ListItem-button:active {
-        --background-color: var(--color-item-active) !important;
-      }
-    }
-  }
-
   &.has-menu-open .ListItem-button {
     --background-color: var(--color-chat-hover);
-  }
-
-  &.narrow {
-    margin-bottom: 0.75rem;
-
-    .ListItem-button {
-      padding: 0.5rem 1rem;
-    }
   }
 
   &.inactive {
@@ -187,7 +184,17 @@
     .ListItem-button {
       color: var(--color-error);
 
-      .icon {
+      .ListItem-main-icon {
+        color: inherit;
+      }
+    }
+  }
+
+  &.primary {
+    .ListItem-button {
+      color: var(--color-primary);
+
+      .ListItem-main-icon {
         color: inherit;
       }
     }
@@ -200,8 +207,8 @@
       width: auto;
 
       .MenuItem button {
-        padding-left: 1rem !important;
         padding-right: 2rem !important;
+        padding-left: 1rem !important;
       }
     }
   }
@@ -227,12 +234,12 @@
     }
 
     .Avatar {
-      margin-right: 0.5rem;
+      margin-inline-end: 0.5rem;
     }
 
     .info {
       flex: 1;
-      overflow: hidden;
+      min-width: 0;
     }
 
     .info-name-title {
@@ -243,10 +250,10 @@
     .info-row,
     .title,
     .subtitle {
-      overflow: hidden;
       display: flex;
-      justify-content: flex-start;
       align-items: center;
+      justify-content: flex-start;
+      min-width: 0;
     }
 
     .separator {
@@ -258,11 +265,14 @@
     .last-message,
     .status,
     .typing-status {
-      font-size: 1rem;
+      overflow: hidden;
+
       margin: 0;
-      white-space: nowrap;
-      text-overflow: ellipsis;
+
+      font-size: 1rem;
       text-align: initial;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     h3,
@@ -273,13 +283,13 @@
 
     .title {
       h3 {
-        font-weight: 500;
+        font-weight: var(--font-weight-semibold);
       }
     }
 
     .status-icon {
-      vertical-align: text-bottom;
       margin-inline-end: 0.125rem;
+      vertical-align: text-bottom;
     }
 
     .contact-phone,
@@ -291,9 +301,9 @@
 
     .ChatInfo {
       display: flex;
-      align-items: center;
       flex: 1;
-      overflow: hidden;
+      align-items: center;
+      min-width: 0;
 
       .info {
         display: flex;
@@ -302,22 +312,24 @@
       }
 
       .custom-title {
+        overflow: hidden;
+        flex-shrink: 0;
+
+        margin-inline-start: auto;
         padding-inline-start: 1rem;
+
         font-size: 0.875rem;
         color: var(--color-text-secondary);
-        overflow: hidden;
-        white-space: nowrap;
         text-overflow: ellipsis;
-        margin-inline-start: auto;
-        flex-shrink: 0;
+        white-space: nowrap;
       }
 
       .status,
       .typing-status {
+        display: inline-block;
         font-size: 0.875rem;
         line-height: 1.25rem;
         color: var(--color-text-secondary);
-        display: inline-block;
 
         &.online {
           color: var(--color-primary);
@@ -325,8 +337,8 @@
 
         &[dir="rtl"],
         &[dir="auto"] {
-          text-align: initial;
           width: 100%;
+          text-align: initial;
         }
 
         .group-status:only-child,
@@ -342,8 +354,8 @@
     .last-message,
     .status,
     .typing-status {
-      text-align: initial;
       unicode-bidi: plaintext;
+      text-align: initial;
     }
 
     .last-message,
@@ -356,71 +368,8 @@
     }
 
     &[dir="rtl"] {
-      .ListItem-button {
-        padding: 0.5625rem 0.5625rem 0.5625rem 0.6875rem;
-      }
-
-      .Avatar {
-        margin-left: 0.5rem;
-        margin-right: 0;
-      }
-
       .info > .status {
         width: 100%;
-      }
-    }
-  }
-
-  &.search-result-message {
-    .title {
-      flex-grow: 1;
-      padding-right: 0.125rem;
-    }
-
-    .search-result-message-top {
-      display: flex;
-    }
-
-    h3 {
-      max-width: 80%;
-    }
-
-    h3,
-    .subtitle {
-      font-size: 1rem;
-      line-height: 1.5rem;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-      text-align: left;
-      display: block;
-    }
-
-    .subtitle {
-      color: var(--color-text-secondary);
-
-      .matching-text-highlight {
-        color: var(--color-text);
-        background: #cae3f7;
-        border-radius: 0.25rem;
-        padding: 0 0.125rem;
-        display: inline-block;
-
-        .theme-dark & {
-          --color-text: #000;
-        }
-      }
-    }
-
-    &[dir="rtl"] {
-      .LastMessageMeta {
-        margin-left: 0;
-        margin-right: auto;
-      }
-
-      .subtitle {
-        margin-right: 0;
-        display: block;
       }
     }
   }
@@ -429,9 +378,9 @@
     margin: 0;
 
     .ListItem-button {
-      padding-left: 0;
       display: flex;
       align-items: center;
+      padding-left: 0;
     }
 
     .Avatar {
@@ -446,18 +395,33 @@
       padding-left: 4rem;
     }
 
+    .withSubLabel {
+      height: 2.5rem;
+    }
+
     &[dir="rtl"] {
       .Checkbox {
-        padding-left: 0;
         padding-right: 4rem;
+        padding-left: 0;
       }
     }
   }
 
+  &.chat-item {
+    .ListItem-button {
+      padding: 0.5rem;
+    }
+
+    .Checkbox {
+      padding-left: 3rem;
+    }
+  }
+
   .multiline-item {
-    flex-grow: 1;
-    white-space: initial;
     overflow: hidden;
+    flex-grow: 1;
+    padding: 0.4375rem 0 0.5625rem 0;
+    white-space: initial;
 
     .word-break {
       overflow-wrap: break-word;
@@ -467,22 +431,23 @@
     .subtitle {
       display: block;
       text-align: initial;
+
+      &[dir="rtl"] {
+        text-align: right;
+      }
     }
 
     .title {
-      line-height: 1.25rem;
       overflow: hidden;
+      line-height: 1.25rem;
       text-overflow: ellipsis;
     }
 
     .subtitle {
+      margin-top: 0.25rem;
       font-size: 0.875rem;
-      line-height: 1.5rem;
+      line-height: 1rem;
       color: var(--color-text-secondary);
-
-      & + .subtitle {
-        margin-top: -0.25rem;
-      }
 
       &.black {
         color: var(--color-text);
@@ -490,16 +455,18 @@
     }
   }
 
-  &[dir="rtl"] {
-    .ListItem-button > .icon {
-      margin-left: 2rem;
-      margin-right: 0;
+  @media (min-width: 600px) {
+    &:not(.has-ripple):not(.is-static),
+    body.no-page-transitions & {
+      .ListItem-button:active {
+        --background-color: var(--color-item-active) !important;
+      }
     }
   }
 }
 
 .list-item-ellipsis {
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }

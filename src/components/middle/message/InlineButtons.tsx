@@ -1,62 +1,92 @@
-import type { FC } from '../../../lib/teact/teact';
-import React from '../../../lib/teact/teact';
+import type { TeactNode } from '../../../lib/teact/teact';
+import { memo, useMemo } from '../../../lib/teact/teact';
 
-import type { ApiKeyboardButton, ApiMessage } from '../../../api/types';
+import type { ApiKeyboardButton } from '../../../api/types';
 
-import { RE_TME_LINK } from '../../../config';
-import renderText from '../../common/helpers/renderText';
+import { RE_TME_LINK, TME_LINK_PREFIX } from '../../../config';
+import renderKeyboardButtonText from '../composer/helpers/renderKeyboardButtonText';
 
 import useLang from '../../../hooks/useLang';
 
+import Icon from '../../common/icons/Icon';
 import Button from '../../ui/Button';
 
 import './InlineButtons.scss';
 
 type OwnProps = {
-  message: ApiMessage;
-  onClick: ({ messageId, button }: { messageId: number; button: ApiKeyboardButton }) => void;
+  inlineButtons: ApiKeyboardButton[][];
+  onClick: (payload: ApiKeyboardButton) => void;
 };
 
-const InlineButtons: FC<OwnProps> = ({ message, onClick }) => {
+const InlineButtons = ({ inlineButtons, onClick }: OwnProps) => {
   const lang = useLang();
 
   const renderIcon = (button: ApiKeyboardButton) => {
     const { type } = button;
     switch (type) {
       case 'url': {
-        if (!RE_TME_LINK.test(button.url)) {
-          return <i className="icon icon-arrow-right" />;
+        const { url } = button;
+
+        if (url.startsWith(TME_LINK_PREFIX) && url.includes('?startapp')) {
+          return <Icon className="corner-icon" name="webapp" />;
+        } else if (!RE_TME_LINK.test(url)) {
+          return <Icon className="corner-icon" name="arrow-right" />;
         }
-        break;
+
+        return;
       }
       case 'urlAuth':
-        return <i className="icon icon-arrow-right" />;
+        return <Icon className="corner-icon" name="arrow-right" />;
       case 'buy':
       case 'receipt':
-        return <i className="icon icon-cart" />;
+        return <Icon className="corner-icon" name="card" />;
       case 'switchBotInline':
-        return <i className="icon icon-share-filled" />;
+        return <Icon className="corner-icon" name="share-filled" />;
       case 'webView':
       case 'simpleWebView':
-        return <i className="icon icon-webapp" />;
+        return <Icon className="corner-icon" name="webapp" />;
+      case 'copy':
+        return <Icon className="corner-icon" name="copy" />;
+      case 'suggestedMessage':
+        if (button.buttonType === 'suggestChanges') {
+          return <Icon className="left-icon" name="edit" />;
+        }
+        if (button.buttonType === 'approve') {
+          return <Icon className="left-icon" name="check" />;
+        }
+        if (button.buttonType === 'decline') {
+          return <Icon className="left-icon" name="close" />;
+        }
+        break;
     }
-    return undefined;
+
+    return;
   };
+
+  const buttonTexts = useMemo(() => {
+    const texts: TeactNode[][] = [];
+    inlineButtons.forEach((row) => {
+      texts.push(row.map((button) => renderKeyboardButtonText(lang, button)));
+    });
+    return texts;
+  }, [lang, inlineButtons]);
 
   return (
     <div className="InlineButtons">
-      {message.inlineButtons!.map((row) => (
+      {inlineButtons.map((row, i) => (
         <div className="row">
-          {row.map((button) => (
+          {row.map((button, j) => (
             <Button
               size="tiny"
               ripple
-              disabled={button.type === 'unsupported'}
-              // eslint-disable-next-line react/jsx-no-bind
-              onClick={() => onClick({ messageId: message.id, button })}
+              disabled={button.type === 'unsupported' || (button.type === 'suggestedMessage' && button.disabled)}
+
+              onClick={() => onClick(button)}
             >
-              <span className="inline-button-text">{renderText(lang(button.text))}</span>
               {renderIcon(button)}
+              <span className="inline-button-text">
+                {buttonTexts[i][j]}
+              </span>
             </Button>
           ))}
         </div>
@@ -65,4 +95,4 @@ const InlineButtons: FC<OwnProps> = ({ message, onClick }) => {
   );
 };
 
-export default InlineButtons;
+export default memo(InlineButtons);

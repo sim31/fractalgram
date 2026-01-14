@@ -1,4 +1,4 @@
-import type { RefObject } from 'react';
+import type { ElementRef } from '../lib/teact/teact';
 import { useEffect, useState } from '../lib/teact/teact';
 import { addExtraClass, removeExtraClass } from '../lib/teact/teact-dom';
 
@@ -6,10 +6,7 @@ import type { IAnchorPosition } from '../types';
 import type { Signal } from '../util/signals';
 
 import { requestMutation } from '../lib/fasterdom/fasterdom';
-import {
-  IS_IOS,
-  IS_PWA, IS_TOUCH_ENV,
-} from '../util/windowEnvironment';
+import { IS_IOS, IS_PWA, IS_TOUCH_ENV } from '../util/browser/windowEnvironment';
 import useLastCallback from './useLastCallback';
 
 const LONG_TAP_DURATION_MS = 200;
@@ -22,14 +19,15 @@ function stopEvent(e: Event) {
 }
 
 const useContextMenuHandlers = (
-  elementRef: RefObject<HTMLElement>,
+  elementRef: ElementRef<HTMLElement>,
   isMenuDisabled?: boolean,
   shouldDisableOnLink?: boolean,
   shouldDisableOnLongTap?: boolean,
   getIsReady?: Signal<boolean>,
+  shouldDisablePropagation?: boolean,
 ) => {
   const [isContextMenuOpen, setIsContextMenuOpen] = useState(false);
-  const [contextMenuPosition, setContextMenuPosition] = useState<IAnchorPosition | undefined>(undefined);
+  const [contextMenuAnchor, setContextMenuAnchor] = useState<IAnchorPosition | undefined>(undefined);
   const [contextMenuTarget, setContextMenuTarget] = useState<HTMLElement | undefined>(undefined);
 
   const handleBeforeContextMenu = useLastCallback((e: React.MouseEvent) => {
@@ -49,13 +47,14 @@ const useContextMenuHandlers = (
       return;
     }
     e.preventDefault();
+    e.stopPropagation();
 
-    if (contextMenuPosition) {
+    if (contextMenuAnchor) {
       return;
     }
 
     setIsContextMenuOpen(true);
-    setContextMenuPosition({ x: e.clientX, y: e.clientY });
+    setContextMenuAnchor({ x: e.clientX, y: e.clientY });
     setContextMenuTarget(e.target as HTMLElement);
   });
 
@@ -64,7 +63,7 @@ const useContextMenuHandlers = (
   });
 
   const handleContextMenuHide = useLastCallback(() => {
-    setContextMenuPosition(undefined);
+    setContextMenuAnchor(undefined);
   });
 
   // Support context menu on touch devices
@@ -92,7 +91,7 @@ const useContextMenuHandlers = (
 
       const { clientX, clientY, target } = originalEvent.touches[0];
 
-      if (contextMenuPosition || (shouldDisableOnLink && (target as HTMLElement).matches('a[href]'))) {
+      if (contextMenuAnchor || (shouldDisableOnLink && (target as HTMLElement).matches('a[href]'))) {
         return;
       }
 
@@ -128,13 +127,14 @@ const useContextMenuHandlers = (
       }
 
       setIsContextMenuOpen(true);
-      setContextMenuPosition({ x: clientX, y: clientY });
+      setContextMenuAnchor({ x: clientX, y: clientY });
     };
 
     const startLongPressTimer = (e: TouchEvent) => {
       if (isMenuDisabled) {
         return;
       }
+      if (shouldDisablePropagation) e.stopPropagation();
       clearLongPressTimer();
 
       timer = window.setTimeout(() => emulateContextMenuEvent(e), LONG_TAP_DURATION_MS);
@@ -154,12 +154,13 @@ const useContextMenuHandlers = (
       element.removeEventListener('touchmove', clearLongPressTimer);
     };
   }, [
-    contextMenuPosition, isMenuDisabled, shouldDisableOnLongTap, elementRef, shouldDisableOnLink, getIsReady,
+    contextMenuAnchor, isMenuDisabled, shouldDisableOnLongTap, elementRef, shouldDisableOnLink, getIsReady,
+    shouldDisablePropagation,
   ]);
 
   return {
     isContextMenuOpen,
-    contextMenuPosition,
+    contextMenuAnchor,
     contextMenuTarget,
     handleBeforeContextMenu,
     handleContextMenu,

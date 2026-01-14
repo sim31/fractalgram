@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo } from '../../../lib/teact/teact';
+import { memo } from '../../../lib/teact/teact';
 import { withGlobal } from '../../../global';
 
 import type { ManagementType } from '../../../types';
@@ -7,6 +7,7 @@ import { ManagementScreens } from '../../../types';
 
 import { selectCurrentManagementType } from '../../../global/selectors';
 
+import ManageBot from './ManageBot';
 import ManageChannel from './ManageChannel';
 import ManageChatAdministrators from './ManageChatAdministrators';
 import ManageChatPrivacyType from './ManageChatPrivacyType';
@@ -24,6 +25,7 @@ import ManageInvites from './ManageInvites';
 import ManageJoinRequests from './ManageJoinRequests';
 import ManageReactions from './ManageReactions';
 import ManageUser from './ManageUser';
+import NewDiscussionGroup from './NewDiscussionGroup.tsx';
 
 export type OwnProps = {
   chatId: string;
@@ -54,6 +56,15 @@ const Management: FC<OwnProps & StateProps> = ({
   switch (currentScreen) {
     case ManagementScreens.Initial: {
       switch (managementType) {
+        case 'bot':
+          return (
+            <ManageBot
+              key={chatId}
+              userId={chatId}
+              onClose={onClose}
+              isActive={isActive}
+            />
+          );
         case 'user':
           return (
             <ManageUser
@@ -192,6 +203,16 @@ const Management: FC<OwnProps & StateProps> = ({
         />
       );
 
+    case ManagementScreens.NewDiscussionGroup:
+      return (
+        <NewDiscussionGroup
+          chatId={chatId}
+          onScreenSelect={onScreenSelect}
+          isActive={isActive}
+          onClose={onClose}
+        />
+      );
+
     case ManagementScreens.ChatNewAdminRights:
     case ManagementScreens.ChatAdminRights:
       return (
@@ -275,7 +296,7 @@ const Management: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const managementType = selectCurrentManagementType(global);
 
     return {

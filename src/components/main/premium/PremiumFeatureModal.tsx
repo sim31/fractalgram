@@ -1,11 +1,21 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
-  memo, useCallback, useEffect, useRef, useState,
+import type React from '../../../lib/teact/teact';
+import {
+  memo, useEffect, useMemo, useRef, useState,
 } from '../../../lib/teact/teact';
+import { toggleExtraClass } from '../../../lib/teact/teact-dom';
 
-import type { ApiPremiumPromo } from '../../../api/types';
-import type { ApiLimitType, GlobalState } from '../../../global/types';
+import type {
+  ApiLimitTypeForPromo,
+  ApiPremiumPromo,
+  ApiPremiumSection,
+  ApiPremiumSubscriptionOption,
+} from '../../../api/types';
+import type { GlobalState } from '../../../global/types';
+import type { LangPair } from '../../../types/language';
 
+import { PREMIUM_BOTTOM_VIDEOS, PREMIUM_FEATURE_SECTIONS, PREMIUM_LIMITS_ORDER } from '../../../config';
+import { requestMutation } from '../../../lib/fasterdom/fasterdom';
 import animateHorizontalScroll from '../../../util/animateHorizontalScroll';
 import buildClassName from '../../../util/buildClassName';
 import { formatCurrency } from '../../../util/formatCurrency';
@@ -13,7 +23,9 @@ import renderText from '../../common/helpers/renderText';
 
 import useFlag from '../../../hooks/useFlag';
 import useLang from '../../../hooks/useLang';
-import usePrevious from '../../../hooks/usePrevious';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useOldLang from '../../../hooks/useOldLang';
+import usePreviousDeprecated from '../../../hooks/usePreviousDeprecated';
 
 import SliderDots from '../../common/SliderDots';
 import Button from '../../ui/Button';
@@ -24,7 +36,7 @@ import PremiumFeaturePreviewVideo from './previews/PremiumFeaturePreviewVideo';
 
 import styles from './PremiumFeatureModal.module.scss';
 
-export const PREMIUM_FEATURE_TITLES: Record<string, string> = {
+export const PREMIUM_FEATURE_TITLES: Record<ApiPremiumSection, string> = {
   double_limits: 'PremiumPreviewLimits',
   infinite_reactions: 'PremiumPreviewReactions2',
   premium_stickers: 'PremiumPreviewStickers',
@@ -39,9 +51,14 @@ export const PREMIUM_FEATURE_TITLES: Record<string, string> = {
   emoji_status: 'PremiumPreviewEmojiStatus',
   translations: 'PremiumPreviewTranslations',
   stories: 'PremiumPreviewStories',
+  saved_tags: 'PremiumPreviewTags2',
+  last_seen: 'PremiumPreviewLastSeen',
+  message_privacy: 'PremiumPreviewMessagePrivacy',
+  effects: 'Premium.MessageEffects',
+  todo: 'PremiumPreviewTodo',
 };
 
-export const PREMIUM_FEATURE_DESCRIPTIONS: Record<string, string> = {
+export const PREMIUM_FEATURE_DESCRIPTIONS: Record<ApiPremiumSection, string> = {
   double_limits: 'PremiumPreviewLimitsDescription',
   infinite_reactions: 'PremiumPreviewReactions2Description',
   premium_stickers: 'PremiumPreviewStickersDescription',
@@ -56,51 +73,14 @@ export const PREMIUM_FEATURE_DESCRIPTIONS: Record<string, string> = {
   emoji_status: 'PremiumPreviewEmojiStatusDescription',
   translations: 'PremiumPreviewTranslationsDescription',
   stories: 'PremiumPreviewStoriesDescription',
+  saved_tags: 'PremiumPreviewTagsDescription2',
+  last_seen: 'PremiumPreviewLastSeenDescription',
+  message_privacy: 'PremiumPreviewMessagePrivacyDescription',
+  effects: 'Premium.MessageEffectsInfo',
+  todo: 'PremiumPreviewTodoDescription',
 };
 
-export const PREMIUM_FEATURE_SECTIONS = [
-  'stories',
-  'double_limits',
-  'more_upload',
-  'faster_download',
-  'voice_to_text',
-  'no_ads',
-  'infinite_reactions',
-  'premium_stickers',
-  'animated_emoji',
-  'advanced_chat_management',
-  'profile_badge',
-  'animated_userpics',
-  'emoji_status',
-  'translations',
-];
-
-const PREMIUM_BOTTOM_VIDEOS: string[] = [
-  'faster_download',
-  'voice_to_text',
-  'advanced_chat_management',
-  'infinite_reactions',
-  'profile_badge',
-  'animated_userpics',
-  'emoji_status',
-  'translations',
-];
-
-type ApiLimitTypeWithoutUpload = Exclude<ApiLimitType, 'uploadMaxFileparts' | 'chatlistInvites' | 'chatlistJoined'>;
-
-const LIMITS_ORDER: ApiLimitTypeWithoutUpload[] = [
-  'channels',
-  'dialogFolderPinned',
-  'channelsPublic',
-  'savedGifs',
-  'stickersFaved',
-  'aboutLength',
-  'captionLength',
-  'dialogFilters',
-  'dialogFiltersChats',
-];
-
-const LIMITS_TITLES: Record<ApiLimitTypeWithoutUpload, string> = {
+const LIMITS_TITLES: Record<ApiLimitTypeForPromo, string> = {
   channels: 'GroupsAndChannelsLimitTitle',
   dialogFolderPinned: 'PinChatsLimitTitle',
   channelsPublic: 'PublicLinksLimitTitle',
@@ -110,9 +90,11 @@ const LIMITS_TITLES: Record<ApiLimitTypeWithoutUpload, string> = {
   captionLength: 'CaptionsLimitTitle',
   dialogFilters: 'FoldersLimitTitle',
   dialogFiltersChats: 'ChatPerFolderLimitTitle',
+  recommendedChannels: 'SimilarChannelsLimitTitle',
+  moreAccounts: 'ConnectedAccountsLimitTitle',
 };
 
-const LIMITS_DESCRIPTIONS: Record<ApiLimitTypeWithoutUpload, string> = {
+const LIMITS_DESCRIPTIONS: Record<ApiLimitTypeForPromo, string> = {
   channels: 'GroupsAndChannelsLimitSubtitle',
   dialogFolderPinned: 'PinChatsLimitSubtitle',
   channelsPublic: 'PublicLinksLimitSubtitle',
@@ -122,30 +104,36 @@ const LIMITS_DESCRIPTIONS: Record<ApiLimitTypeWithoutUpload, string> = {
   captionLength: 'CaptionsLimitSubtitle',
   dialogFilters: 'FoldersLimitSubtitle',
   dialogFiltersChats: 'ChatPerFolderLimitSubtitle',
+  recommendedChannels: 'SimilarChannelsLimitSubtitle',
+  moreAccounts: 'ConnectedAccountsLimitSubtitle',
 };
 
 const BORDER_THRESHOLD = 20;
 
 type OwnProps = {
-  onBack: VoidFunction;
-  initialSection: string;
+  initialSection: ApiPremiumSection;
   promo: ApiPremiumPromo;
-  onClickSubscribe: (startParam?: string) => void;
   isPremium?: boolean;
   limits?: NonNullable<GlobalState['appConfig']>['limits'];
+  premiumPromoOrder?: ApiPremiumSection[];
+  subscriptionOption?: ApiPremiumSubscriptionOption;
+  onBack: VoidFunction;
+  onClickSubscribe: (startParam?: string) => void;
 };
 
 const PremiumFeatureModal: FC<OwnProps> = ({
   promo,
   initialSection,
-  onBack,
-  onClickSubscribe,
   isPremium,
   limits,
+  premiumPromoOrder,
+  subscriptionOption,
+  onBack,
+  onClickSubscribe,
 }) => {
+  const oldLang = useOldLang();
   const lang = useLang();
-  // eslint-disable-next-line no-null/no-null
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>();
   const [currentSlideIndex, setCurrentSlideIndex] = useState(PREMIUM_FEATURE_SECTIONS.indexOf(initialSection));
   const [reverseAnimationSlideIndex, setReverseAnimationSlideIndex] = useState(0);
   const [isScrolling, startScrolling, stopScrolling] = useFlag();
@@ -153,29 +141,51 @@ const PremiumFeatureModal: FC<OwnProps> = ({
   const [isScrolledToTop, setIsScrolledToTop] = useState(true);
   const [isScrolledToBottom, setIsScrolledToBottom] = useState(false);
 
-  const prevInitialSection = usePrevious(initialSection);
+  const prevInitialSection = usePreviousDeprecated(initialSection);
 
-  function handleClick() {
+  const filteredSections = useMemo(() => {
+    if (!premiumPromoOrder) return PREMIUM_FEATURE_SECTIONS;
+    return premiumPromoOrder.filter((section) => PREMIUM_FEATURE_SECTIONS.includes(section));
+  }, [premiumPromoOrder]);
+
+  const subscriptionButtonText = useMemo(() => {
+    if (!subscriptionOption) return undefined;
+
+    const { amount, months, currency } = subscriptionOption;
+    const perMonthPrice = Math.floor(amount / months);
+
+    return isPremium
+      ? lang('OK')
+      : lang('SubscribeToPremium', { price: formatCurrency(lang, perMonthPrice, currency) }, { withNodes: true });
+  }, [isPremium, lang, subscriptionOption]);
+
+  const handleClick = useLastCallback(() => {
     onClickSubscribe(initialSection);
-  }
+  });
 
   function handleScroll(e: React.UIEvent<HTMLDivElement>) {
-    const { clientWidth, scrollLeft: scrollLeftOriginal } = e.currentTarget;
+    const target = e.currentTarget;
+    const { clientWidth, scrollLeft: scrollLeftOriginal } = target;
 
     const scrollLeft = Math.round(scrollLeftOriginal);
 
     const left = scrollLeft % (clientWidth);
     const progress = left / (clientWidth);
-    e.currentTarget.style.setProperty('--scroll-progress', progress.toString());
-    e.currentTarget.style.setProperty('--abs-scroll-progress', Math.abs(progress).toString());
+
     const reverseIndex = Math.ceil((scrollLeft + 1) / clientWidth);
 
     setReverseAnimationSlideIndex(reverseIndex);
 
-    const prevElement = e.currentTarget.querySelector(`#premium_feature_preview_video_${reverseIndex - 1}`);
-    const reverseElement = e.currentTarget.querySelector(`#premium_feature_preview_video_${reverseIndex}`);
-    prevElement?.classList.toggle('reverse', false);
-    reverseElement?.classList.toggle('reverse', true);
+    const prevElement = target.querySelector<HTMLDivElement>(`#premium_feature_preview_video_${reverseIndex - 1}`);
+    const reverseElement = target.querySelector<HTMLDivElement>(`#premium_feature_preview_video_${reverseIndex}`);
+
+    requestMutation(() => {
+      target.style.setProperty('--scroll-progress', progress.toString());
+      target.style.setProperty('--abs-scroll-progress', Math.abs(progress).toString());
+
+      if (prevElement) toggleExtraClass(prevElement, 'reverse', false);
+      if (reverseElement) toggleExtraClass(reverseElement, 'reverse', true);
+    });
 
     if (isScrolling) return;
     const slide = Math.round(scrollLeft / clientWidth);
@@ -192,14 +202,14 @@ const PremiumFeatureModal: FC<OwnProps> = ({
     const scrollContainer = scrollContainerRef.current;
     if (!scrollContainer || (prevInitialSection === initialSection)) return;
 
-    const index = PREMIUM_FEATURE_SECTIONS.indexOf(initialSection);
+    const index = filteredSections.indexOf(initialSection);
     setCurrentSlideIndex(index);
     startScrolling();
     animateHorizontalScroll(scrollContainer, scrollContainer.clientWidth * index, 0)
       .then(stopScrolling);
-  }, [currentSlideIndex, initialSection, prevInitialSection, startScrolling, stopScrolling]);
+  }, [currentSlideIndex, filteredSections, initialSection, prevInitialSection]);
 
-  const handleSelectSlide = useCallback(async (index: number) => {
+  const handleSelectSlide = useLastCallback(async (index: number) => {
     const scrollContainer = scrollContainerRef.current;
     if (!scrollContainer) return;
 
@@ -208,46 +218,45 @@ const PremiumFeatureModal: FC<OwnProps> = ({
     startScrolling();
     await animateHorizontalScroll(scrollContainer, scrollContainer.clientWidth * index, 800);
     stopScrolling();
-  }, [startScrolling, stopScrolling]);
+  });
 
-  // TODO Support all subscription options
-  const month = promo.options.find((option) => option.months === 1)!;
+  const currentSection = filteredSections[currentSlideIndex];
+  const hasHeaderBackdrop = currentSection !== 'double_limits' && currentSection !== 'stories';
 
   return (
     <div className={styles.root}>
       <Button
         round
-        size="smaller"
-        className={buildClassName(styles.backButton, currentSlideIndex !== 0 && styles.whiteBackButton)}
-        color={currentSlideIndex === 0 ? 'translucent' : 'translucent-white'}
+        size="tiny"
+        className={buildClassName(styles.backButton, hasHeaderBackdrop && styles.whiteBackButton)}
+        color={hasHeaderBackdrop ? 'translucent-white' : 'translucent'}
         onClick={onBack}
-        ariaLabel={lang('Back')}
-      >
-        <i className="icon icon-arrow-left" />
-      </Button>
+        ariaLabel={oldLang('Back')}
+        iconName="arrow-left"
+      />
 
       <div className={styles.preview} />
 
       <div className={buildClassName(styles.content, 'no-scrollbar')} onScroll={handleScroll} ref={scrollContainerRef}>
 
-        {PREMIUM_FEATURE_SECTIONS.map((section, index) => {
+        {filteredSections.map((section, index) => {
           if (section === 'double_limits') {
             return (
               <div className={buildClassName(styles.slide, styles.limits)}>
                 <h2 className={buildClassName(styles.header, isScrolledToTop && styles.noHeaderBorder)}>
-                  {lang(PREMIUM_FEATURE_TITLES.double_limits)}
+                  {oldLang(PREMIUM_FEATURE_TITLES.double_limits)}
                 </h2>
                 <div className={buildClassName(styles.limitsContent, 'custom-scroll')} onScroll={handleLimitsScroll}>
-                  {LIMITS_ORDER.map((limit, i) => {
+                  {PREMIUM_LIMITS_ORDER.map((limit, i) => {
                     const defaultLimit = limits?.[limit][0].toString();
                     const premiumLimit = limits?.[limit][1].toString();
                     return (
                       <PremiumLimitPreview
-                        title={lang(LIMITS_TITLES[limit])}
-                        description={lang(LIMITS_DESCRIPTIONS[limit], premiumLimit)}
+                        title={oldLang(LIMITS_TITLES[limit])}
+                        description={oldLang(LIMITS_DESCRIPTIONS[limit], premiumLimit)}
                         leftValue={defaultLimit}
                         rightValue={premiumLimit}
-                        colorStepProgress={i / (LIMITS_ORDER.length - 1)}
+                        colorStepProgress={i / (PREMIUM_LIMITS_ORDER.length - 1)}
                       />
                     );
                   })}
@@ -263,10 +272,10 @@ const PremiumFeatureModal: FC<OwnProps> = ({
                   <PremiumFeaturePreviewStickers isActive={currentSlideIndex === index} />
                 </div>
                 <h1 className={styles.title}>
-                  {lang(PREMIUM_FEATURE_TITLES.premium_stickers)}
+                  {oldLang(PREMIUM_FEATURE_TITLES.premium_stickers)}
                 </h1>
                 <div className={styles.description}>
-                  {renderText(lang(PREMIUM_FEATURE_DESCRIPTIONS.premium_stickers), ['br'])}
+                  {renderText(oldLang(PREMIUM_FEATURE_DESCRIPTIONS.premium_stickers), ['br'])}
                 </div>
               </div>
             );
@@ -282,23 +291,37 @@ const PremiumFeatureModal: FC<OwnProps> = ({
 
           const i = promo.videoSections.indexOf(section);
           if (i === -1) return undefined;
+          const shouldUseNewLang = section === 'todo';
           return (
             <div className={styles.slide}>
               <div className={styles.frame}>
                 <PremiumFeaturePreviewVideo
                   isActive={currentSlideIndex === index}
-                  videoId={promo.videos[i].id!}
-                  videoThumbnail={promo.videos[i].thumbnail!}
+                  videoId={promo.videos[i].id}
+                  videoThumbnail={promo.videos[i].thumbnail}
                   isDown={PREMIUM_BOTTOM_VIDEOS.includes(section)}
                   index={index}
                   isReverseAnimation={index === reverseAnimationSlideIndex}
                 />
               </div>
               <h1 className={styles.title}>
-                {lang(PREMIUM_FEATURE_TITLES[promo.videoSections[i]!])}
+                {shouldUseNewLang
+                  ? lang(
+                    PREMIUM_FEATURE_TITLES['todo'] as keyof LangPair,
+                    undefined,
+                    { withNodes: true, renderTextFilters: ['br'] },
+                  )
+                  : oldLang(PREMIUM_FEATURE_TITLES[section])}
               </h1>
               <div className={styles.description}>
-                {renderText(lang(PREMIUM_FEATURE_DESCRIPTIONS[promo.videoSections[i]!]), ['br'])}
+                {renderText(shouldUseNewLang
+                  ? lang(
+                    PREMIUM_FEATURE_DESCRIPTIONS['todo'] as keyof LangPair,
+                    undefined,
+                    { withNodes: true, renderTextFilters: ['br'] },
+                  )
+                  : oldLang(PREMIUM_FEATURE_DESCRIPTIONS[section]), ['br'],
+                )}
               </div>
             </div>
           );
@@ -317,16 +340,16 @@ const PremiumFeatureModal: FC<OwnProps> = ({
           active={currentSlideIndex}
           onSelectSlide={handleSelectSlide}
         />
-        <Button
-          className={buildClassName(styles.button)}
-          isShiny={!isPremium}
-          withPremiumGradient={!isPremium}
-          onClick={isPremium ? onBack : handleClick}
-        >
-          {isPremium
-            ? lang('OK')
-            : lang('SubscribeToPremium', formatCurrency(Number(month.amount), month.currency, lang.code))}
-        </Button>
+        {Boolean(subscriptionButtonText) && (
+          <Button
+            className={buildClassName(styles.button)}
+            isShiny={!isPremium}
+            withPremiumGradient={!isPremium}
+            onClick={isPremium ? onBack : handleClick}
+          >
+            {subscriptionButtonText}
+          </Button>
+        )}
       </div>
     </div>
   );

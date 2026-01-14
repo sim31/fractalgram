@@ -1,5 +1,6 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
+import type React from '../../lib/teact/teact';
+import {
   memo, useCallback, useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
@@ -8,19 +9,20 @@ import type { ApiChat, ApiSticker, ApiTopic } from '../../api/types';
 import type { TabState } from '../../global/types';
 
 import { DEFAULT_TOPIC_ICON_STICKER_ID, GENERAL_TOPIC_ID } from '../../config';
-import { selectChat, selectIsCurrentUserPremium, selectTabState } from '../../global/selectors';
+import {
+  selectChat, selectIsCurrentUserPremium, selectTabState, selectTopic,
+} from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
 import { REM } from '../common/helpers/mediaDimensions';
 
 import useHistoryBack from '../../hooks/useHistoryBack';
-import useLang from '../../hooks/useLang';
+import useOldLang from '../../hooks/useOldLang';
 
 import CustomEmojiPicker from '../common/CustomEmojiPicker';
 import TopicIcon from '../common/TopicIcon';
 import FloatingActionButton from '../ui/FloatingActionButton';
 import InputText from '../ui/InputText';
 import Loading from '../ui/Loading';
-import Spinner from '../ui/Spinner';
 import Transition from '../ui/Transition';
 
 import styles from './ManageTopic.module.scss';
@@ -51,7 +53,7 @@ const EditTopic: FC<OwnProps & StateProps> = ({
   const { editTopic, openPremiumModal } = getActions();
   const [title, setTitle] = useState('');
   const [iconEmojiId, setIconEmojiId] = useState<string | undefined>(undefined);
-  const lang = useLang();
+  const lang = useOldLang();
 
   const isLoading = Boolean(editTopicPanel?.isLoading);
   const isGeneral = topic?.id === GENERAL_TOPIC_ID;
@@ -170,22 +172,19 @@ const EditTopic: FC<OwnProps & StateProps> = ({
         disabled={isLoading}
         onClick={handleEditTopic}
         ariaLabel={lang('Save')}
-      >
-        {isLoading ? (
-          <Spinner color="white" />
-        ) : (
-          <i className="icon icon-check" />
-        )}
-      </FloatingActionButton>
+        iconName="check"
+        isLoading={isLoading}
+      />
     </div>
   );
 };
 
 export default memo(withGlobal(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const { editTopicPanel } = selectTabState(global);
     const chat = editTopicPanel?.chatId ? selectChat(global, editTopicPanel.chatId) : undefined;
-    const topic = editTopicPanel?.topicId ? chat?.topics?.[editTopicPanel?.topicId] : undefined;
+    const topic = editTopicPanel?.chatId && editTopicPanel?.topicId
+      ? selectTopic(global, editTopicPanel.chatId, editTopicPanel.topicId) : undefined;
 
     return {
       chat,

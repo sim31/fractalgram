@@ -1,11 +1,12 @@
-export function areDeepEqual<T extends any>(value1: T, value2: T): boolean {
+export function areDeepEqual<T>(value1: T, value2: T): boolean {
   const type1 = typeof value1;
   const type2 = typeof value2;
   if (type1 !== type2) {
     return false;
   }
 
-  if (type1 !== 'object') {
+  // eslint-disable-next-line no-null/no-null
+  if (type1 !== 'object' || value1 === null || value2 === null) {
     return value1 === value2;
   }
 

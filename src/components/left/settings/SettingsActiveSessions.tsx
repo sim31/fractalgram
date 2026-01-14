@@ -1,18 +1,19 @@
-/* eslint-disable react/jsx-no-bind */
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useMemo, useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiSession } from '../../../api/types';
+import type { GlobalState } from '../../../global/types';
 
-import { formatPastTimeShort } from '../../../util/dateFormat';
+import { formatPastTimeShort } from '../../../util/dates/dateFormat';
 import getSessionIcon from './helpers/getSessionIcon';
 
 import useFlag from '../../../hooks/useFlag';
 import useHistoryBack from '../../../hooks/useHistoryBack';
 import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 
 import ConfirmDialog from '../../ui/ConfirmDialog';
 import ListItem from '../../ui/ListItem';
@@ -26,11 +27,7 @@ type OwnProps = {
   onReset: () => void;
 };
 
-type StateProps = {
-  byHash: Record<string, ApiSession>;
-  orderedHashes: string[];
-  ttlDays?: number;
-};
+type StateProps = GlobalState['activeSessions'];
 
 const SettingsActiveSessions: FC<OwnProps & StateProps> = ({
   isActive,
@@ -45,13 +42,13 @@ const SettingsActiveSessions: FC<OwnProps & StateProps> = ({
     changeSessionTtl,
   } = getActions();
 
+  const oldLang = useOldLang();
   const lang = useLang();
   const [isConfirmTerminateAllDialogOpen, openConfirmTerminateAllDialog, closeConfirmTerminateAllDialog] = useFlag();
   const [openedSessionHash, setOpenedSessionHash] = useState<string | undefined>();
   const [isModalOpen, openModal, closeModal] = useFlag();
 
   const autoTerminateValue = useMemo(() => {
-    // eslint-disable-next-line max-len
     // https://github.com/DrKLO/Telegram/blob/96dce2c9aabc33b87db61d830aa087b6b03fe397/TMessagesProj/src/main/java/org/telegram/ui/SessionsActivity.java#L195
     if (ttlDays === undefined) {
       return undefined;
@@ -82,21 +79,21 @@ const SettingsActiveSessions: FC<OwnProps & StateProps> = ({
 
   const AUTO_TERMINATE_OPTIONS = useMemo(() => {
     const options = [{
-      label: lang('Weeks', 1, 'i'),
+      label: lang('Weeks', { count: 1 }, { pluralValue: 1 }),
       value: '7',
     }, {
-      label: lang('Months', 1, 'i'),
+      label: lang('Months', { count: 1 }, { pluralValue: 1 }),
       value: '30',
     }, {
-      label: lang('Months', 3, 'i'),
+      label: lang('Months', { count: 3 }, { pluralValue: 3 }),
       value: '90',
     }, {
-      label: lang('Months', 6, 'i'),
+      label: lang('Months', { count: 6 }, { pluralValue: 6 }),
       value: '183',
     }];
     if (ttlDays && ttlDays >= 365) {
       options.push({
-        label: lang('Years', 1, 'i'),
+        label: lang('Years', { count: 1 }, { pluralValue: 1 }),
         value: '365',
       });
     }
@@ -145,17 +142,30 @@ const SettingsActiveSessions: FC<OwnProps & StateProps> = ({
   function renderCurrentSession(session: ApiSession) {
     return (
       <div className="settings-item">
-        <h4 className="settings-item-header mb-4" dir={lang.isRtl ? 'rtl' : undefined}>
-          {lang('AuthSessions.CurrentSession')}
+        <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>
+          {lang('AuthSessionsCurrentSession')}
         </h4>
 
         <ListItem narrow inactive icon={`device-${getSessionIcon(session)}`} iconClassName="icon-device">
-          <div className="multiline-menu-item full-size" dir="auto">
+          <div className="multiline-item full-size" dir="auto">
             <span className="title" dir="auto">{session.deviceModel}</span>
             <span className="subtitle black tight">
-              {session.appName} {session.appVersion}, {session.platform} {session.systemVersion}
+              {session.appName}
+              {' '}
+              {session.appVersion}
+              ,
+              {' '}
+              {session.platform}
+              {' '}
+              {session.systemVersion}
             </span>
-            <span className="subtitle">{session.ip} - {getLocation(session)}</span>
+            <span className="subtitle">
+              {session.ip}
+              {' '}
+              -
+              {' '}
+              {getLocation(session)}
+            </span>
           </div>
         </ListItem>
 
@@ -177,7 +187,7 @@ const SettingsActiveSessions: FC<OwnProps & StateProps> = ({
   function renderOtherSessions(sessionHashes: string[]) {
     return (
       <div className="settings-item">
-        <h4 className="settings-item-header mb-4" dir={lang.isRtl ? 'rtl' : undefined}>
+        <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>
           {lang('OtherSessions')}
         </h4>
 
@@ -189,11 +199,11 @@ const SettingsActiveSessions: FC<OwnProps & StateProps> = ({
   function renderAutoTerminate() {
     return (
       <div className="settings-item">
-        <h4 className="settings-item-header mb-4" dir={lang.isRtl ? 'rtl' : undefined}>
+        <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>
           {lang('TerminateOldSessionHeader')}
         </h4>
 
-        <p>{lang('IfInactiveFor')}</p>
+        <p className="settings-item-description-larger">{lang('IfInactiveFor')}</p>
         <RadioGroup
           name="session_ttl"
           options={AUTO_TERMINATE_OPTIONS}
@@ -213,7 +223,7 @@ const SettingsActiveSessions: FC<OwnProps & StateProps> = ({
         ripple
         narrow
         contextActions={[{
-          title: 'Terminate',
+          title: lang('SessionTerminate'),
           icon: 'stop',
           destructive: true,
           handler: () => {
@@ -224,13 +234,24 @@ const SettingsActiveSessions: FC<OwnProps & StateProps> = ({
         iconClassName="icon-device"
         onClick={() => { handleOpenSessionModal(session.hash); }}
       >
-        <div className="multiline-menu-item full-size" dir="auto">
-          <span className="date">{formatPastTimeShort(lang, session.dateActive * 1000)}</span>
+        <div className="multiline-item full-size" dir="auto">
+          <span className="date">{formatPastTimeShort(oldLang, session.dateActive * 1000)}</span>
           <span className="title">{session.deviceModel}</span>
           <span className="subtitle black tight">
-            {session.appName} {session.appVersion}, {session.platform} {session.systemVersion}
+            {session.appName}
+            {' '}
+            {session.appVersion}
+            ,
+            {' '}
+            {session.platform}
+            {' '}
+            {session.systemVersion}
           </span>
-          <span className="subtitle">{session.ip} {getLocation(session)}</span>
+          <span className="subtitle">
+            {session.ip}
+            {' '}
+            {getLocation(session)}
+          </span>
         </div>
       </ListItem>
     );
@@ -262,5 +283,5 @@ function getLocation(session: ApiSession) {
 }
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => global.activeSessions,
+  (global): Complete<StateProps> => global.activeSessions as Complete<StateProps>,
 )(SettingsActiveSessions));

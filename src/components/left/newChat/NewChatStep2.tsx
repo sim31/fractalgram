@@ -1,16 +1,18 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import type React from '../../../lib/teact/teact';
+import {
   memo,
   useCallback, useEffect, useState,
 } from '../../../lib/teact/teact';
-import { getActions, withGlobal } from '../../../global';
+import { getActions, getGlobal, withGlobal } from '../../../global';
 
 import { ChatCreationProgress } from '../../../types';
 
+import { getUserFirstOrLastName } from '../../../global/helpers';
 import { selectTabState } from '../../../global/selectors';
 
 import useHistoryBack from '../../../hooks/useHistoryBack';
-import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 
 import PrivateChatInfo from '../../common/PrivateChatInfo';
 import AvatarEditable from '../../ui/AvatarEditable';
@@ -18,7 +20,6 @@ import Button from '../../ui/Button';
 import FloatingActionButton from '../../ui/FloatingActionButton';
 import InputText from '../../ui/InputText';
 import ListItem from '../../ui/ListItem';
-import Spinner from '../../ui/Spinner';
 
 export type OwnProps = {
   isChannel?: boolean;
@@ -33,7 +34,9 @@ type StateProps = {
   maxGroupSize?: number;
 };
 
-const NewChatStep2: FC<OwnProps & StateProps > = ({
+const MAX_MEMBERS_FOR_GENERATE_CHAT_NAME = 4;
+
+const NewChatStep2: FC<OwnProps & StateProps> = ({
   isChannel,
   isActive,
   memberIds,
@@ -47,7 +50,7 @@ const NewChatStep2: FC<OwnProps & StateProps > = ({
     createChannel,
   } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   useHistoryBack({
     isActive,
@@ -64,6 +67,25 @@ const NewChatStep2: FC<OwnProps & StateProps > = ({
   const chatTooManyUsersError = 'Sorry, creating supergroups is not yet supported';
 
   const isLoading = creationProgress === ChatCreationProgress.InProgress;
+
+  useEffect(() => {
+    if (isChannel) {
+      return;
+    }
+    if (!memberIds.length || memberIds.length > MAX_MEMBERS_FOR_GENERATE_CHAT_NAME) {
+      setTitle('');
+      return;
+    }
+    const global = getGlobal();
+    const usersById = global.users.byId;
+    const memberFirstNames = [global.currentUserId!, ...memberIds]
+      .map((userId) => getUserFirstOrLastName(usersById[userId]))
+      .filter(Boolean);
+    const generatedChatName = memberFirstNames.slice(0, -1).join(', ')
+      + lang('CreateGroup.PeersTitleLastDelimeter')
+      + memberFirstNames[memberFirstNames.length - 1];
+    setTitle(generatedChatName);
+  }, [isChannel, memberIds, lang]);
 
   const handleTitleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const { value } = e.currentTarget;
@@ -109,6 +131,7 @@ const NewChatStep2: FC<OwnProps & StateProps > = ({
       about,
       photo,
       memberIds,
+      isChannel: true,
     });
   }, [title, createChannel, about, photo, memberIds, channelTitleEmptyError]);
 
@@ -131,12 +154,10 @@ const NewChatStep2: FC<OwnProps & StateProps > = ({
           round
           size="smaller"
           color="translucent"
-          // eslint-disable-next-line react/jsx-no-bind
           onClick={() => onReset()}
           ariaLabel="Return to member selection"
-        >
-          <i className="icon icon-arrow-left" />
-        </Button>
+          iconName="arrow-left"
+        />
         <h3>{lang(isChannel ? 'NewChannel' : 'NewGroup')}</h3>
       </div>
       <div className="NewChat-inner step-2">
@@ -185,19 +206,15 @@ const NewChatStep2: FC<OwnProps & StateProps > = ({
         onClick={isChannel ? handleCreateChannel : handleCreateGroup}
         disabled={isLoading}
         ariaLabel={isChannel ? lang('ChannelIntro.CreateChannel') : 'Create Group'}
-      >
-        {isLoading ? (
-          <Spinner color="white" />
-        ) : (
-          <i className="icon icon-arrow-right" />
-        )}
-      </FloatingActionButton>
+        iconName="arrow-right"
+        isLoading={isLoading}
+      />
     </div>
   );
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const {
       progress: creationProgress,
       error: creationError,

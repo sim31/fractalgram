@@ -1,36 +1,50 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useEffect, useRef } from '../../lib/teact/teact';
+import {
+  memo, useEffect, useMemo, useRef,
+} from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { ApiSticker, ApiUpdateConnectionStateType } from '../../api/types';
-import type { MessageList } from '../../global/types';
+import type {
+  ApiBusinessIntro, ApiSticker, ApiUpdateConnectionStateType, ApiUser,
+} from '../../api/types';
+import type { MessageList } from '../../types';
 
-import { getPeerIdDividend } from '../../global/helpers';
-import { selectChat, selectCurrentMessageList } from '../../global/selectors';
+import { getUserFullName } from '../../global/helpers';
+import {
+  selectChat,
+  selectChatLastMessage,
+  selectCurrentMessageList,
+  selectUser,
+  selectUserFullInfo,
+} from '../../global/selectors';
 
-import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
+import useOldLang from '../../hooks/useOldLang';
 
 import StickerView from '../common/StickerView';
 
-import './ContactGreeting.scss';
+import styles from './ContactGreeting.module.scss';
 
 type OwnProps = {
   userId: string;
 };
 
 type StateProps = {
-  sticker?: ApiSticker;
+  defaultStickers?: ApiSticker[];
   lastUnreadMessageId?: number;
   connectionState?: ApiUpdateConnectionStateType;
   currentMessageList?: MessageList;
+  businessIntro?: ApiBusinessIntro;
+  user?: ApiUser;
 };
 
 const ContactGreeting: FC<OwnProps & StateProps> = ({
-  sticker,
+  defaultStickers,
   connectionState,
   lastUnreadMessageId,
   currentMessageList,
+  businessIntro,
+  user,
 }) => {
   const {
     loadGreetingStickers,
@@ -38,18 +52,25 @@ const ContactGreeting: FC<OwnProps & StateProps> = ({
     markMessageListRead,
   } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
 
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>();
+
+  const sticker = useMemo(() => {
+    if (businessIntro?.sticker) return businessIntro.sticker;
+    if (!defaultStickers?.length) return undefined;
+
+    const randomIndex = Math.floor(Math.random() * defaultStickers.length);
+    return defaultStickers[randomIndex];
+  }, [businessIntro?.sticker, defaultStickers]);
 
   useEffect(() => {
-    if (sticker || connectionState !== 'connectionStateReady') {
+    if (defaultStickers?.length || connectionState !== 'connectionStateReady') {
       return;
     }
 
     loadGreetingStickers();
-  }, [connectionState, loadGreetingStickers, sticker]);
+  }, [connectionState, loadGreetingStickers, defaultStickers]);
 
   useEffect(() => {
     if (connectionState === 'connectionStateReady' && lastUnreadMessageId) {
@@ -71,43 +92,57 @@ const ContactGreeting: FC<OwnProps & StateProps> = ({
     });
   });
 
-  return (
-    <div className="ContactGreeting">
-      <div className="wrapper">
-        <p className="title" dir="auto">{lang('Conversation.EmptyPlaceholder')}</p>
-        <p className="description" dir="auto">{lang('Conversation.GreetingText')}</p>
+  const title = businessIntro?.title || lang('Conversation.EmptyPlaceholder');
+  const description = businessIntro?.description || lang('Conversation.GreetingText');
 
-        <div ref={containerRef} className="sticker" onClick={handleStickerSelect}>
+  return (
+    <div className={styles.root}>
+      <div className={styles.wrapper}>
+        <p className={styles.title} dir="auto">{title}</p>
+        <p className={styles.description} dir="auto">{description}</p>
+
+        <div ref={containerRef} className={styles.sticker} onClick={handleStickerSelect}>
           {sticker && (
             <StickerView
               containerRef={containerRef}
               sticker={sticker}
               size={160}
+              shouldLoop
             />
           )}
         </div>
       </div>
+      {businessIntro && (
+        <div className={styles.explainer}>
+          {lang('Chat.EmptyStateIntroFooter', getUserFullName(user))}
+        </div>
+      )}
     </div>
   );
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { userId }): StateProps => {
+  (global, { userId }): Complete<StateProps> => {
     const { stickers } = global.stickers.greeting;
-    const dividend = getPeerIdDividend(userId) + getPeerIdDividend(global.currentUserId!);
-    const sticker = stickers?.length ? stickers[dividend % stickers.length] : undefined;
     const chat = selectChat(global, userId);
     if (!chat) {
-      return {};
+      return {} as Complete<StateProps>;
     }
 
+    const user = selectUser(global, userId);
+    const fullInfo = selectUserFullInfo(global, userId);
+
+    const lastMessage = selectChatLastMessage(global, chat.id);
+
     return {
-      sticker,
-      lastUnreadMessageId: chat.lastMessage && chat.lastMessage.id !== chat.lastReadInboxMessageId
-        ? chat.lastMessage.id
+      defaultStickers: stickers,
+      lastUnreadMessageId: lastMessage && lastMessage.id !== chat.lastReadInboxMessageId
+        ? lastMessage.id
         : undefined,
       connectionState: global.connectionState,
       currentMessageList: selectCurrentMessageList(global),
+      businessIntro: fullInfo?.businessIntro,
+      user,
     };
   },
 )(ContactGreeting));

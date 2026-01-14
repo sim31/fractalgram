@@ -1,9 +1,19 @@
 import type { ApiBotCommand } from './bots';
 import type {
-  ApiChatReactions, ApiMessage, ApiPhoto, ApiStickerSet,
+  ApiChatReactions, ApiFormattedText, ApiInputMessageReplyInfo, ApiInputSuggestedPostInfo, ApiPhoto, ApiStickerSet,
 } from './messages';
-import type { ApiChatInviteImporter } from './misc';
-import type { ApiFakeType, ApiUser, ApiUsername } from './users';
+import type { ApiChatInviteImporter, ApiRestrictionReason } from './misc';
+import type {
+  ApiBotVerification,
+  ApiEmojiStatusType,
+  ApiFakeType,
+  ApiProfileTab,
+  ApiSendAsPeerId,
+  ApiTypePeerColor,
+} from './peers';
+import type {
+  ApiUser, ApiUsername,
+} from './users';
 
 type ApiChatType = (
   'chatTypePrivate' | 'chatTypeSecret' |
@@ -19,34 +29,42 @@ export interface ApiChat {
   type: ApiChatType;
   title: string;
   hasUnreadMark?: boolean;
-  lastMessage?: ApiMessage;
   lastReadOutboxMessageId?: number;
   lastReadInboxMessageId?: number;
   unreadCount?: number;
   unreadMentionsCount?: number;
   unreadReactionsCount?: number;
   isVerified?: true;
-  isMuted?: boolean;
-  muteUntil?: number;
-  isSignaturesShown?: boolean;
-  hasPrivateLink?: boolean;
+  areSignaturesShown?: boolean;
+  areProfilesShown?: boolean;
+  isLinkedInDiscussion?: boolean;
+  hasGeo?: boolean;
   accessHash?: string;
   isMin?: boolean;
   hasVideoAvatar?: boolean;
-  avatarHash?: string;
+  avatarPhotoId?: string;
   usernames?: ApiUsername[];
+  hasUsername?: boolean;
   membersCount?: number;
-  joinDate?: number;
+  creationDate?: number;
   isSupport?: true;
-  photos?: ApiPhoto[];
   draftDate?: number;
   isProtected?: boolean;
   fakeType?: ApiFakeType;
+  color?: ApiTypePeerColor;
+  profileColor?: ApiTypePeerColor;
+  emojiStatus?: ApiEmojiStatusType;
   isForum?: boolean;
-  topics?: Record<number, ApiTopic>;
-  listedTopicIds?: number[];
-  topicsCount?: number;
-  orderedPinnedTopicIds?: number[];
+  isForumAsMessages?: true;
+  isMonoforum?: boolean;
+  isBotForum?: boolean;
+  withForumTabs?: boolean;
+  linkedMonoforumId?: string;
+  areChannelMessagesAllowed?: boolean;
+  boostLevel?: number;
+  botVerificationIconId?: string;
+  hasAutoTranslation?: true;
+  level?: number;
 
   // Calls
   isCallActive?: boolean;
@@ -58,7 +76,7 @@ export interface ApiChat {
   isCreator?: boolean;
   isForbidden?: boolean; // Forbidden - can't send messages (user was kicked, for example)
   isRestricted?: boolean; // Restricted - can't access the chat (user was banned or chat is violating rules)
-  restrictionReason?: ApiRestrictionReason;
+  restrictionReasons?: ApiRestrictionReason[];
   adminRights?: ApiChatAdminRights;
   currentUserBannedRights?: ApiChatBannedRights;
   defaultBannedRights?: ApiChatBannedRights;
@@ -68,13 +86,12 @@ export interface ApiChat {
     accessHash?: string;
   };
 
-  // Obtained from GetChatSettings
-  settings?: ApiChatSettings;
-
   joinRequests?: ApiChatInviteImporter[];
   isJoinToSend?: boolean;
   isJoinRequest?: boolean;
   sendAsPeerIds?: ApiSendAsPeerId[];
+  sendPaidReactionsAsPeerIds?: ApiSendAsPeerId[];
+  sendPaidReactionsPeer?: ApiSendAsPeerId;
 
   unreadReactions?: number[];
   unreadMentions?: number[];
@@ -85,8 +102,12 @@ export interface ApiChat {
   hasUnreadStories?: boolean;
   maxStoryId?: number;
 
+  subscriptionUntil?: number;
+
   // Locally determined field
   detectedLanguage?: string;
+
+  paidMessagesStars?: number;
 }
 
 export interface ApiTypingStatus {
@@ -114,19 +135,37 @@ export interface ApiChatFullInfo {
     chatId: string;
     maxMessageId?: number;
   };
+  joinInfo?: {
+    joinedDate: number;
+    inviterId?: string;
+    isViaRequest?: boolean;
+  };
   linkedChatId?: string;
   botCommands?: ApiBotCommand[];
   enabledReactions?: ApiChatReactions;
+  reactionsLimit?: number;
   sendAsId?: string;
   canViewStatistics?: boolean;
+  canViewMonetization?: boolean;
   recentRequesterIds?: string[];
   requestsPending?: number;
   statisticsDcId?: number;
   stickerSet?: ApiStickerSet;
+  emojiSet?: ApiStickerSet;
   profilePhoto?: ApiPhoto;
   areParticipantsHidden?: boolean;
   isTranslationDisabled?: true;
   hasPinnedStories?: boolean;
+  isPaidReactionAvailable?: boolean;
+  hasScheduledMessages?: boolean;
+  starGiftCount?: number;
+  areStarGiftsAvailable?: boolean;
+  arePaidMessagesAvailable?: true;
+
+  boostsApplied?: number;
+  boostsToUnrestrict?: number;
+  botVerification?: ApiBotVerification;
+  mainTab?: ApiProfileTab;
 }
 
 export interface ApiChatMember {
@@ -140,6 +179,7 @@ export interface ApiChatMember {
   customTitle?: string;
   isAdmin?: true;
   isOwner?: true;
+  isViaRequest?: true;
 }
 
 export interface ApiChatAdminRights {
@@ -157,6 +197,7 @@ export interface ApiChatAdminRights {
   postStories?: true;
   editStories?: true;
   deleteStories?: true;
+  manageDirectMessages?: true;
 }
 
 export interface ApiChatBannedRights {
@@ -183,14 +224,10 @@ export interface ApiChatBannedRights {
   untilDate?: number;
 }
 
-export interface ApiRestrictionReason {
-  reason: string;
-  text: string;
-}
-
 export interface ApiChatFolder {
   id: number;
-  title: string;
+  title: ApiFormattedText;
+  noTitleAnimations?: true;
   description?: string;
   emoticon?: string;
   contacts?: true;
@@ -198,6 +235,7 @@ export interface ApiChatFolder {
   groups?: true;
   channels?: true;
   bots?: true;
+  color?: number;
   excludeMuted?: true;
   excludeRead?: true;
   excludeArchived?: true;
@@ -208,42 +246,9 @@ export interface ApiChatFolder {
   hasMyInvites?: true;
 }
 
-export interface ApiChatSettings {
-  isAutoArchived?: boolean;
-  canReportSpam?: boolean;
-  canAddContact?: boolean;
-  canBlockContact?: boolean;
-}
-
-export interface ApiSendAsPeerId {
-  id: string;
-  isPremium?: boolean;
-}
-
-export interface ApiTopic {
-  id: number;
-  isClosed?: boolean;
-  isPinned?: boolean;
-  isHidden?: boolean;
-  isOwner?: boolean;
-  // eslint-disable-next-line max-len
-  // TODO[forums] https://github.com/telegramdesktop/tdesktop/blob/1aece79a471d99a8b63d826b1bce1f36a04d7293/Telegram/SourceFiles/data/data_forum_topic.cpp#L318
-  isMin?: boolean;
-  date: number;
-  title: string;
-  iconColor: number;
-  iconEmojiId?: string;
-  lastMessageId: number;
-  unreadCount: number;
-  unreadMentionsCount: number;
-  unreadReactionsCount: number;
-  fromId: string;
-  isMuted?: boolean;
-  muteUntil?: number;
-}
-
 export interface ApiChatlistInviteNew {
-  title: string;
+  title: ApiFormattedText;
+  noTitleAnimations?: true;
   emoticon?: string;
   peerIds: string[];
   slug: string;
@@ -263,3 +268,30 @@ export interface ApiChatlistExportedInvite {
   url: string;
   peerIds: string[];
 }
+
+export interface ApiMissingInvitedUser {
+  id: string;
+  isRequiringPremiumToInvite?: boolean;
+  isRequiringPremiumToMessage?: boolean;
+}
+
+export interface ApiChatLink {
+  chatId: string;
+  text: ApiFormattedText;
+}
+
+export type ApiDraft = {
+  text?: ApiFormattedText;
+  replyInfo?: ApiInputMessageReplyInfo;
+  suggestedPostInfo?: ApiInputSuggestedPostInfo;
+  date?: number;
+  effectId?: string;
+  isLocal?: boolean;
+};
+
+export type ApiSponsoredPeer = {
+  randomId: string;
+  peerId: string;
+  sponsorInfo?: string;
+  additionalInfo?: string;
+};

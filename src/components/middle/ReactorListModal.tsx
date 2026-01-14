@@ -1,37 +1,47 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
+import type React from '../../lib/teact/teact';
+import {
   memo, useEffect, useMemo, useRef,
   useState,
 } from '../../lib/teact/teact';
 import { getActions, getGlobal, withGlobal } from '../../global';
 
 import type { ApiAvailableReaction, ApiMessage, ApiReaction } from '../../api/types';
+import type { AnimationLevel } from '../../types';
 import { LoadMoreDirection } from '../../types';
 
-import { getReactionUniqueKey, isSameReaction } from '../../global/helpers';
+import { getReactionKey, isSameReaction } from '../../global/helpers';
 import {
   selectChatMessage,
   selectTabState,
 } from '../../global/selectors';
+import { selectSharedSettings } from '../../global/selectors/sharedState';
 import buildClassName from '../../util/buildClassName';
-import { formatDateAtTime } from '../../util/dateFormat';
+import { formatDateAtTime } from '../../util/dates/dateFormat';
 import { unique } from '../../util/iteratees';
+import { resolveTransitionName } from '../../util/resolveTransitionName';
 import { formatIntegerCompact } from '../../util/textFormat';
+import { REM } from '../common/helpers/mediaDimensions';
 
 import useFlag from '../../hooks/useFlag';
+import useHorizontalScroll from '../../hooks/useHorizontalScroll';
 import useInfiniteScroll from '../../hooks/useInfiniteScroll';
 import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
+import useOldLang from '../../hooks/useOldLang';
+import useScrollNotch from '../../hooks/useScrollNotch';
 
 import Avatar from '../common/Avatar';
 import FullNameTitle from '../common/FullNameTitle';
+import Icon from '../common/icons/Icon';
 import PrivateChatInfo from '../common/PrivateChatInfo';
-import ReactionStaticEmoji from '../common/ReactionStaticEmoji';
+import ReactionStaticEmoji from '../common/reactions/ReactionStaticEmoji';
 import Button from '../ui/Button';
 import InfiniteScroll from '../ui/InfiniteScroll';
 import ListItem from '../ui/ListItem';
 import Loading from '../ui/Loading';
 import Modal from '../ui/Modal';
+import Transition from '../ui/Transition';
 
 import './ReactorListModal.scss';
 
@@ -45,7 +55,10 @@ export type StateProps = Pick<ApiMessage, 'reactors' | 'reactions' | 'seenByDate
   chatId?: string;
   messageId?: number;
   availableReactions?: ApiAvailableReaction[];
+  animationLevel: AnimationLevel;
 };
+
+const DEFAULT_REACTION_SIZE = 1.5 * REM;
 
 const ReactorListModal: FC<OwnProps & StateProps> = ({
   isOpen,
@@ -55,6 +68,7 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
   messageId,
   seenByDates,
   availableReactions,
+  animationLevel,
 }) => {
   const {
     loadReactors,
@@ -66,12 +80,17 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
   const chatsById = getGlobal().chats.byId;
   const usersById = getGlobal().users.byId;
 
+  const oldLang = useOldLang();
   const lang = useLang();
   const [isClosing, startClosing, stopClosing] = useFlag(false);
   const [chosenTab, setChosenTab] = useState<ApiReaction | undefined>(undefined);
   const canShowFilters = reactors && reactions && reactors.count >= MIN_REACTIONS_COUNT_FOR_FILTERS
     && reactions.results.length > 1;
   const chatIdRef = useRef<string>();
+  const reactionsRef = useRef<HTMLDivElement>();
+  const containerRef = useRef<HTMLDivElement>();
+
+  useHorizontalScroll(reactionsRef, !canShowFilters || !isOpen);
 
   useEffect(() => {
     if (isOpen && !isClosing) {
@@ -117,6 +136,12 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
     return uniqueReactions;
   }, [reactors]);
 
+  const contentActiveKey = useMemo(() => {
+    if (!chosenTab) return 0;
+    const index = allReactions.findIndex((r) => isSameReaction(r, chosenTab));
+    return index + 1;
+  }, [chosenTab, allReactions]);
+
   const peerIds = useMemo(() => {
     if (chosenTab) {
       return reactors?.reactions
@@ -133,6 +158,11 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
     handleLoadMore, peerIds, reactors && reactors.nextOffset === undefined,
   );
 
+  useScrollNotch({
+    containerRef,
+    selector: '.reactor-list',
+  }, [contentActiveKey, isOpen]);
+
   useEffect(() => {
     getMore?.({ direction: LoadMoreDirection.Backwards });
   }, [getMore]);
@@ -142,126 +172,141 @@ const ReactorListModal: FC<OwnProps & StateProps> = ({
       isOpen={isOpen && !isClosing}
       onClose={handleClose}
       className="ReactorListModal narrow"
-      title={lang('Reactions')}
+      title={oldLang('Reactions')}
       onCloseAnimationEnd={handleCloseAnimationEnd}
+      isCondensedHeader
+      hasCloseButton
     >
       {canShowFilters && (
-        <div className="Reactions" dir={lang.isRtl ? 'rtl' : undefined}>
+        <div
+          ref={reactionsRef}
+          className={buildClassName('Reactions', 'no-scrollbar')}
+          dir={lang.isRtl ? 'rtl' : undefined}
+        >
           <Button
-            className={buildClassName(!chosenTab && 'chosen')}
+            color={chosenTab ? 'adaptive' : 'primary'}
             size="tiny"
             ripple
-            // eslint-disable-next-line react/jsx-no-bind
+            iconName="heart"
+            className={chosenTab ? 'not-chosen-button' : undefined}
+            pill
+            fluid
             onClick={() => setChosenTab(undefined)}
           >
-            <i className="icon icon-heart" />
-            {Boolean(reactors?.count) && formatIntegerCompact(reactors.count)}
+            {Boolean(reactors?.count) && formatIntegerCompact(lang, reactors.count)}
           </Button>
           {allReactions.map((reaction) => {
             const count = reactions?.results
               .find((reactionsCount) => isSameReaction(reactionsCount.reaction, reaction))?.count;
+            const isChosen = isSameReaction(chosenTab, reaction);
             return (
               <Button
-                key={getReactionUniqueKey(reaction)}
-                className={buildClassName(isSameReaction(chosenTab, reaction) && 'chosen')}
+                key={getReactionKey(reaction)}
+                className={!isChosen ? 'not-chosen-button' : undefined}
+                color={isChosen ? 'primary' : 'adaptive'}
                 size="tiny"
+                pill
+                fluid
                 ripple
-                // eslint-disable-next-line react/jsx-no-bind
                 onClick={() => setChosenTab(reaction)}
               >
                 <ReactionStaticEmoji
                   reaction={reaction}
                   className="reaction-filter-emoji"
                   availableReactions={availableReactions}
+                  size={DEFAULT_REACTION_SIZE}
                 />
-                {Boolean(count) && formatIntegerCompact(count)}
+                {Boolean(count) && formatIntegerCompact(lang, count)}
               </Button>
             );
           })}
         </div>
       )}
 
-      <div dir={lang.isRtl ? 'rtl' : undefined} className="reactor-list-wrapper">
-        {viewportIds?.length ? (
-          <InfiniteScroll
-            className="reactor-list custom-scroll"
-            items={viewportIds}
-            onLoadMore={getMore}
-          >
-            {viewportIds?.flatMap(
-              (peerId) => {
-                const peer = usersById[peerId] || chatsById[peerId];
-
-                const peerReactions = reactors?.reactions.filter((reactor) => reactor.peerId === peerId);
-                const items: React.ReactNode[] = [];
-                const seenByUser = seenByDates?.[peerId];
-
-                peerReactions?.forEach((r) => {
-                  if (chosenTab && !isSameReaction(r.reaction, chosenTab)) return;
-
-                  items.push(
-                    <ListItem
-                      key={`${peerId}-${getReactionUniqueKey(r.reaction)}`}
-                      className="chat-item-clickable reactors-list-item"
-                      // eslint-disable-next-line react/jsx-no-bind
-                      onClick={() => handleClick(peerId)}
-                    >
-                      <Avatar peer={peer} size="medium" />
-                      <div className="info">
-                        <FullNameTitle peer={peer} withEmojiStatus />
-                        <span className="status" dir="auto">
-                          <i className="icon icon-heart-outline status-icon" />
-                          {formatDateAtTime(lang, r.addedDate * 1000)}
-                        </span>
-                      </div>
-                      {r.reaction && (
-                        <ReactionStaticEmoji
-                          className="reactors-list-emoji"
-                          reaction={r.reaction}
-                          availableReactions={availableReactions}
-                        />
-                      )}
-                    </ListItem>,
-                  );
-                });
-
-                if (!chosenTab && !peerReactions?.length) {
-                  items.push(
-                    <ListItem
-                      key={`${peerId}-seen-by`}
-                      className="chat-item-clickable scroll-item small-icon"
-                      // eslint-disable-next-line react/jsx-no-bind
-                      onClick={() => handleClick(peerId)}
-                    >
-                      <PrivateChatInfo
-                        userId={peerId}
-                        noStatusOrTyping
-                        avatarSize="medium"
-                        status={seenByUser ? formatDateAtTime(lang, seenByUser * 1000) : undefined}
-                        statusIcon="message-read"
-                      />
-                    </ListItem>,
-                  );
-                }
-                return items;
-              },
-            )}
-          </InfiniteScroll>
-        ) : <Loading />}
-      </div>
-      <Button
-        className="confirm-dialog-button"
-        isText
-        onClick={handleClose}
+      <div
+        ref={containerRef}
+        dir={lang.isRtl ? 'rtl' : undefined}
+        className="reactor-list-wrapper"
       >
-        {lang('Close')}
-      </Button>
+        <Transition
+          activeKey={contentActiveKey}
+          name={resolveTransitionName('slide', animationLevel, undefined, lang.isRtl)}
+        >
+          {viewportIds?.length ? (
+            <InfiniteScroll
+              className="reactor-list custom-scroll"
+              items={viewportIds}
+              onLoadMore={getMore}
+            >
+              {viewportIds?.flatMap(
+                (peerId) => {
+                  const peer = usersById[peerId] || chatsById[peerId];
+
+                  const peerReactions = reactors?.reactions.filter((reactor) => reactor.peerId === peerId);
+                  const items: React.ReactNode[] = [];
+                  const seenByUser = seenByDates?.[peerId];
+
+                  peerReactions?.forEach((r) => {
+                    if (chosenTab && !isSameReaction(r.reaction, chosenTab)) return;
+
+                    items.push(
+                      <ListItem
+                        key={`${peerId}-${getReactionKey(r.reaction)}`}
+                        className="chat-item-clickable reactors-list-item"
+
+                        onClick={() => handleClick(peerId)}
+                      >
+                        <Avatar peer={peer} size="medium" />
+                        <div className="info">
+                          <FullNameTitle peer={peer} withEmojiStatus />
+                          <span className="status" dir="auto">
+                            <Icon name="heart-outline" className="status-icon" />
+                            {formatDateAtTime(oldLang, r.addedDate * 1000)}
+                          </span>
+                        </div>
+                        {r.reaction && (
+                          <ReactionStaticEmoji
+                            className="reactors-list-emoji"
+                            reaction={r.reaction}
+                            availableReactions={availableReactions}
+                            size={DEFAULT_REACTION_SIZE}
+                          />
+                        )}
+                      </ListItem>,
+                    );
+                  });
+
+                  if (!chosenTab && !peerReactions?.length) {
+                    items.push(
+                      <ListItem
+                        key={`${peerId}-seen-by`}
+                        className="chat-item-clickable scroll-item small-icon"
+
+                        onClick={() => handleClick(peerId)}
+                      >
+                        <PrivateChatInfo
+                          userId={peerId}
+                          noStatusOrTyping
+                          avatarSize="medium"
+                          status={seenByUser ? formatDateAtTime(oldLang, seenByUser * 1000) : undefined}
+                          statusIcon="message-read"
+                        />
+                      </ListItem>,
+                    );
+                  }
+                  return items;
+                },
+              )}
+            </InfiniteScroll>
+          ) : <Loading />}
+        </Transition>
+      </div>
     </Modal>
   );
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const { chatId, messageId } = selectTabState(global).reactorModal || {};
     const message = chatId && messageId ? selectChatMessage(global, chatId, messageId) : undefined;
 
@@ -271,7 +316,8 @@ export default memo(withGlobal<OwnProps>(
       reactions: message?.reactions,
       reactors: message?.reactors,
       seenByDates: message?.seenByDates,
-      availableReactions: global.availableReactions,
+      availableReactions: global.reactions.availableReactions,
+      animationLevel: selectSharedSettings(global).animationLevel,
     };
   },
 )(ReactorListModal));

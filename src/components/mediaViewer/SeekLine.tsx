@@ -1,24 +1,29 @@
-import type { FC } from '../../lib/teact/teact';
-import React, {
+import { setExtraStyles } from '@teact/teact-dom';
+import {
   memo, useEffect, useLayoutEffect,
-  useMemo, useRef, useState,
+  useRef, useSignal, useState,
 } from '../../lib/teact/teact';
 
-import type { ApiDimensions } from '../../api/types';
 import type { BufferedRange } from '../../hooks/useBuffering';
+import { ApiMediaFormat, type StoryboardInfo } from '../../api/types';
 
-import { createVideoPreviews, getPreviewDimensions, renderVideoPreview } from '../../lib/video-preview/VideoPreview';
+import { DEBUG } from '../../config';
+import { requestMutation } from '../../lib/fasterdom/fasterdom';
+import { getDocumentMediaHash } from '../../global/helpers';
 import { animateNumber } from '../../util/animation';
+import { IS_TOUCH_ENV } from '../../util/browser/windowEnvironment';
 import buildClassName from '../../util/buildClassName';
+import buildStyle from '../../util/buildStyle';
 import { captureEvents } from '../../util/captureEvents';
-import { formatMediaDuration } from '../../util/dateFormat';
+import { formatMediaDuration } from '../../util/dates/dateFormat';
+import getPointerPosition from '../../util/events/getPointerPosition';
 import { clamp, round } from '../../util/math';
-import { IS_TOUCH_ENV } from '../../util/windowEnvironment';
+import StoryboardParser from '../../util/media/StoryboardParser';
 
 import { useThrottledSignal } from '../../hooks/useAsyncResolvers';
 import useCurrentTimeSignal from '../../hooks/useCurrentTimeSignal';
 import useLastCallback from '../../hooks/useLastCallback';
-import useSignal from '../../hooks/useSignal';
+import useMedia from '../../hooks/useMedia';
 import useVideoWaitingSignal from './hooks/useVideoWaitingSignal';
 
 import ShowTransition from '../ui/ShowTransition';
@@ -26,37 +31,32 @@ import ShowTransition from '../ui/ShowTransition';
 import styles from './SeekLine.module.scss';
 
 type OwnProps = {
-  url?: string;
+  storyboardInfo?: StoryboardInfo;
   duration: number;
   bufferedRanges: BufferedRange[];
   playbackRate: number;
   isActive?: boolean;
   isPlaying?: boolean;
-  isPreviewDisabled?: boolean;
   isReady: boolean;
-  posterSize?: ApiDimensions;
   onSeek: (position: number) => void;
   onSeekStart: () => void;
 };
 
 const LOCK_TIMEOUT = 250;
-let cancelAnimation: Function | undefined;
+let cancelAnimation: ReturnType<typeof animateNumber> | undefined;
 
-const SeekLine: FC<OwnProps> = ({
+const SeekLine = ({
+  storyboardInfo,
   duration,
   bufferedRanges,
   isReady,
-  posterSize,
   playbackRate,
-  url,
   isActive,
   isPlaying,
-  isPreviewDisabled,
   onSeek,
   onSeekStart,
-}) => {
-  // eslint-disable-next-line no-null/no-null
-  const seekerRef = useRef<HTMLDivElement>(null);
+}: OwnProps) => {
+  const seekerRef = useRef<HTMLDivElement>();
   const [getCurrentTimeSignal] = useCurrentTimeSignal();
   const [getIsWaiting] = useVideoWaitingSignal();
   const getCurrentTime = useThrottledSignal(getCurrentTimeSignal, LOCK_TIMEOUT);
@@ -66,33 +66,47 @@ const SeekLine: FC<OwnProps> = ({
   const isLockedRef = useRef<boolean>(false);
   const [isPreviewVisible, setPreviewVisible] = useState(false);
   const [isSeeking, setIsSeeking] = useState(false);
-  // eslint-disable-next-line no-null/no-null
-  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const previewRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const progressRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const previewTimeRef = useRef<HTMLDivElement>(null);
+  const previewContainerRef = useRef<HTMLDivElement>();
+  const previewRef = useRef<HTMLDivElement>();
+  const progressRef = useRef<HTMLDivElement>();
+  const previewTimeRef = useRef<HTMLDivElement>();
+  const storyboardParser = useRef<StoryboardParser>();
 
-  const previewSize = useMemo(() => {
-    return getPreviewDimensions(posterSize?.width || 0, posterSize?.height || 0);
-  }, [posterSize]);
+  const storyboardHash = storyboardInfo && getDocumentMediaHash(storyboardInfo.storyboardFile, 'full');
+  const storyboardMapHash = storyboardInfo && getDocumentMediaHash(storyboardInfo.storyboardMapFile, 'full');
 
-  const setPreview = useLastCallback((time: number) => {
-    time = Math.floor(time);
-    setPreviewTime(time);
-    renderVideoPreview(time);
-  });
-
-  useEffect(() => {
-    if (isPreviewDisabled || !url || !isReady) return undefined;
-    return createVideoPreviews(url, previewCanvasRef.current!);
-  }, [url, isReady, isPreviewDisabled]);
+  const storyboardUrl = useMedia(storyboardHash, !isReady);
+  const storyboardMapData = useMedia(storyboardMapHash, !isReady, ApiMediaFormat.Text);
 
   useEffect(() => {
     setPreviewVisible(false);
   }, [isActive]);
+
+  useEffect(() => {
+    if (!storyboardMapData) return;
+    try {
+      storyboardParser.current = new StoryboardParser(storyboardMapData);
+    } catch (error) {
+      if (DEBUG) {
+        // eslint-disable-next-line no-console
+        console.error(`Error parsing storyboard map data`, error, storyboardMapData);
+      }
+    }
+  }, [storyboardMapData]);
+
+  const setPreview = useLastCallback((time: number) => {
+    const previewContainer = previewContainerRef.current;
+    if (!storyboardParser.current || !previewContainer) return;
+    const frame = storyboardParser.current.getNearestPreview(time);
+
+    setPreviewTime(Math.floor(frame.time));
+
+    requestMutation(() => {
+      setExtraStyles(previewContainer, {
+        backgroundPosition: `${-frame.left}px ${-frame.top}px`,
+      });
+    });
+  });
 
   useEffect(() => {
     if (cancelAnimation) cancelAnimation();
@@ -157,9 +171,9 @@ const SeekLine: FC<OwnProps> = ({
     let offset = 0;
 
     const getPreviewProps = (e: MouseEvent | TouchEvent) => {
-      const pageX = e instanceof MouseEvent ? e.pageX : e.touches[0].pageX;
+      const pageX = getPointerPosition(e).x;
       const t = clamp(duration * ((pageX - seekerSize.left) / seekerSize.width), 0, duration);
-      if (isPreviewDisabled) return [t, 0];
+      if (!storyboardInfo) return [t, 0];
       if (!seekerSize.width) seekerSize = seeker.getBoundingClientRect();
       const preview = previewRef.current!;
       const o = clamp(
@@ -209,7 +223,7 @@ const SeekLine: FC<OwnProps> = ({
       onDrag: handleSeek,
     });
 
-    if (IS_TOUCH_ENV || isPreviewDisabled) {
+    if (IS_TOUCH_ENV) {
       return cleanup;
     }
 
@@ -235,29 +249,27 @@ const SeekLine: FC<OwnProps> = ({
       seeker.removeEventListener('mouseleave', handleSeekMouseLeave);
     };
   }, [
-    duration,
-    setPreview,
-    isActive,
-    onSeek,
-    onSeekStart,
-    setPreviewOffset,
-    setSelectedTime,
-    setIsSeeking,
-    isPreviewDisabled,
-    playbackRate,
+    duration, setPreview, isActive, onSeek, onSeekStart, setPreviewOffset, setSelectedTime, setIsSeeking,
+    isPreviewVisible, playbackRate, storyboardInfo,
   ]);
 
   return (
     <div className={styles.container} ref={seekerRef}>
-      {!isPreviewDisabled && (
+      {storyboardInfo && (
         <ShowTransition
           isOpen
           isHidden={!isPreviewVisible}
           className={styles.preview}
-          style={`width: ${previewSize.width}px; height: ${previewSize.height}px`}
+          style={`width: ${storyboardInfo.frameSize.width}px; height: ${storyboardInfo.frameSize.height}px`}
           ref={previewRef}
         >
-          <canvas className={styles.previewCanvas} ref={previewCanvasRef} />
+          <div
+            ref={previewContainerRef}
+            style={buildStyle(
+              `background-image: url(${storyboardUrl});`,
+            )}
+            className={styles.previewContainer}
+          />
           <div className={styles.previewTime}>
             <span className={styles.previewTimeText} ref={previewTimeRef} />
           </div>

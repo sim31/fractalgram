@@ -1,22 +1,22 @@
-import React, { type FC, memo, useEffect } from '../../lib/teact/teact';
+import { useEffect } from '../../lib/teact/teact';
 
-import { formatMediaDuration } from '../../util/dateFormat';
+import { formatMediaDuration } from '../../util/dates/dateFormat';
 import { getServerTime } from '../../util/serverTime';
 
+import useInterval from '../../hooks/schedulers/useInterval';
 import useForceUpdate from '../../hooks/useForceUpdate';
-import useInterval from '../../hooks/useInterval';
-import useLang from '../../hooks/useLang';
+
+import AnimatedCounter from '../common/AnimatedCounter';
 
 type OwnProps = {
-  langKey: string;
   endsAt: number;
+  shouldShowZeroOnEnd?: boolean;
   onEnd?: NoneToVoidFunction;
 };
 
 const UPDATE_FREQUENCY = 500; // Sometimes second gets skipped if using 1000
 
-const TextTimer: FC<OwnProps> = ({ langKey, endsAt, onEnd }) => {
-  const lang = useLang();
+const TextTimer = ({ endsAt, shouldShowZeroOnEnd, onEnd }: OwnProps) => {
   const forceUpdate = useForceUpdate();
 
   const serverTime = getServerTime();
@@ -29,16 +29,28 @@ const TextTimer: FC<OwnProps> = ({ langKey, endsAt, onEnd }) => {
     }
   }, [isActive, onEnd]);
 
-  if (!isActive) return undefined;
+  if (!isActive && !shouldShowZeroOnEnd) return undefined;
 
-  const timeLeft = endsAt - serverTime;
-  const formattedTime = formatMediaDuration(timeLeft);
+  const timeLeft = Math.max(0, endsAt - serverTime);
+  const time = formatMediaDuration(timeLeft);
+
+  const timeParts = time.split(':');
+  const timeCounter = (
+    <span style="font-variant-numeric: tabular-nums;">
+      {timeParts.map((part, index) => (
+        <>
+          {index > 0 && ':'}
+          <AnimatedCounter key={index} text={part} />
+        </>
+      ))}
+    </span>
+  );
 
   return (
     <span>
-      {lang(langKey, formattedTime)}
+      {timeCounter}
     </span>
   );
 };
 
-export default memo(TextTimer);
+export default TextTimer;

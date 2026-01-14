@@ -1,16 +1,33 @@
 import { Api as GramJs } from '../../../lib/gramjs';
 
-import type { ApiPrivacyKey } from '../../../types';
 import type {
-  ApiConfig, ApiCountry, ApiLangString,
-  ApiSession, ApiUrlAuthResult, ApiWallpaper, ApiWebSession,
+  ApiChatLink,
+  ApiCollectibleInfo,
+  ApiConfig,
+  ApiCountry,
+  ApiLanguage,
+  ApiOldLangString,
+  ApiPasskey,
+  ApiPendingSuggestion,
+  ApiPrivacyKey,
+  ApiPromoData,
+  ApiRestrictionReason,
+  ApiSession,
+  ApiTimezone,
+  ApiUrlAuthResult,
+  ApiWallpaper,
+  ApiWebSession,
+  LangPackStringValue,
 } from '../../types';
 
-import { omit, pick } from '../../../util/iteratees';
-import { getServerTime } from '../../../util/serverTime';
-import { addUserToLocalDb } from '../helpers';
+import {
+  omit, omitUndefined, pick,
+} from '../../../util/iteratees';
+import { toJSNumber } from '../../../util/numbers';
+import { addUserToLocalDb } from '../helpers/localDb';
+import { buildApiFormattedText } from './common';
 import { omitVirtualClassFields } from './helpers';
-import { buildApiDocument } from './messageContent';
+import { buildApiDocument, buildMessageTextContent } from './messageContent';
 import { buildApiPeerId, getApiChatIdFromMtpPeer } from './peers';
 import { buildApiReaction } from './reactions';
 import { buildApiUser } from './users';
@@ -81,46 +98,17 @@ export function buildPrivacyKey(key: GramJs.TypePrivacyKey): ApiPrivacyKey | und
       return 'voiceMessages';
     case 'PrivacyKeyChatInvite':
       return 'chatInvite';
+    case 'PrivacyKeyAbout':
+      return 'bio';
+    case 'PrivacyKeyBirthday':
+      return 'birthday';
+    case 'PrivacyKeyStarGiftsAutoSave':
+      return 'gifts';
+    case 'PrivacyKeyNoPaidMessages':
+      return 'noPaidMessages';
   }
 
   return undefined;
-}
-
-export function buildApiNotifyException(
-  notifySettings: GramJs.TypePeerNotifySettings, peer: GramJs.TypePeer,
-) {
-  const {
-    silent, muteUntil, showPreviews, otherSound,
-  } = notifySettings;
-
-  const hasSound = Boolean(otherSound && !(otherSound instanceof GramJs.NotificationSoundNone));
-
-  return {
-    chatId: getApiChatIdFromMtpPeer(peer),
-    isMuted: silent || (typeof muteUntil === 'number' && getServerTime() < muteUntil),
-    ...(!hasSound && { isSilent: true }),
-    ...(showPreviews !== undefined && { shouldShowPreviews: Boolean(showPreviews) }),
-    muteUntil,
-  };
-}
-
-export function buildApiNotifyExceptionTopic(
-  notifySettings: GramJs.TypePeerNotifySettings, peer: GramJs.TypePeer, topicId: number,
-) {
-  const {
-    silent, muteUntil, showPreviews, otherSound,
-  } = notifySettings;
-
-  const hasSound = Boolean(otherSound && !(otherSound instanceof GramJs.NotificationSoundNone));
-
-  return {
-    chatId: getApiChatIdFromMtpPeer(peer),
-    topicId,
-    isMuted: silent || (typeof muteUntil === 'number' && getServerTime() < muteUntil),
-    ...(!hasSound && { isSilent: true }),
-    ...(showPreviews !== undefined && { shouldShowPreviews: Boolean(showPreviews) }),
-    muteUntil,
-  };
 }
 
 function buildApiCountry(country: GramJs.help.Country, code: GramJs.help.CountryCode) {
@@ -208,27 +196,168 @@ export function buildApiUrlAuthResult(result: GramJs.TypeUrlAuthResult): ApiUrlA
 }
 
 export function buildApiConfig(config: GramJs.Config): ApiConfig {
-  const defaultReaction = config.reactionsDefault && buildApiReaction(config.reactionsDefault);
+  const {
+    testMode, expires, gifSearchUsername, chatSizeMax, autologinToken, reactionsDefault,
+    messageLengthMax, editTimeLimit, forwardedCountMax,
+  } = config;
+  const defaultReaction = reactionsDefault && buildApiReaction(reactionsDefault);
   return {
-    expiresAt: config.expires,
-    gifSearchUsername: config.gifSearchUsername,
+    isTestServer: testMode,
+    expiresAt: expires,
+    gifSearchUsername,
     defaultReaction,
-    maxGroupSize: config.chatSizeMax,
-    autologinToken: config.autologinToken,
+    maxGroupSize: chatSizeMax,
+    autologinToken,
+    maxMessageLength: messageLengthMax,
+    editTimeLimit,
+    maxForwardedCount: forwardedCountMax,
   };
 }
 
-export function buildLangPack(mtpLangPack: GramJs.LangPackDifference) {
-  return mtpLangPack.strings.reduce<Record<string, ApiLangString | undefined>>((acc, mtpString) => {
-    acc[mtpString.key] = buildLangPackString(mtpString);
+export function buildApiPromoData(promoData: GramJs.help.PromoData): ApiPromoData {
+  const {
+    expires, pendingSuggestions, dismissedSuggestions, customPendingSuggestion,
+  } = promoData;
+  return {
+    expires,
+    pendingSuggestions,
+    dismissedSuggestions,
+    customPendingSuggestion: customPendingSuggestion ? buildApiPendingSuggestion(customPendingSuggestion) : undefined,
+  };
+}
+
+function buildApiPendingSuggestion(pendingSuggestion: GramJs.TypePendingSuggestion): ApiPendingSuggestion {
+  const {
+    suggestion, title, description, url,
+  } = pendingSuggestion;
+  return {
+    suggestion,
+    title: buildApiFormattedText(title),
+    description: buildApiFormattedText(description),
+    url,
+  };
+}
+
+export function oldBuildLangPack(mtpLangPack: GramJs.LangPackDifference) {
+  return mtpLangPack.strings.reduce<Record<string, ApiOldLangString | undefined>>((acc, mtpString) => {
+    acc[mtpString.key] = oldBuildLangPackString(mtpString);
     return acc;
   }, {});
 }
 
-export function buildLangPackString(mtpString: GramJs.TypeLangPackString) {
+function oldBuildLangPackString(mtpString: GramJs.TypeLangPackString) {
   return mtpString instanceof GramJs.LangPackString
     ? mtpString.value
     : mtpString instanceof GramJs.LangPackStringPluralized
       ? omit(omitVirtualClassFields(mtpString), ['key'])
       : undefined;
+}
+
+export function buildLangStrings(strings: GramJs.TypeLangPackString[]) {
+  const keysToRemove: string[] = [];
+  const apiStrings = strings.reduce<Record<string, LangPackStringValue>>((acc, mtpString) => {
+    if (mtpString instanceof GramJs.LangPackStringDeleted) {
+      keysToRemove.push(mtpString.key);
+    }
+
+    if (mtpString instanceof GramJs.LangPackString) {
+      acc[mtpString.key] = mtpString.value;
+    }
+
+    if (mtpString instanceof GramJs.LangPackStringPluralized) {
+      acc[mtpString.key] = omitUndefined({
+        zero: mtpString.zeroValue,
+        one: mtpString.oneValue,
+        two: mtpString.twoValue,
+        few: mtpString.fewValue,
+        many: mtpString.manyValue,
+        other: mtpString.otherValue,
+      });
+    }
+
+    return acc;
+  }, {});
+
+  return {
+    keysToRemove,
+    strings: apiStrings,
+  };
+}
+
+export function buildApiLanguage(lang: GramJs.TypeLangPackLanguage): ApiLanguage {
+  const {
+    name, nativeName, langCode, pluralCode, rtl, stringsCount, translatedCount, translationsUrl, beta, official,
+  } = lang;
+  return {
+    name,
+    nativeName,
+    langCode,
+    pluralCode,
+    isRtl: rtl,
+    isBeta: beta,
+    isOfficial: official,
+    stringsCount,
+    translatedCount,
+    translationsUrl,
+  };
+}
+
+export function buildApiTimezone(timezone: GramJs.TypeTimezone): ApiTimezone {
+  const { id, name, utcOffset } = timezone;
+  return {
+    id,
+    name,
+    utcOffset,
+  };
+}
+
+export function buildApiChatLink(data: GramJs.account.ResolvedBusinessChatLinks): ApiChatLink {
+  const chatId = getApiChatIdFromMtpPeer(data.peer);
+  return {
+    chatId,
+    text: buildMessageTextContent(data.message, data.entities),
+  };
+}
+
+export function buildApiCollectibleInfo(info: GramJs.fragment.TypeCollectibleInfo): ApiCollectibleInfo {
+  const {
+    amount,
+    currency,
+    cryptoAmount,
+    cryptoCurrency,
+    purchaseDate,
+    url,
+  } = info;
+
+  return {
+    amount: toJSNumber(amount),
+    currency,
+    cryptoAmount: toJSNumber(cryptoAmount),
+    cryptoCurrency,
+    purchaseDate,
+    url,
+  };
+}
+
+export function buildApiRestrictionReasons(
+  restrictionReasons?: GramJs.RestrictionReason[],
+): ApiRestrictionReason[] | undefined {
+  if (!restrictionReasons) {
+    return undefined;
+  }
+
+  return restrictionReasons.map((
+    { reason, text, platform }) =>
+    ({ reason, text, platform }));
+}
+
+export function buildApiPasskey(passkey: GramJs.TypePasskey): ApiPasskey {
+  const { id, name, date, softwareEmojiId, lastUsageDate } = passkey;
+  return {
+    id,
+    name,
+    date,
+    softwareEmojiId: softwareEmojiId?.toString(),
+    lastUsageDate,
+  };
 }

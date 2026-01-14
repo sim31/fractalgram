@@ -1,22 +1,25 @@
 import type { FC } from '../../lib/teact/teact';
-import React from '../../lib/teact/teact';
+import type React from '../../lib/teact/teact';
 import { getActions, getGlobal, withGlobal } from '../../global';
 
 import type { TabState } from '../../global/types';
 import { ApiMediaFormat } from '../../api/types';
 
+import { FOLDERS_POSITION_LEFT } from '../../config';
 import { getChatAvatarHash } from '../../global/helpers/chats'; // Direct import for better module splitting
-import { selectIsRightColumnShown, selectTabState } from '../../global/selectors';
+import { selectAreFoldersPresent, selectIsRightColumnShown, selectTabState } from '../../global/selectors';
+import { selectSharedSettings } from '../../global/selectors/sharedState';
 import buildClassName from '../../util/buildClassName';
 import { preloadImage } from '../../util/files';
 import preloadFonts from '../../util/fonts';
+import { localizationReadyPromise } from '../../util/localization';
 import * as mediaLoader from '../../util/mediaLoader';
 import { Bundles, loadModule } from '../../util/moduleLoader';
 import { pause } from '../../util/schedulers';
 
 import useEffectOnce from '../../hooks/useEffectOnce';
 import useFlag from '../../hooks/useFlag';
-import useShowTransition from '../../hooks/useShowTransition';
+import useShowTransitionDeprecated from '../../hooks/useShowTransitionDeprecated';
 
 // Workaround for incorrect bundling by Webpack: force including in the main chunk
 import '../ui/Modal.scss';
@@ -47,6 +50,7 @@ type OwnProps = {
 type StateProps = Pick<TabState, 'uiReadyState' | 'shouldSkipHistoryAnimations'> & {
   isRightColumnShown?: boolean;
   leftColumnWidth?: number;
+  isFoldersSidebarShown?: boolean;
 };
 
 const MAX_PRELOAD_DELAY = 700;
@@ -59,7 +63,7 @@ function preloadAvatars() {
     return undefined;
   }
 
-  return Promise.all(listIds.active.slice(0, AVATARS_TO_PRELOAD).map((chatId) => {
+  return Promise.all(listIds.active.slice(0, AVATARS_TO_PRELOAD).map(async (chatId) => {
     const chat = byId[chatId];
     if (!chat) {
       return undefined;
@@ -80,6 +84,7 @@ const preloadTasks = {
       .then(preloadFonts),
     preloadAvatars(),
     preloadImage(spoilerMaskPath),
+    localizationReadyPromise,
   ]),
   authPhoneNumber: () => Promise.all([
     preloadFonts(),
@@ -102,13 +107,14 @@ const UiLoader: FC<OwnProps & StateProps> = ({
   isRightColumnShown,
   shouldSkipHistoryAnimations,
   leftColumnWidth,
+  isFoldersSidebarShown,
 }) => {
   const { setIsUiReady } = getActions();
 
   const [isReady, markReady] = useFlag();
   const {
     shouldRender: shouldRenderMask, transitionClassNames,
-  } = useShowTransition(!isReady, undefined, true);
+  } = useShowTransitionDeprecated(!isReady, undefined, true);
 
   useEffectOnce(() => {
     let timeout: number | undefined;
@@ -149,7 +155,8 @@ const UiLoader: FC<OwnProps & StateProps> = ({
       {shouldRenderMask && !shouldSkipHistoryAnimations && Boolean(page) && (
         <div className={buildClassName(styles.mask, transitionClassNames)}>
           {page === 'main' ? (
-            <div className={styles.main}>
+            <div className={buildClassName(styles.main, isFoldersSidebarShown && styles.foldersSidebarVisible)}>
+              {isFoldersSidebarShown && <div className={styles.foldersSidebar} />}
               <div
                 className={styles.left}
                 style={leftColumnWidth ? `width: ${leftColumnWidth}px` : undefined}
@@ -169,14 +176,17 @@ const UiLoader: FC<OwnProps & StateProps> = ({
 };
 
 export default withGlobal<OwnProps>(
-  (global, { isMobile }): StateProps => {
+  (global, { isMobile }): Complete<StateProps> => {
     const tabState = selectTabState(global);
+
+    const { foldersPosition } = selectSharedSettings(global);
 
     return {
       shouldSkipHistoryAnimations: tabState.shouldSkipHistoryAnimations,
       uiReadyState: tabState.uiReadyState,
       isRightColumnShown: selectIsRightColumnShown(global, isMobile),
       leftColumnWidth: global.leftColumnWidth,
+      isFoldersSidebarShown: foldersPosition === FOLDERS_POSITION_LEFT && !isMobile && selectAreFoldersPresent(global),
     };
   },
 )(UiLoader);

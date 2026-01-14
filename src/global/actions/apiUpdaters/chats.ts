@@ -1,21 +1,31 @@
-import type { ApiMessage, ApiUpdateChat } from '../../../api/types';
+import type { ApiChat, ApiMessage, ApiUpdateChat } from '../../../api/types';
 import type { ActionReturnType } from '../../types';
 import { MAIN_THREAD_ID } from '../../../api/types';
 
-import { ARCHIVED_FOLDER_ID, MAX_ACTIVE_PINNED_CHATS } from '../../../config';
+import { ARCHIVED_FOLDER_ID, MAX_ACTIVE_PINNED_CHATS, SERVICE_NOTIFICATIONS_USER_ID } from '../../../config';
 import { buildCollectionByKey, omit } from '../../../util/iteratees';
+import { isLocalMessageId } from '../../../util/keys/messageKey';
 import { closeMessageNotifications, notifyAboutMessage } from '../../../util/notifications';
+import { checkIfHasUnreadReactions, isChatChannel } from '../../helpers';
 import {
   addActionHandler, getGlobal, setGlobal,
 } from '../../index';
 import {
+  addChatListIds,
+  addUnreadMentions,
+  deleteChatMessages,
+  deletePeerPhoto,
   leaveChat,
+  removeUnreadMentions,
+  replaceChatMessages,
+  replacePeerPhotos,
+  replacePinnedTopicIds,
   replaceThreadParam,
   updateChat,
   updateChatFullInfo,
-  updateChatListIds,
   updateChatListType,
   updatePeerStoriesHidden,
+  updateThreadInfo,
   updateTopic,
 } from '../../reducers';
 import { updateUnreadReactions } from '../../reducers/reactions';
@@ -24,20 +34,27 @@ import {
   selectChat,
   selectChatFullInfo,
   selectChatListType,
+  selectChatMessages,
   selectCommonBoxChatId,
   selectCurrentMessageList,
   selectIsChatListed,
+  selectPeer,
   selectTabState,
   selectThreadParam,
   selectTopicFromMessage,
 } from '../../selectors';
 
 const TYPING_STATUS_CLEAR_DELAY = 6000; // 6 seconds
+const INVALIDATE_FULL_CHAT_FIELDS = new Set<keyof ApiChat>([
+  'boostLevel', 'isForum', 'isLinkedInDiscussion', 'fakeType', 'restrictionReasons', 'isJoinToSend', 'isJoinRequest',
+  'type',
+]);
 
 addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
   switch (update['@type']) {
     case 'updateChat': {
-      const { isForum: prevIsForum, lastReadOutboxMessageId } = selectChat(global, update.id) || {};
+      const localChat = selectChat(global, update.id);
+      const { isForum: prevIsForum, lastReadOutboxMessageId } = localChat || {};
 
       if (update.chat.lastReadOutboxMessageId && lastReadOutboxMessageId
         && update.chat.lastReadOutboxMessageId < lastReadOutboxMessageId) {
@@ -47,18 +64,27 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
         };
       }
 
-      const localChat = selectChat(global, update.id);
-
-      global = updateChat(global, update.id, update.chat, update.newProfilePhoto);
+      global = updateChat(global, update.id, update.chat);
 
       if (localChat?.areStoriesHidden !== update.chat.areStoriesHidden) {
         global = updatePeerStoriesHidden(global, update.id, update.chat.areStoriesHidden || false);
       }
 
+      const localAdminRights = localChat?.adminRights;
+      const newAdminRights = update.chat.adminRights;
+
+      if (localAdminRights && localAdminRights.manageDirectMessages && !update.chat.isMin
+        && newAdminRights?.manageDirectMessages !== localAdminRights.manageDirectMessages
+        && localChat.linkedMonoforumId) {
+        global = replaceChatMessages(global, localChat.linkedMonoforumId, {});
+      }
+
       setGlobal(global);
 
-      if (!update.noTopChatsRequest && !selectIsChatListed(global, update.id)) {
-        // Chat can appear in dialogs list.
+      const updatedChat = selectChat(global, update.id);
+      if (!update.noTopChatsRequest && !selectIsChatListed(global, update.id)
+        && !updatedChat?.isNotJoined) {
+        // Reload top chats to update chat listing
         actions.loadTopChats();
       }
 
@@ -82,33 +108,72 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
         }
       });
 
+      if (localChat) {
+        const chatUpdate = update.chat;
+        const changedFields = (Object.keys(chatUpdate) as (keyof ApiChat)[])
+          .filter((key) => localChat[key] !== chatUpdate[key]);
+        if (changedFields.some((key) => INVALIDATE_FULL_CHAT_FIELDS.has(key))) {
+          actions.invalidateFullInfo({ peerId: update.id });
+        }
+      }
+
       return undefined;
     }
 
     case 'updateChatJoin': {
       const listType = selectChatListType(global, update.id);
+      const chat = selectChat(global, update.id);
+
+      global = updateChat(global, update.id, { isNotJoined: false });
+      setGlobal(global);
+
+      if (chat) {
+        actions.requestChatUpdate({ chatId: chat.id });
+      }
+
+      actions.loadFullChat({ chatId: update.id, force: true });
+
       if (!listType) {
         return undefined;
       }
 
-      global = updateChatListIds(global, listType, [update.id]);
-      global = updateChat(global, update.id, { isNotJoined: false });
+      global = getGlobal();
+      global = addChatListIds(global, listType, [update.id]);
       setGlobal(global);
-
-      const chat = selectChat(global, update.id);
-      if (chat) {
-        actions.requestChatUpdate({ chatId: chat.id });
-      }
 
       return undefined;
     }
 
     case 'updateChatLeave': {
-      return leaveChat(global, update.id);
+      global = leaveChat(global, update.id);
+      const chat = selectChat(global, update.id);
+      if (chat && isChatChannel(chat)) {
+        const chatMessages = selectChatMessages(global, update.id);
+        if (chatMessages) {
+          const localMessageIds = Object.keys(chatMessages).map(Number).filter(isLocalMessageId);
+          global = deleteChatMessages(global, chat.id, localMessageIds);
+        }
+      }
+
+      return global;
     }
 
     case 'updateChatInbox': {
-      return updateChat(global, update.id, update.chat);
+      const { id, threadId, lastReadInboxMessageId, unreadCount } = update;
+      const chat = selectChat(global, id);
+      if (chat?.isBotForum && threadId) {
+        global = updateTopic(global, id, Number(threadId), {
+          unreadCount,
+        });
+        return updateThreadInfo(global, id, threadId, {
+          lastReadInboxMessageId,
+        });
+      } else {
+        return updateChat(global, id, {
+          lastReadInboxMessageId,
+          unreadCount,
+        });
+      }
     }
 
     case 'updateChatTypingStatus': {
@@ -131,9 +196,12 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
     case 'newMessage': {
       const { message } = update;
 
-      if (message.senderId === global.currentUserId && !message.isFromScheduled) {
+      const isOur = message.senderId ? message.senderId === global.currentUserId : message.isOutgoing;
+      if (isOur && !message.isFromScheduled) {
         return undefined;
       }
+
+      const isLocal = isLocalMessageId(message.id!);
 
       const chat = selectChat(global, update.chatId);
       if (!chat) {
@@ -142,22 +210,23 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
 
       const hasMention = Boolean(update.message.id && update.message.hasUnreadMention);
 
-      global = updateChat(global, update.chatId, {
-        unreadCount: chat.unreadCount ? chat.unreadCount + 1 : 1,
-        ...(hasMention && { unreadMentionsCount: (chat.unreadMentionsCount || 0) + 1 }),
-      });
-
-      if (hasMention) {
+      if (!isLocal || chat.id === SERVICE_NOTIFICATIONS_USER_ID) {
         global = updateChat(global, update.chatId, {
-          unreadMentions: [...(chat.unreadMentions || []), update.message.id!],
+          unreadCount: chat.unreadCount ? chat.unreadCount + 1 : 1,
         });
-      }
 
-      const topic = chat.isForum ? selectTopicFromMessage(global, message as ApiMessage) : undefined;
-      if (topic) {
-        global = updateTopic(global, update.chatId, topic.id, {
-          unreadCount: topic.unreadCount ? topic.unreadCount + 1 : 1,
-        });
+        if (hasMention) {
+          global = addUnreadMentions(global, update.chatId, chat, [update.message.id!], true);
+        }
+
+        const topic = chat.isForum ? selectTopicFromMessage(global, message as ApiMessage) : undefined;
+        if (topic) {
+          global = updateTopic(global, update.chatId, topic.id, {
+            unreadCount: topic.unreadCount ? topic.unreadCount + 1 : 1,
+          });
+        }
+
+        // TODO Replace draft with new message
       }
 
       setGlobal(global);
@@ -173,26 +242,21 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
     case 'updateCommonBoxMessages':
     case 'updateChannelMessages': {
       const { ids, messageUpdate } = update;
-      if (messageUpdate.hasUnreadMention !== false) {
-        return undefined;
-      }
 
       ids.forEach((id) => {
         const chatId = ('channelId' in update ? update.channelId : selectCommonBoxChatId(global, id))!;
         const chat = selectChat(global, chatId);
 
-        if (chat?.unreadReactionsCount) {
+        if (messageUpdate.reactions && chat?.unreadReactionsCount
+          && !checkIfHasUnreadReactions(global, messageUpdate.reactions)) {
           global = updateUnreadReactions(global, chatId, {
-            unreadReactionsCount: (chat.unreadReactionsCount - 1) || undefined,
+            unreadReactionsCount: Math.max(chat.unreadReactionsCount - 1, 0) || undefined,
             unreadReactions: chat.unreadReactions?.filter((i) => i !== id),
           });
         }
 
-        if (chat?.unreadMentionsCount) {
-          global = updateChat(global, chatId, {
-            unreadMentionsCount: (chat.unreadMentionsCount - 1) || undefined,
-            unreadMentions: chat.unreadMentions?.filter((i) => i !== id),
-          });
+        if (!messageUpdate.hasUnreadMention && chat?.unreadMentionsCount) {
+          global = removeUnreadMentions(global, chatId, chat, [id], true);
         }
       });
 
@@ -206,6 +270,10 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
     case 'updatePinnedChatIds': {
       const { ids, folderId } = update;
       const listType = folderId === ARCHIVED_FOLDER_ID ? 'archived' : 'active';
+      if (!ids) {
+        actions.loadPinnedDialogs({ listType });
+        return global;
+      }
 
       return {
         ...global,
@@ -214,6 +282,21 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
           orderedPinnedIds: {
             ...global.chats.orderedPinnedIds,
             [listType]: ids.length ? ids : undefined,
+          },
+        },
+      };
+    }
+
+    case 'updatePinnedSavedDialogIds': {
+      const { ids } = update;
+
+      return {
+        ...global,
+        chats: {
+          ...global.chats,
+          orderedPinnedIds: {
+            ...global.chats.orderedPinnedIds,
+            saved: ids.length ? ids : undefined,
           },
         },
       };
@@ -251,6 +334,30 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
           orderedPinnedIds: {
             ...global.chats.orderedPinnedIds,
             [listType]: newOrderedPinnedIds.length ? newOrderedPinnedIds : undefined,
+          },
+        },
+      };
+    }
+
+    case 'updateSavedDialogPinned': {
+      const { id, isPinned } = update;
+
+      const { saved: orderedPinnedIds } = global.chats.orderedPinnedIds;
+
+      let newOrderedPinnedIds = orderedPinnedIds || [];
+      if (!isPinned) {
+        newOrderedPinnedIds = newOrderedPinnedIds.filter((pinnedId) => pinnedId !== id);
+      } else if (!newOrderedPinnedIds.includes(id)) {
+        newOrderedPinnedIds = [id, ...newOrderedPinnedIds];
+      }
+
+      return {
+        ...global,
+        chats: {
+          ...global.chats,
+          orderedPinnedIds: {
+            ...global.chats.orderedPinnedIds,
+            saved: newOrderedPinnedIds.length ? newOrderedPinnedIds : undefined,
           },
         },
       };
@@ -364,42 +471,18 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       return undefined;
     }
 
-    case 'deleteProfilePhotos': {
-      const { chatId, ids } = update;
-      const chat = global.chats.byId[chatId];
-
-      if (chat?.photos) {
-        return updateChat(global, chatId, {
-          photos: chat.photos.filter((photo) => !ids.includes(photo.id)),
-        });
-      }
-
-      return undefined;
-    }
-
     case 'draftMessage': {
       const {
-        chatId, formattedText, date, replyingToId, threadId,
+        chatId, threadId, draft,
       } = update;
       const chat = global.chats.byId[chatId];
       if (!chat) {
         return undefined;
       }
 
-      global = replaceThreadParam(global, chatId, threadId || MAIN_THREAD_ID, 'draft', formattedText);
-      global = replaceThreadParam(global, chatId, threadId || MAIN_THREAD_ID, 'replyingToId', replyingToId);
-      global = updateChat(global, chatId, { draftDate: date });
+      global = replaceThreadParam(global, chatId, threadId || MAIN_THREAD_ID, 'draft', draft);
+      global = updateChat(global, chatId, { draftDate: draft?.date });
       return global;
-    }
-
-    case 'showInvite': {
-      const { data } = update;
-
-      Object.values(global.byTabId).forEach(({ id: tabId }) => {
-        actions.showDialog({ data, tabId });
-      });
-
-      return undefined;
     }
 
     case 'updatePendingJoinRequests': {
@@ -441,9 +524,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       const chat = global.chats.byId[chatId];
       if (!chat) return undefined;
 
-      global = updateChat(global, chatId, {
-        orderedPinnedTopicIds: order,
-      });
+      global = replacePinnedTopicIds(global, chatId, order);
       setGlobal(global);
 
       return undefined;
@@ -469,6 +550,55 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       actions.loadTopics({ chatId, force: true });
 
       return undefined;
+    }
+
+    case 'updateViewForumAsMessages': {
+      const { chatId, isEnabled } = update;
+
+      const chat = selectChat(global, chatId);
+      if (!chat?.isForum) return undefined;
+
+      global = updateChat(global, chatId, {
+        isForumAsMessages: isEnabled,
+      });
+      setGlobal(global);
+      break;
+    }
+
+    case 'updateNewProfilePhoto': {
+      const { peerId, photo } = update;
+
+      global = updateChat(global, peerId, {
+        avatarPhotoId: photo.id,
+      });
+      setGlobal(global);
+
+      actions.loadMoreProfilePhotos({ peerId, shouldInvalidateCache: true });
+
+      break;
+    }
+
+    case 'updateDeleteProfilePhoto': {
+      const { peerId, photoId } = update;
+
+      const peer = selectPeer(global, peerId);
+      if (!peer) {
+        return undefined;
+      }
+
+      if (!photoId || peer.avatarPhotoId === photoId) {
+        global = updateChat(global, peerId, {
+          avatarPhotoId: undefined,
+        });
+        global = replacePeerPhotos(global, peerId, undefined);
+      } else {
+        global = deletePeerPhoto(global, peerId, photoId);
+      }
+      setGlobal(global);
+
+      actions.loadMoreProfilePhotos({ peerId, shouldInvalidateCache: true });
+
+      break;
     }
   }
 

@@ -1,11 +1,11 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useMemo, useRef,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiSticker, ApiStickerSet } from '../../../api/types';
-import type { ISettings } from '../../../types';
+import type { AccountSettings } from '../../../types';
 
 import { selectCanPlayAnimatedEmojis } from '../../../global/selectors';
 import { pick } from '../../../util/iteratees';
@@ -13,7 +13,7 @@ import renderText from '../../common/helpers/renderText';
 
 import useHistoryBack from '../../../hooks/useHistoryBack';
 import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
-import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 
 import StickerSetCard from '../../common/StickerSetCard';
 import Checkbox from '../../ui/Checkbox';
@@ -23,7 +23,7 @@ type OwnProps = {
   onReset: () => void;
 };
 
-type StateProps = Pick<ISettings, (
+type StateProps = Pick<AccountSettings, (
   'shouldSuggestCustomEmoji'
 )> & {
   customEmojiSetIds?: string[];
@@ -40,10 +40,9 @@ const SettingsCustomEmoji: FC<OwnProps & StateProps> = ({
   onReset,
 }) => {
   const { openStickerSet, setSettingOption } = getActions();
-  const lang = useLang();
+  const lang = useOldLang();
 
-  // eslint-disable-next-line no-null/no-null
-  const stickerSettingsRef = useRef<HTMLDivElement>(null);
+  const stickerSettingsRef = useRef<HTMLDivElement>();
   const { observe: observeIntersectionForCovers } = useIntersectionObserver({ rootRef: stickerSettingsRef });
 
   useHistoryBack({
@@ -95,7 +94,7 @@ const SettingsCustomEmoji: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     return {
       ...pick(global.settings.byKey, [
         'shouldSuggestCustomEmoji',

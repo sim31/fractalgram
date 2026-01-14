@@ -1,5 +1,5 @@
-import type { FC, TeactNode } from '../../lib/teact/teact';
-import React, { memo, useRef, useState } from '../../lib/teact/teact';
+import type { ElementRef, FC } from '../../lib/teact/teact';
+import { memo, useRef, useState } from '../../lib/teact/teact';
 import { getGlobal } from '../../global';
 
 import type { ObserveFn } from '../../hooks/useIntersectionObserver';
@@ -18,22 +18,22 @@ import StickerView from './StickerView';
 import styles from './CustomEmoji.module.scss';
 
 import blankImg from '../../assets/blank.png';
-import svgPlaceholder from '../../assets/square.svg';
 
 type OwnProps = {
-  ref?: React.RefObject<HTMLDivElement>;
+  ref?: ElementRef<HTMLDivElement>;
   documentId: string;
-  children?: TeactNode;
-  size?: number;
   className?: string;
-  loopLimit?: number;
   style?: string;
+  size?: number;
   isBig?: boolean;
   noPlay?: boolean;
-  withGridFix?: boolean;
+  noVideoOnMobile?: boolean;
+  loopLimit?: number;
+  shouldNotLoop?: boolean;
+  isSelectable?: boolean;
   withSharedAnimation?: boolean;
-  sharedCanvasRef?: React.RefObject<HTMLCanvasElement>;
-  sharedCanvasHqRef?: React.RefObject<HTMLCanvasElement>;
+  sharedCanvasRef?: ElementRef<HTMLCanvasElement>;
+  sharedCanvasHqRef?: ElementRef<HTMLCanvasElement>;
   withTranslucentThumb?: boolean;
   shouldPreloadPreview?: boolean;
   forceOnHeavyAnimation?: boolean;
@@ -49,13 +49,15 @@ const STICKER_SIZE = 20;
 const CustomEmoji: FC<OwnProps> = ({
   ref,
   documentId,
+  className,
+  style,
   size = STICKER_SIZE,
   isBig,
   noPlay,
-  className,
+  noVideoOnMobile,
   loopLimit,
-  style,
-  withGridFix,
+  shouldNotLoop,
+  isSelectable,
   withSharedAnimation,
   sharedCanvasRef,
   sharedCanvasHqRef,
@@ -68,8 +70,7 @@ const CustomEmoji: FC<OwnProps> = ({
   onClick,
   onAnimationEnd,
 }) => {
-  // eslint-disable-next-line no-null/no-null
-  let containerRef = useRef<HTMLDivElement>(null);
+  let containerRef = useRef<HTMLDivElement>();
   if (ref) {
     containerRef = ref;
   }
@@ -78,10 +79,10 @@ const CustomEmoji: FC<OwnProps> = ({
   const { customEmoji, canPlay } = useCustomEmoji(documentId);
 
   const loopCountRef = useRef(0);
-  const [shouldLoop, setShouldLoop] = useState(true);
+  const [shouldPlay, setShouldPlay] = useState(true);
 
   const hasCustomColor = customEmoji?.shouldUseTextColor;
-  const customColor = useDynamicColorListener(containerRef, !hasCustomColor);
+  const customColor = useDynamicColorListener(containerRef, undefined, !hasCustomColor);
 
   const handleVideoEnded = useLastCallback((e) => {
     if (!loopLimit) return;
@@ -89,7 +90,7 @@ const CustomEmoji: FC<OwnProps> = ({
     loopCountRef.current += 1;
 
     if (loopCountRef.current >= loopLimit) {
-      setShouldLoop(false);
+      setShouldPlay(false);
       e.currentTarget.currentTime = 0;
     } else {
       // Loop manually
@@ -102,9 +103,8 @@ const CustomEmoji: FC<OwnProps> = ({
 
     loopCountRef.current += 1;
 
-    // Sticker plays 1 more time after disabling loop
-    if (loopCountRef.current >= loopLimit - 1) {
-      setShouldLoop(false);
+    if (loopCountRef.current >= loopLimit) {
+      setShouldPlay(false);
     }
   });
 
@@ -118,7 +118,6 @@ const CustomEmoji: FC<OwnProps> = ({
         className,
         'custom-emoji',
         'emoji',
-        withGridFix && styles.withGridFix,
       )}
       onClick={onClick}
       onAnimationEnd={onAnimationEnd}
@@ -127,19 +126,29 @@ const CustomEmoji: FC<OwnProps> = ({
       data-alt={customEmoji?.emoji}
       style={style}
     >
-      <img className={styles.highlightCatch} src={blankImg} alt={customEmoji?.emoji} draggable={false} />
+      {isSelectable && (
+        <img
+          className={styles.highlightCatch}
+          src={blankImg}
+          alt={customEmoji?.emoji}
+          data-entity-type={ApiMessageEntityTypes.CustomEmoji}
+          data-document-id={documentId}
+          draggable={false}
+        />
+      )}
       {!customEmoji ? (
-        <img className={styles.thumb} src={svgPlaceholder} alt="Emoji" draggable={false} />
+        <div className={buildClassName(styles.placeholder)} draggable={false} />
       ) : (
         <StickerView
           containerRef={containerRef}
           sticker={customEmoji}
           isSmall={!isBig}
           size={size}
-          noPlay={noPlay || !canPlay}
+          noPlay={noPlay || !(shouldPlay && canPlay)}
+          noVideoOnMobile={noVideoOnMobile}
           thumbClassName={styles.thumb}
           fullMediaClassName={styles.media}
-          shouldLoop={shouldLoop}
+          shouldLoop={!shouldNotLoop}
           loopLimit={loopLimit}
           shouldPreloadPreview={shouldPreloadPreview || noPlay || !canPlay}
           forceOnHeavyAnimation={forceOnHeavyAnimation}

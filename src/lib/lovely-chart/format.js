@@ -1,4 +1,4 @@
-import { MONTHS, WEEK_DAYS, WEEK_DAYS_SHORT } from './constants';
+import { MONTHS, WEEK_DAYS, WEEK_DAYS_SHORT } from './constants.js';
 
 export function statsFormatDayHour(labels) {
   return labels.map((value) => ({
@@ -60,6 +60,10 @@ function keepThreeDigits(value, decimals) {
 
 export function formatInteger(n) {
   return String(n).replace(/\d(?=(\d{3})+$)/g, '$& ');
+}
+
+export function formatCryptoValue(n) {
+  return Number(n / 10 ** 9);
 }
 
 export function getFullLabelDate(label, { isShort = false } = {}) {

@@ -13,7 +13,7 @@ import useLastCallback from '../../../../hooks/useLastCallback';
 import useSyncEffect from '../../../../hooks/useSyncEffect';
 
 const THROTTLE = 300;
-const INLINE_BOT_QUERY_REGEXP = /^@([a-z0-9_]{1,32})[\u00A0\u0020]+(.*)/i;
+const INLINE_BOT_QUERY_REGEXP = /^@([a-z0-9_]{1,32})[\u00A0\u0020]+(.*)/is;
 const HAS_NEW_LINE = /^@([a-z0-9_]{1,32})[\u00A0\u0020]+\n{2,}/i;
 const MEMO_NO_RESULT = {
   username: '',
@@ -68,7 +68,7 @@ export default function useInlineBotTooltip(
     help,
   } = (usernameLowered && inlineBots?.[usernameLowered]) || {};
 
-  const isOpen = Boolean((results?.length || switchPm) && !isManuallyClosed);
+  const isOpen = Boolean((results?.length || switchPm || switchWebview) && !isManuallyClosed);
 
   useEffect(() => {
     if (!isOpen && !username) {

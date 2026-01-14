@@ -1,5 +1,4 @@
-import type { FC } from '../../lib/teact/teact';
-import React, { memo, useCallback } from '../../lib/teact/teact';
+import { memo, useState } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import {
@@ -8,14 +7,16 @@ import {
   isChatBasicGroup,
   isChatChannel,
   isChatSuperGroup,
-  isUserId,
 } from '../../global/helpers';
 import { selectChat, selectIsChatWithSelf, selectUser } from '../../global/selectors';
+import { isUserId } from '../../util/entities/ids';
 import renderText from './helpers/renderText';
 
-import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
+import useOldLang from '../../hooks/useOldLang';
 
 import Button from '../ui/Button';
+import Checkbox from '../ui/Checkbox';
 import Modal from '../ui/Modal';
 
 export type OwnProps = {
@@ -35,8 +36,9 @@ type StateProps = {
   contactName?: string;
 };
 
-const PinMessageModal: FC<OwnProps & StateProps> = ({
+const PinMessageModal = ({
   isOpen,
+  chatId,
   messageId,
   isChannel,
   isGroup,
@@ -44,24 +46,23 @@ const PinMessageModal: FC<OwnProps & StateProps> = ({
   canPinForAll,
   contactName,
   onClose,
-}) => {
+}: OwnProps & StateProps) => {
   const { pinMessage } = getActions();
 
-  const handlePinMessageForAll = useCallback(() => {
+  const [shouldPinForAll, setShouldPinForAll] = useState(true);
+
+  const handlePinMessage = useLastCallback(() => {
     pinMessage({
-      messageId, isUnpin: false,
+      chatId,
+      messageId,
+      isUnpin: false,
+      isOneSide: !shouldPinForAll,
+      isSilent: !shouldPinForAll,
     });
     onClose();
-  }, [pinMessage, messageId, onClose]);
+  });
 
-  const handlePinMessage = useCallback(() => {
-    pinMessage({
-      messageId, isUnpin: false, isOneSide: true, isSilent: true,
-    });
-    onClose();
-  }, [messageId, onClose, pinMessage]);
-
-  const lang = useLang();
+  const lang = useOldLang();
 
   function renderMessage() {
     if (isChannel) {
@@ -83,17 +84,19 @@ const PinMessageModal: FC<OwnProps & StateProps> = ({
       title={lang('PinMessageAlertTitle')}
     >
       <p>{renderMessage()}</p>
-      <div className="dialog-buttons-column">
+      {canPinForAll && (
+        <Checkbox
+          className="dialog-checkbox"
+          label={contactName ? renderText(lang('Conversation.PinMessagesFor', contactName))
+            : lang('Conversation.PinMessageAlert.PinAndNotifyMembers')}
+          checked={shouldPinForAll}
+          onCheck={setShouldPinForAll}
+        />
+      )}
+      <div className="dialog-buttons">
         <Button className="confirm-dialog-button" isText onClick={handlePinMessage}>
           {lang('DialogPin')}
         </Button>
-        {canPinForAll && (
-          <Button className="confirm-dialog-button" isText onClick={handlePinMessageForAll}>
-            {contactName
-              ? renderText(lang('Conversation.PinMessagesFor', contactName))
-              : lang('Conversation.PinMessageAlert.PinAndNotifyMembers')}
-          </Button>
-        )}
         <Button className="confirm-dialog-button" isText onClick={onClose}>{lang('Cancel')}</Button>
       </div>
     </Modal>
@@ -101,7 +104,7 @@ const PinMessageModal: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { chatId }): StateProps => {
+  (global, { chatId }): Complete<StateProps> => {
     const isPrivateChat = isUserId(chatId);
     const isChatWithSelf = selectIsChatWithSelf(global, chatId);
     const chat = selectChat(global, chatId);

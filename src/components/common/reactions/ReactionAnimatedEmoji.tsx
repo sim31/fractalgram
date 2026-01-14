@@ -1,12 +1,16 @@
-import React, {
+import {
   memo, useMemo, useRef,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { ApiAvailableReaction, ApiReaction, ApiStickerSet } from '../../../api/types';
+import type {
+  ApiAvailableReaction,
+  ApiReaction,
+  ApiStickerSet,
+} from '../../../api/types';
 import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
 
-import { isSameReaction } from '../../../global/helpers';
+import { getStickerHashById, isSameReaction } from '../../../global/helpers';
 import { selectPerformanceSettingsValue, selectTabState } from '../../../global/selectors';
 import buildClassName from '../../../util/buildClassName';
 import { roundToNearestEven } from '../../../util/math';
@@ -16,13 +20,13 @@ import useFlag from '../../../hooks/useFlag';
 import { useIsIntersecting } from '../../../hooks/useIntersectionObserver';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useMedia from '../../../hooks/useMedia';
-import useShowTransition from '../../../hooks/useShowTransition';
+import useShowTransitionDeprecated from '../../../hooks/useShowTransitionDeprecated';
 import useCustomEmoji from '../hooks/useCustomEmoji';
 
 import AnimatedSticker from '../AnimatedSticker';
 import CustomEmoji from '../CustomEmoji';
-import ReactionStaticEmoji from '../ReactionStaticEmoji';
 import CustomEmojiEffect from './CustomEmojiEffect';
+import ReactionStaticEmoji from './ReactionStaticEmoji';
 
 import styles from './ReactionAnimatedEmoji.module.scss';
 
@@ -35,6 +39,7 @@ type OwnProps = {
   withEffectOnly?: boolean;
   shouldPause?: boolean;
   shouldLoop?: boolean;
+  loopLimit?: number;
   observeIntersection?: ObserveFn;
 };
 
@@ -64,14 +69,14 @@ const ReactionAnimatedEmoji = ({
   withEffectOnly,
   shouldPause,
   shouldLoop,
+  loopLimit,
   observeIntersection,
 }: OwnProps & StateProps) => {
   const { stopActiveReaction } = getActions();
 
-  // eslint-disable-next-line no-null/no-null
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement>();
 
-  const isCustom = 'documentId' in reaction;
+  const isCustom = reaction.type === 'custom';
 
   const availableReaction = useMemo(() => (
     availableReactions?.find((r) => isSameReaction(r.reaction, reaction))
@@ -106,11 +111,11 @@ const ReactionAnimatedEmoji = ({
 
   const isIntersecting = useIsIntersecting(ref, observeIntersection);
 
-  const mediaHashCenterIcon = centerIconId && `sticker${centerIconId}`;
-  const mediaHashEffect = effectId && `sticker${effectId}`;
+  const mediaHashCenterIcon = centerIconId && getStickerHashById(centerIconId);
+  const mediaHashEffect = effectId && getStickerHashById(effectId);
 
-  const mediaDataCenterIcon = useMedia(mediaHashCenterIcon, !centerIconId);
-  const mediaDataEffect = useMedia(mediaHashEffect, !effectId);
+  const mediaDataCenterIcon = useMedia(mediaHashCenterIcon);
+  const mediaDataEffect = useMedia(mediaHashEffect);
 
   const activeReaction = useMemo(() => (
     activeReactions?.find((active) => isSameReaction(active, reaction))
@@ -123,11 +128,11 @@ const ReactionAnimatedEmoji = ({
   const {
     shouldRender: shouldRenderEffect,
     transitionClassNames: animationClassNames,
-  } = useShowTransition(shouldPlayEffect, undefined, true, 'slow');
+  } = useShowTransitionDeprecated(shouldPlayEffect, undefined, true, 'slow');
   const {
     shouldRender: shouldRenderCenter,
     transitionClassNames: centerAnimationClassNames,
-  } = useShowTransition(shouldPlayCenter, undefined, true, 'slow');
+  } = useShowTransitionDeprecated(shouldPlayCenter, undefined, true, 'slow');
 
   const handleEnded = useLastCallback(() => {
     stopActiveReaction({ containerId, reaction });
@@ -138,7 +143,7 @@ const ReactionAnimatedEmoji = ({
   const {
     shouldRender: shouldRenderStatic,
     transitionClassNames: staticClassNames,
-  } = useShowTransition(shouldShowStatic, undefined, true);
+  } = useShowTransitionDeprecated(shouldShowStatic, undefined, true);
 
   const rootClassName = buildClassName(
     styles.root,
@@ -164,8 +169,10 @@ const ReactionAnimatedEmoji = ({
           className={styles.customEmoji}
           size={size}
           noPlay={shouldPause}
-          forceAlways
+          noVideoOnMobile
+          loopLimit={loopLimit}
           observeIntersectionForPlaying={observeIntersection}
+          forceAlways
         />
       )}
       {shouldRenderCenter && !isCustom && (
@@ -176,9 +183,9 @@ const ReactionAnimatedEmoji = ({
           tgsUrl={mediaDataCenterIcon}
           play={isIntersecting && !shouldPause}
           noLoop={!shouldLoop}
-          forceAlways
           onLoad={markAnimationLoaded}
           onEnded={unmarkAnimationLoaded}
+          forceAlways
         />
       )}
       {shouldRenderEffect && (
@@ -190,8 +197,8 @@ const ReactionAnimatedEmoji = ({
             tgsUrl={mediaDataEffect}
             play={isIntersecting}
             noLoop
-            forceAlways
             onEnded={handleEnded}
+            forceAlways
           />
           {isCustom && !assignedEffectId && isIntersecting && (
             <CustomEmojiEffect
@@ -209,14 +216,14 @@ const ReactionAnimatedEmoji = ({
 
 export default memo(withGlobal<OwnProps>(
   (global, { containerId }) => {
-    const { availableReactions, genericEmojiEffects } = global;
+    const { genericEmojiEffects, reactions } = global;
     const { activeReactions } = selectTabState(global);
 
     const withEffects = selectPerformanceSettingsValue(global, 'reactionEffects');
 
     return {
       activeReactions: activeReactions?.[containerId],
-      availableReactions,
+      availableReactions: reactions.availableReactions,
       genericEffects: genericEmojiEffects,
       withEffects,
     };

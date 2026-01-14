@@ -5,9 +5,10 @@ import { ANIMATION_END_DELAY, MESSAGE_CONTENT_SELECTOR } from '../../../config';
 import { requestMutation } from '../../../lib/fasterdom/fasterdom';
 import { getMessageHtmlId } from '../../../global/helpers';
 import { applyStyles } from '../../../util/animation';
-import { isElementInViewport } from '../../../util/isElementInViewport';
+import { IS_TOUCH_ENV } from '../../../util/browser/windowEnvironment';
 import stopEvent from '../../../util/stopEvent';
-import { IS_TOUCH_ENV } from '../../../util/windowEnvironment';
+import getOffsetToContainer from '../../../util/visibility/getOffsetToContainer';
+import { isElementInViewport } from '../../../util/visibility/isElementInViewport';
 import windowSize from '../../../util/windowSize';
 import {
   calculateDimensions,
@@ -25,8 +26,9 @@ export function animateOpening(
   dimensions: ApiDimensions,
   isVideo: boolean,
   message?: ApiMessage,
+  mediaIndex?: number,
 ) {
-  const { mediaEl: fromImage } = getNodes(origin, message);
+  const { mediaEl: fromImage } = getNodes(origin, message, mediaIndex);
   if (!fromImage) {
     return;
   }
@@ -93,8 +95,10 @@ export function animateOpening(
   });
 }
 
-export function animateClosing(origin: MediaViewerOrigin, bestImageData: string, message?: ApiMessage) {
-  const { container, mediaEl: toImage } = getNodes(origin, message);
+export function animateClosing(
+  origin: MediaViewerOrigin, bestImageData: string, message?: ApiMessage, mediaIndex?: number,
+) {
+  const { container, mediaEl: toImage } = getNodes(origin, message, mediaIndex);
   if (!toImage) {
     return;
   }
@@ -102,7 +106,7 @@ export function animateClosing(origin: MediaViewerOrigin, bestImageData: string,
   const fromImage = document.getElementById('MediaViewer')!.querySelector<HTMLImageElement>(
     '.MediaViewerSlide--active img, .MediaViewerSlide--active video',
   );
-  if (!fromImage || !toImage) {
+  if (!fromImage) {
     return;
   }
 
@@ -125,11 +129,13 @@ export function animateClosing(origin: MediaViewerOrigin, bestImageData: string,
   let fromScaleY = fromHeight / toHeight;
 
   const shouldFadeOut = (
-    [MediaViewerOrigin.Inline, MediaViewerOrigin.ScheduledInline].includes(origin)
-    && !isMessageImageFullyVisible(container, toImage)
-  ) || (
-    [MediaViewerOrigin.Album, MediaViewerOrigin.ScheduledAlbum].includes(origin)
-    && !isMessageImageFullyVisible(container, toImage)
+    [
+      MediaViewerOrigin.Inline,
+      MediaViewerOrigin.ScheduledInline,
+      MediaViewerOrigin.Album,
+      MediaViewerOrigin.ScheduledAlbum,
+    ].includes(origin)
+    && !isMessageImageFullyVisible(toImage)
   );
 
   if ([
@@ -263,15 +269,13 @@ function uncover(realWidth: number, realHeight: number, top: number, left: numbe
   };
 }
 
-function isMessageImageFullyVisible(container: HTMLElement, imageEl: HTMLElement) {
+function isMessageImageFullyVisible(imageEl: HTMLElement) {
   const messageListElement = document.querySelector<HTMLDivElement>('.Transition_slide-active > .MessageList')!;
-  let imgOffsetTop = container.offsetTop + imageEl.closest<HTMLDivElement>('.content-inner, .WebPage')!.offsetTop;
-  if (container.id.includes('album-media-')) {
-    imgOffsetTop += container.parentElement!.offsetTop + container.closest<HTMLDivElement>('.Message')!.offsetTop;
-  }
 
-  return imgOffsetTop > messageListElement.scrollTop
-    && imgOffsetTop + imageEl.offsetHeight < messageListElement.scrollTop + messageListElement.offsetHeight;
+  const { top } = getOffsetToContainer(imageEl, messageListElement);
+
+  return top > messageListElement.scrollTop
+    && top + imageEl.offsetHeight < messageListElement.scrollTop + messageListElement.offsetHeight;
 }
 
 function getTopOffset(hasFooter: boolean) {
@@ -284,24 +288,30 @@ function getTopOffset(hasFooter: boolean) {
   return topOffsetRem * REM;
 }
 
-function getNodes(origin: MediaViewerOrigin, message?: ApiMessage) {
+function getNodes(origin: MediaViewerOrigin, message?: ApiMessage, index?: number) {
   let containerSelector;
   let mediaSelector;
 
   switch (origin) {
     case MediaViewerOrigin.Album:
     case MediaViewerOrigin.ScheduledAlbum:
-      containerSelector = `.Transition_slide-active > .MessageList #album-media-${getMessageHtmlId(message!.id)}`;
+      // eslint-disable-next-line @stylistic/max-len
+      containerSelector = `.Transition_slide-active > .MessageList #album-media-${getMessageHtmlId(message!.id, index)}`;
       mediaSelector = '.full-media';
       break;
 
+    case MediaViewerOrigin.PreviewMedia:
+      containerSelector = `#preview-media${index}`;
+      mediaSelector = 'img';
+      break;
+
     case MediaViewerOrigin.SharedMedia:
-      containerSelector = `#shared-media${getMessageHtmlId(message!.id)}`;
+      containerSelector = `#shared-media${getMessageHtmlId(message!.id, index)}`;
       mediaSelector = 'img';
       break;
 
     case MediaViewerOrigin.SearchResult:
-      containerSelector = `#search-media${getMessageHtmlId(message!.id)}`;
+      containerSelector = `#search-media${getMessageHtmlId(message!.id, index)}`;
       mediaSelector = 'img';
       break;
 
@@ -320,20 +330,32 @@ function getNodes(origin: MediaViewerOrigin, message?: ApiMessage) {
       mediaSelector = '.avatar-media';
       break;
 
+    case MediaViewerOrigin.ChannelAvatar:
     case MediaViewerOrigin.SuggestedAvatar:
-      containerSelector = `.Transition_slide-active > .MessageList #${getMessageHtmlId(message!.id)}`;
+      containerSelector = `.Transition_slide-active > .MessageList #${getMessageHtmlId(message!.id, index)}`;
       mediaSelector = '.Avatar img';
+      break;
+
+    case MediaViewerOrigin.StarsTransaction:
+      containerSelector = '.transaction-media-preview';
+      mediaSelector = index === 0 ? `.stars-transaction-media-${index} :is(img, video)` : undefined;
+      break;
+
+    case MediaViewerOrigin.SponsoredMessage:
+      containerSelector = '.Transition_slide-active > .MessageList .sponsored-media-preview';
+      mediaSelector = `${MESSAGE_CONTENT_SELECTOR} .full-media,${MESSAGE_CONTENT_SELECTOR} .thumbnail:not(.blurred-bg)`;
       break;
 
     case MediaViewerOrigin.ScheduledInline:
     case MediaViewerOrigin.Inline:
     default:
-      containerSelector = `.Transition_slide-active > .MessageList #${getMessageHtmlId(message!.id)}`;
+      containerSelector = `.Transition_slide-active > .MessageList #${getMessageHtmlId(message!.id, index)}`;
       mediaSelector = `${MESSAGE_CONTENT_SELECTOR} .full-media,${MESSAGE_CONTENT_SELECTOR} .thumbnail:not(.blurred-bg)`;
   }
 
   const container = document.querySelector<HTMLElement>(containerSelector)!;
-  const mediaEls = container && container.querySelectorAll<HTMLImageElement | HTMLVideoElement>(mediaSelector);
+  const mediaEls = mediaSelector
+    ? container?.querySelectorAll<HTMLImageElement | HTMLVideoElement>(mediaSelector) : undefined;
 
   return {
     container,
@@ -347,6 +369,8 @@ function applyShape(ghost: HTMLDivElement, origin: MediaViewerOrigin) {
     case MediaViewerOrigin.ScheduledAlbum:
     case MediaViewerOrigin.Inline:
     case MediaViewerOrigin.ScheduledInline:
+    case MediaViewerOrigin.StarsTransaction:
+    case MediaViewerOrigin.PreviewMedia:
       ghost.classList.add('rounded-corners');
       break;
 
@@ -359,10 +383,8 @@ function applyShape(ghost: HTMLDivElement, origin: MediaViewerOrigin) {
 
     case MediaViewerOrigin.MiddleHeaderAvatar:
     case MediaViewerOrigin.SuggestedAvatar:
+    case MediaViewerOrigin.ChannelAvatar:
       ghost.classList.add('circle');
-      if (origin === MediaViewerOrigin.SuggestedAvatar) {
-        ghost.classList.add('transition-circle');
-      }
       break;
   }
 }

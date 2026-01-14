@@ -1,30 +1,44 @@
-import type { FC } from '../../lib/teact/teact';
-import React, { memo, useEffect, useMemo } from '../../lib/teact/teact';
+import { memo, useEffect, useMemo } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type {
-  ApiChatMember, ApiTypingStatus, ApiUser, ApiUserStatus,
+  ApiChatMember, ApiTopic, ApiTypingStatus, ApiUser, ApiUserStatus,
 } from '../../api/types';
-import type { StoryViewerOrigin } from '../../types';
+import type { CustomPeer, StoryViewerOrigin, ThreadId } from '../../types';
 import type { IconName } from '../../types/icons';
 import { MediaViewerOrigin } from '../../types';
 
-import { getMainUsername, getUserStatus, isUserOnline } from '../../global/helpers';
-import { selectChatMessages, selectUser, selectUserStatus } from '../../global/selectors';
+import {
+  getMainUsername, getUserStatus, isSystemBot, isUserOnline,
+} from '../../global/helpers';
+import {
+  selectChatMessages,
+  selectThreadMessagesCount,
+  selectTopic,
+  selectUser,
+  selectUserStatus,
+} from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
+import { REM } from './helpers/mediaDimensions';
 import renderText from './helpers/renderText';
 
+import useIntervalForceUpdate from '../../hooks/schedulers/useIntervalForceUpdate';
 import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
+import useOldLang from '../../hooks/useOldLang';
 
 import RippleEffect from '../ui/RippleEffect';
+import Transition from '../ui/Transition';
 import Avatar from './Avatar';
 import DotAnimation from './DotAnimation';
 import FullNameTitle from './FullNameTitle';
+import Icon from './icons/Icon';
+import TopicIcon from './TopicIcon';
 import TypingStatus from './TypingStatus';
 
-type OwnProps = {
-  userId: string;
+const TOPIC_ICON_SIZE = 2.5 * REM;
+
+type BaseOwnProps = {
   typingStatus?: ApiTypingStatus;
   avatarSize?: 'tiny' | 'small' | 'medium' | 'large' | 'jumbo';
   forceShowSelf?: boolean;
@@ -39,22 +53,47 @@ type OwnProps = {
   withUpdatingStatus?: boolean;
   storyViewerOrigin?: StoryViewerOrigin;
   noEmojiStatus?: boolean;
+  noFake?: boolean;
+  noVerified?: boolean;
   emojiStatusSize?: number;
   noStatusOrTyping?: boolean;
   noRtl?: boolean;
   adminMember?: ApiChatMember;
-  onEmojiStatusClick?: NoneToVoidFunction;
+  isSavedDialog?: boolean;
+  noAvatar?: boolean;
+  className?: string;
+  iconElement?: React.ReactNode;
+  rightElement?: React.ReactNode;
+  onClick?: VoidFunction;
+  onEmojiStatusClick?: VoidFunction;
 };
 
-type StateProps =
-  {
-    user?: ApiUser;
-    userStatus?: ApiUserStatus;
-    isSavedMessages?: boolean;
-    areMessagesLoaded: boolean;
-  };
+type OwnProps = BaseOwnProps & ({
+  userId: string;
+  threadId?: ThreadId;
+  customPeer?: never;
+} | {
+  userId?: never;
+  threadId?: never;
+  customPeer: CustomPeer;
+});
 
-const PrivateChatInfo: FC<OwnProps & StateProps> = ({
+type StateProps = {
+  user?: ApiUser;
+  userStatus?: ApiUserStatus;
+  self?: ApiUser;
+  isSavedMessages?: boolean;
+  areMessagesLoaded: boolean;
+  isSynced?: boolean;
+  topic?: ApiTopic;
+  messagesCount?: number;
+};
+
+const UPDATE_INTERVAL = 1000 * 60; // 1 min
+
+const PrivateChatInfo = ({
+  userId,
+  customPeer,
   typingStatus,
   avatarSize = 'medium',
   status,
@@ -68,40 +107,57 @@ const PrivateChatInfo: FC<OwnProps & StateProps> = ({
   emojiStatusSize,
   noStatusOrTyping,
   noEmojiStatus,
+  noFake,
+  noVerified,
   noRtl,
   user,
   userStatus,
+  self,
+  topic,
+  messagesCount,
   isSavedMessages,
+  isSavedDialog,
   areMessagesLoaded,
   adminMember,
   ripple,
-  onEmojiStatusClick,
+  className,
   storyViewerOrigin,
-}) => {
+  noAvatar,
+  isSynced,
+  iconElement,
+  rightElement,
+  onClick,
+  onEmojiStatusClick,
+}: OwnProps & StateProps) => {
   const {
     loadFullUser,
     openMediaViewer,
-    loadProfilePhotos,
+    loadMoreProfilePhotos,
   } = getActions();
 
+  const oldLang = useOldLang();
   const lang = useLang();
 
-  const { id: userId } = user || {};
+  const isTopic = Boolean(user?.isBotForum && topic);
+  const hasAvatarMediaViewer = withMediaViewer && !isSavedMessages;
 
   useEffect(() => {
     if (userId) {
-      if (withFullInfo) loadFullUser({ userId });
-      if (withMediaViewer) loadProfilePhotos({ profileId: userId });
+      if (withFullInfo && isSynced) loadFullUser({ userId });
+      if (withMediaViewer) loadMoreProfilePhotos({ peerId: userId, isPreload: true });
     }
-  }, [userId, withFullInfo, withMediaViewer]);
+  }, [userId, withFullInfo, withMediaViewer, isSynced]);
+
+  useIntervalForceUpdate(UPDATE_INTERVAL);
 
   const handleAvatarViewerOpen = useLastCallback(
     (e: React.MouseEvent<HTMLDivElement, MouseEvent>, hasMedia: boolean) => {
-      if (user && hasMedia) {
+      if (hasMedia) {
         e.stopPropagation();
         openMediaViewer({
-          avatarOwnerId: user.id,
-          mediaId: 0,
+          isAvatarView: true,
+          chatId: userId,
+          mediaIndex: 0,
           origin: avatarSize === 'jumbo' ? MediaViewerOrigin.ProfileAvatar : MediaViewerOrigin.MiddleHeaderAvatar,
         });
       }
@@ -110,7 +166,7 @@ const PrivateChatInfo: FC<OwnProps & StateProps> = ({
 
   const mainUsername = useMemo(() => user && withUsername && getMainUsername(user), [user, withUsername]);
 
-  if (!user) {
+  if (!user && !customPeer) {
     return undefined;
   }
 
@@ -120,7 +176,7 @@ const PrivateChatInfo: FC<OwnProps & StateProps> = ({
         <DotAnimation className="status" content={status} />
       ) : (
         <span className="status" dir="auto">
-          {statusIcon && <i className={`icon icon-${statusIcon} status-icon`} />}
+          {statusIcon && <Icon className="status-icon" name={statusIcon} />}
           {renderText(status)}
         </span>
       );
@@ -132,6 +188,14 @@ const PrivateChatInfo: FC<OwnProps & StateProps> = ({
       );
     }
 
+    if (customPeer?.subtitleKey) {
+      return (
+        <span className="status" dir="auto">
+          <span className="user-status" dir="auto">{oldLang(customPeer.subtitleKey)}</span>
+        </span>
+      );
+    }
+
     if (!user) {
       return undefined;
     }
@@ -140,19 +204,48 @@ const PrivateChatInfo: FC<OwnProps & StateProps> = ({
       return <TypingStatus typingStatus={typingStatus} />;
     }
 
+    if (isTopic) {
+      return (
+        <span className="status" dir="auto">
+          <Transition
+            name="fade"
+            shouldRestoreHeight
+            activeKey={messagesCount !== undefined ? 1 : 2}
+            className="message-count-transition"
+          >
+            {messagesCount !== undefined
+              ? lang('Messages', { count: messagesCount }, { pluralValue: messagesCount })
+              : lang('ChatInfoNoMessages')}
+          </Transition>
+        </span>
+      );
+    }
+
+    if (isSystemBot(user.id)) {
+      return undefined;
+    }
+
+    const translatedStatus = getUserStatus(oldLang, user, userStatus);
+    const mainUserNameClassName = buildClassName('handle', translatedStatus && 'withStatus');
     return (
-      <span className={buildClassName('status', isUserOnline(user, userStatus) && 'online')}>
-        {mainUsername && <span className="handle">{mainUsername}</span>}
-        <span className="user-status" dir="auto">{getUserStatus(lang, user, userStatus)}</span>
+      <span className={buildClassName('status', isUserOnline(user, userStatus, true) && 'online')}>
+        {mainUsername && <span className={mainUserNameClassName}>{mainUsername}</span>}
+        {translatedStatus && <span className="user-status" dir="auto">{translatedStatus}</span>}
       </span>
     );
   }
 
   const customTitle = adminMember
-    ? adminMember.customTitle || lang(adminMember.isOwner ? 'GroupInfo.LabelOwner' : 'GroupInfo.LabelAdmin')
+    ? adminMember.customTitle || oldLang(adminMember.isOwner ? 'GroupInfo.LabelOwner' : 'GroupInfo.LabelAdmin')
     : undefined;
 
   function renderNameTitle() {
+    if (isTopic) {
+      return (
+        <h3 dir="auto" className="fullName">{renderText(topic!.title)}</h3>
+      );
+    }
+
     if (customTitle) {
       return (
         <div className="info-name-title">
@@ -161,6 +254,7 @@ const PrivateChatInfo: FC<OwnProps & StateProps> = ({
             withEmojiStatus={!noEmojiStatus}
             emojiStatusSize={emojiStatusSize}
             isSavedMessages={isSavedMessages}
+            isSavedDialog={isSavedDialog}
             onEmojiStatusClick={onEmojiStatusClick}
           />
           {customTitle && <span className="custom-title">{customTitle}</span>}
@@ -170,48 +264,86 @@ const PrivateChatInfo: FC<OwnProps & StateProps> = ({
 
     return (
       <FullNameTitle
-        peer={user!}
+        peer={customPeer || user!}
+        noFake={noFake}
+        noVerified={noVerified}
         withEmojiStatus={!noEmojiStatus}
         emojiStatusSize={emojiStatusSize}
         isSavedMessages={isSavedMessages}
+        isSavedDialog={isSavedDialog}
         onEmojiStatusClick={onEmojiStatusClick}
+        iconElement={iconElement}
       />
     );
   }
 
   return (
-    <div className="ChatInfo" dir={!noRtl && lang.isRtl ? 'rtl' : undefined}>
-      <Avatar
-        key={user.id}
-        size={avatarSize}
-        peer={user}
-        isSavedMessages={isSavedMessages}
-        withStory={withStory}
-        storyViewerOrigin={storyViewerOrigin}
-        storyViewerMode="single-peer"
-        onClick={withMediaViewer ? handleAvatarViewerOpen : undefined}
-      />
+    <div
+      className={buildClassName('ChatInfo', className)}
+      dir={!noRtl && lang.isRtl ? 'rtl' : undefined}
+      onClick={onClick}
+    >
+      {isSavedDialog && self && (
+        <Avatar
+          key="saved-messages"
+          size={avatarSize}
+          peer={self}
+          isSavedMessages
+          className="saved-dialog-avatar"
+        />
+      )}
+      {!noAvatar && !isTopic && (
+        <Avatar
+          key={user?.id}
+          size={avatarSize}
+          peer={customPeer || user}
+          className={buildClassName(isSavedDialog && 'overlay-avatar')}
+          isSavedMessages={isSavedMessages}
+          isSavedDialog={isSavedDialog}
+          withStory={withStory}
+          storyViewerOrigin={storyViewerOrigin}
+          storyViewerMode="single-peer"
+          onClick={hasAvatarMediaViewer ? handleAvatarViewerOpen : undefined}
+        />
+      )}
+      {isTopic && (
+        <TopicIcon
+          topic={topic!}
+          className="topic-header-icon"
+          size={TOPIC_ICON_SIZE}
+        />
+      )}
       <div className="info">
         {renderNameTitle()}
         {(status || (!isSavedMessages && !noStatusOrTyping)) && renderStatusOrTyping()}
       </div>
       {ripple && <RippleEffect />}
+      {rightElement}
     </div>
   );
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { userId, forceShowSelf }): StateProps => {
-    const user = selectUser(global, userId);
-    const userStatus = selectUserStatus(global, userId);
+  (global, { userId, threadId, forceShowSelf }): Complete<StateProps> => {
+    const { isSynced } = global;
+    const user = userId ? selectUser(global, userId) : undefined;
+    const userStatus = userId ? selectUserStatus(global, userId) : undefined;
     const isSavedMessages = !forceShowSelf && user && user.isSelf;
-    const areMessagesLoaded = Boolean(selectChatMessages(global, userId));
+    const self = isSavedMessages ? user : selectUser(global, global.currentUserId!);
+    const areMessagesLoaded = Boolean(userId ? selectChatMessages(global, userId) : undefined);
+
+    const topic = threadId ? selectTopic(global, userId, threadId) : undefined;
+    const messagesCount = topic && userId ? selectThreadMessagesCount(global, userId, threadId!) : undefined;
 
     return {
       user,
       userStatus,
       isSavedMessages,
       areMessagesLoaded,
+      self,
+      isSynced,
+      topic,
+      messagesCount,
     };
   },
 )(PrivateChatInfo));

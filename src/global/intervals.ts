@@ -39,17 +39,17 @@ function stopIntervals() {
 }
 
 function checkStoryExpiration() {
-  // eslint-disable-next-line eslint-multitab-tt/no-immediate-global
   let global = getGlobal();
+  if (!global.isInited) return;
+
   const serverTime = getServerTime();
 
   Object.values(global.stories.byPeerId).forEach((peerStories) => {
     const stories = Object.values(peerStories.byId);
     stories.forEach((story) => {
-      if (!('expireDate' in story)) return;
+      if (story['@type'] !== 'story') return;
       if (story.expireDate > serverTime) return;
-      if ('isPinned' in story && story.isPinned) return;
-      if ('isPublic' in story && !story.isPublic) return;
+      if (story.isInProfile) return;
 
       global = removePeerStory(global, story.peerId, story.id);
     });

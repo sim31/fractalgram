@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback } from '../../../lib/teact/teact';
+import { memo, useCallback } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiUser } from '../../../api/types';
@@ -7,10 +7,10 @@ import type { ApiUser } from '../../../api/types';
 import { getUserFullName } from '../../../global/helpers';
 import { selectUser } from '../../../global/selectors';
 import { createClassNameBuilder } from '../../../util/buildClassName';
-import { formatHumanDate, formatTime, isToday } from '../../../util/dateFormat';
+import { formatHumanDate, formatTime, isToday } from '../../../util/dates/dateFormat';
 import { getServerTime } from '../../../util/serverTime';
 
-import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 
 import Avatar from '../../common/Avatar';
 import Button from '../../ui/Button';
@@ -27,7 +27,6 @@ type OwnProps = {
 
 type StateProps = {
   user?: ApiUser;
-  isSavedMessages?: boolean;
 };
 
 const JoinRequest: FC<OwnProps & StateProps> = ({
@@ -41,7 +40,7 @@ const JoinRequest: FC<OwnProps & StateProps> = ({
   const { openChat, hideChatJoinRequest } = getActions();
 
   const buildClassName = createClassNameBuilder('JoinRequest');
-  const lang = useLang();
+  const lang = useOldLang();
 
   const fullName = getUserFullName(user);
   const fixedDate = (date - getServerTime()) * 1000 + Date.now();
@@ -90,7 +89,7 @@ const JoinRequest: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { userId }): StateProps => {
+  (global, { userId }): Complete<StateProps> => {
     const user = selectUser(global, userId);
 
     return {

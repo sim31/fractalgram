@@ -2,41 +2,52 @@ import type { ApiUser } from '../../../api/types';
 import type { ActionReturnType } from '../../types';
 import { ManagementProgress } from '../../../types';
 
+import { BOT_VERIFICATION_PEERS_LIMIT } from '../../../config';
+import { isUserId } from '../../../util/entities/ids';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
 import { buildCollectionByKey, unique } from '../../../util/iteratees';
-import * as langProvider from '../../../util/langProvider';
+import * as langProvider from '../../../util/oldLangProvider';
 import { throttle } from '../../../util/schedulers';
 import { getServerTime } from '../../../util/serverTime';
 import { callApi } from '../../../api/gramjs';
-import { isUserBot, isUserId } from '../../helpers';
+import { isUserBot } from '../../helpers';
+import { addActionHandler, getGlobal, setGlobal } from '../../index';
 import {
-  addActionHandler,
-  getGlobal,
-  setGlobal,
-} from '../../index';
-import {
-  addChats,
-  addUsers,
   addUserStatuses,
   closeNewContactDialog,
   replaceUserStatuses,
-  updateChat,
+  updateChats,
   updateManagementProgress,
+  updatePeerPhotos,
+  updatePeerPhotosIsLoading,
   updateUser,
+  updateUserCommonChats,
   updateUserFullInfo,
   updateUsers,
   updateUserSearch,
   updateUserSearchFetchingStatus,
 } from '../../reducers';
+import { updateTabState } from '../../reducers/tabs';
 import {
-  selectChat, selectCurrentMessageList, selectPeer, selectTabState, selectUser, selectUserFullInfo,
+  selectChat,
+  selectChatFullInfo,
+  selectIsChatRestricted,
+  selectIsCurrentUserFrozen,
+  selectIsCurrentUserPremium,
+  selectPeer,
+  selectPeerPhotos,
+  selectTabState,
+  selectUser,
+  selectUserCommonChats,
+  selectUserFullInfo,
 } from '../../selectors';
 
+const PROFILE_PHOTOS_FIRST_LOAD_LIMIT = 10;
 const TOP_PEERS_REQUEST_COOLDOWN = 60; // 1 min
 const runThrottledForSearch = throttle((cb) => cb(), 500, false);
 
 addActionHandler('loadFullUser', async (global, actions, payload): Promise<void> => {
-  const { userId, withPhotos } = payload!;
+  const { userId, withPhotos } = payload;
   const user = selectUser(global, userId);
   if (!user) {
     return;
@@ -49,25 +60,30 @@ addActionHandler('loadFullUser', async (global, actions, payload): Promise<void>
   global = getGlobal();
   const fullInfo = selectUserFullInfo(global, userId);
   const { user: newUser, fullInfo: newFullInfo } = result;
-  const hasChangedAvatarHash = user.avatarHash !== newUser.avatarHash;
+  const profilePhotos = selectPeerPhotos(global, userId);
+  const hasChangedAvatar = user.avatarPhotoId !== newUser.avatarPhotoId;
   const hasChangedProfilePhoto = fullInfo?.profilePhoto?.id !== newFullInfo?.profilePhoto?.id;
   const hasChangedFallbackPhoto = fullInfo?.fallbackPhoto?.id !== newFullInfo?.fallbackPhoto?.id;
   const hasChangedPersonalPhoto = fullInfo?.personalPhoto?.id !== newFullInfo?.personalPhoto?.id;
-  const hasChangedPhoto = hasChangedAvatarHash
+  const hasChangedPhoto = hasChangedAvatar
     || hasChangedProfilePhoto
     || hasChangedFallbackPhoto
     || hasChangedPersonalPhoto;
 
   global = updateUser(global, userId, result.user);
   global = updateUserFullInfo(global, userId, result.fullInfo);
+  global = updateUsers(global, buildCollectionByKey(result.users, 'id'));
+  global = updateChats(global, buildCollectionByKey(result.chats, 'id'));
+  global = addUserStatuses(global, result.userStatusesById);
+
   setGlobal(global);
-  if (withPhotos || (user.photos?.length && hasChangedPhoto)) {
-    actions.loadProfilePhotos({ profileId: userId });
+  if (withPhotos || (profilePhotos?.count && hasChangedPhoto)) {
+    actions.loadMoreProfilePhotos({ peerId: userId, shouldInvalidateCache: true });
   }
 });
 
 addActionHandler('loadUser', async (global, actions, payload): Promise<void> => {
-  const { userId } = payload!;
+  const { userId } = payload;
   const user = selectUser(global, userId);
   if (!user) {
     return;
@@ -101,10 +117,9 @@ addActionHandler('loadTopUsers', async (global): Promise<void> => {
     return;
   }
 
-  const { ids, users } = result;
+  const { ids } = result;
 
   global = getGlobal();
-  global = addUsers(global, buildCollectionByKey(users, 'id'));
   global = {
     ...global,
     topPeers: {
@@ -123,8 +138,6 @@ addActionHandler('loadContactList', async (global): Promise<void> => {
   }
 
   global = getGlobal();
-  global = addUsers(global, buildCollectionByKey(contactList.users, 'id'));
-  global = addChats(global, buildCollectionByKey(contactList.chats, 'id'));
   global = addUserStatuses(global, contactList.userStatusesById);
 
   // Sort contact list by Last Name (or First Name), with latin names being placed first
@@ -149,39 +162,84 @@ addActionHandler('loadCurrentUser', (): ActionReturnType => {
 });
 
 addActionHandler('loadCommonChats', async (global, actions, payload): Promise<void> => {
-  const { tabId = getCurrentTabId() } = payload || {};
-  const { chatId } = selectCurrentMessageList(global, tabId) || {};
-  const user = chatId ? selectUser(global, chatId) : undefined;
-  if (!user || isUserBot(user) || user.commonChats?.isFullyLoaded) {
+  const { userId } = payload;
+
+  if (selectIsCurrentUserFrozen(global)) {
     return;
   }
 
-  const maxId = user.commonChats?.maxId;
-  const result = await callApi('fetchCommonChats', user.id, user.accessHash!, maxId);
+  const user = selectUser(global, userId);
+  const commonChats = selectUserCommonChats(global, userId);
+  if (!user || isUserBot(user) || commonChats?.isFullyLoaded) {
+    return;
+  }
+
+  const result = await callApi('fetchCommonChats', {
+    user,
+    maxId: commonChats?.maxId,
+  });
   if (!result) {
     return;
   }
 
-  const { chats, chatIds, isFullyLoaded } = result;
+  const { chatIds, count } = result;
+
+  const ids = unique((commonChats?.ids || []).concat(chatIds));
 
   global = getGlobal();
-  if (chats.length) {
-    global = addChats(global, buildCollectionByKey(chats, 'id'));
-  }
-  global = updateUser(global, user.id, {
-    commonChats: {
-      maxId: chatIds.length ? chatIds[chatIds.length - 1] : '0',
-      ids: unique((user.commonChats?.ids || []).concat(chatIds)),
-      isFullyLoaded,
-    },
+  global = updateUserCommonChats(global, user.id, {
+    maxId: chatIds.length ? chatIds[chatIds.length - 1] : undefined,
+    ids,
+    isFullyLoaded: ids.length >= count,
   });
+
+  setGlobal(global);
+});
+
+addActionHandler('toggleNoPaidMessagesException', async (global, actions, payload): Promise<void> => {
+  const { userId, shouldRefundCharged } = payload;
+  const user = selectUser(global, userId);
+  if (!user) {
+    return;
+  }
+
+  const result = await callApi('toggleNoPaidMessagesException',
+    { user, shouldRefundCharged });
+  if (!result) {
+    return;
+  }
+
+  global = getGlobal();
+  global = updateUserFullInfo(global, userId, {
+    settings: undefined,
+  });
+  setGlobal(global);
+});
+
+addActionHandler('openChatRefundModal', async (global, actions, payload): Promise<void> => {
+  const { userId, tabId = getCurrentTabId() } = payload;
+  const user = selectUser(global, userId);
+  if (!user) {
+    return;
+  }
+
+  const starsAmount = await callApi('fetchPaidMessagesRevenue', { user });
+  if (starsAmount === undefined) return;
+
+  global = getGlobal();
+  global = updateTabState(global, {
+    chatRefundModal: {
+      userId,
+      starsToRefund: starsAmount,
+    },
+  }, tabId);
 
   setGlobal(global);
 });
 
 addActionHandler('updateContact', async (global, actions, payload): Promise<void> => {
   const {
-    userId, isMuted = false, firstName, lastName, shouldSharePhoneNumber,
+    userId, firstName, lastName, shouldSharePhoneNumber, note,
     tabId = getCurrentTabId(),
   } = payload;
 
@@ -190,14 +248,12 @@ addActionHandler('updateContact', async (global, actions, payload): Promise<void
     return;
   }
 
-  actions.updateChatMutedState({ chatId: userId, isMuted });
-
   global = getGlobal();
   global = updateManagementProgress(global, ManagementProgress.InProgress, tabId);
   setGlobal(global);
 
   let result;
-  if (!user.isContact && user.phoneNumber) {
+  if (!user.isContact && user.phoneNumber && !note) {
     result = await callApi('importContact', { phone: user.phoneNumber, firstName, lastName });
   } else {
     const { id, accessHash } = user;
@@ -208,11 +264,12 @@ addActionHandler('updateContact', async (global, actions, payload): Promise<void
       firstName,
       lastName,
       shouldSharePhoneNumber,
+      note,
     });
   }
 
   if (result) {
-    actions.loadChatSettings({ chatId: userId });
+    actions.loadPeerSettings({ peerId: userId });
     actions.loadPeerStories({ peerId: userId });
 
     global = getGlobal();
@@ -233,6 +290,29 @@ addActionHandler('updateContact', async (global, actions, payload): Promise<void
   setGlobal(global);
 });
 
+addActionHandler('updateContactNote', async (global, actions, payload): Promise<void> => {
+  const {
+    userId, note,
+    tabId = getCurrentTabId(),
+  } = payload;
+
+  const user = selectUser(global, userId);
+  if (!user) {
+    return;
+  }
+
+  global = getGlobal();
+  global = updateManagementProgress(global, ManagementProgress.InProgress, tabId);
+  setGlobal(global);
+
+  const result = await callApi('updateContactNote', user, note);
+
+  global = getGlobal();
+  if (result) global = updateUserFullInfo(global, userId, { note });
+  global = updateManagementProgress(global, ManagementProgress.Complete, tabId);
+  setGlobal(global);
+});
+
 addActionHandler('deleteContact', async (global, actions, payload): Promise<void> => {
   const { userId } = payload;
 
@@ -247,58 +327,85 @@ addActionHandler('deleteContact', async (global, actions, payload): Promise<void
   await callApi('deleteContact', { id, accessHash });
 });
 
-addActionHandler('loadProfilePhotos', async (global, actions, payload): Promise<void> => {
-  const { profileId } = payload!;
-  const isPrivate = isUserId(profileId);
+addActionHandler('loadMoreProfilePhotos', async (global, actions, payload): Promise<void> => {
+  if (selectIsCurrentUserFrozen(global)) return;
 
-  let user = isPrivate ? selectUser(global, profileId) : undefined;
-  const chat = !isPrivate ? selectChat(global, profileId) : undefined;
-  if (!user && !chat) {
+  const { peerId, shouldInvalidateCache, isPreload } = payload;
+  const isPrivate = isUserId(peerId);
+
+  const user = isPrivate ? selectUser(global, peerId) : undefined;
+  const chat = !isPrivate ? selectChat(global, peerId) : undefined;
+  const peer = user || chat;
+
+  if (chat && selectIsChatRestricted(global, peerId)) {
+    return;
+  }
+  const profilePhotos = selectPeerPhotos(global, peerId);
+  if (!peer?.avatarPhotoId) {
     return;
   }
 
-  let fullInfo = selectUserFullInfo(global, profileId);
-  if (user && !fullInfo?.profilePhoto) {
+  if (profilePhotos && !shouldInvalidateCache && (isPreload || !profilePhotos.nextOffset)) return;
+
+  global = updatePeerPhotosIsLoading(global, peerId, true);
+  setGlobal(global);
+
+  global = getGlobal();
+
+  let userFullInfo = selectUserFullInfo(global, peerId);
+  let chatFullInfo = selectChatFullInfo(global, peerId);
+  if (user && !userFullInfo) {
     const { id, accessHash } = user;
     const result = await callApi('fetchFullUser', { id, accessHash });
     if (!result?.user) {
       return;
     }
-
-    user = result.user;
-    fullInfo = result.fullInfo;
+    userFullInfo = result.fullInfo;
   }
 
-  const result = await callApi('fetchProfilePhotos', user, chat);
+  if (chat && !chatFullInfo) {
+    const result = await callApi('fetchFullChat', chat);
+    if (!result?.fullInfo) {
+      return;
+    }
+
+    chatFullInfo = result.fullInfo;
+  }
+
+  const peerFullInfo = userFullInfo || chatFullInfo;
+  if (!peerFullInfo) return;
+
+  const offset = profilePhotos?.nextOffset;
+  const limit = !offset || isPreload || shouldInvalidateCache ? PROFILE_PHOTOS_FIRST_LOAD_LIMIT : undefined;
+
+  const result = await callApi('fetchProfilePhotos', {
+    peer,
+    offset,
+    limit,
+  });
   if (!result || !result.photos) {
     return;
   }
 
   global = getGlobal();
 
-  const userOrChat = user || chat;
-  const { photos, users } = result;
+  const {
+    photos, count, nextOffsetId,
+  } = result;
 
-  const fallbackPhoto = fullInfo?.fallbackPhoto;
-  const personalPhoto = fullInfo?.personalPhoto;
-  if (fallbackPhoto) photos.push(fallbackPhoto);
-  if (personalPhoto) photos.unshift(personalPhoto);
-
-  photos.sort((a) => (a.id === userOrChat?.avatarHash ? -1 : 1));
-
-  global = addUsers(global, buildCollectionByKey(users, 'id'));
-
-  if (isPrivate) {
-    global = updateUser(global, profileId, { photos });
-  } else {
-    global = updateChat(global, profileId, { photos });
-  }
+  global = updatePeerPhotos(global, peerId, {
+    newPhotos: photos,
+    count,
+    nextOffset: nextOffsetId,
+    fullInfo: peerFullInfo,
+    shouldInvalidateCache,
+  });
 
   setGlobal(global);
 });
 
 addActionHandler('setUserSearchQuery', (global, actions, payload): ActionReturnType => {
-  const { query, tabId = getCurrentTabId() } = payload!;
+  const { query, tabId = getCurrentTabId() } = payload;
 
   if (!query) return;
 
@@ -314,18 +421,12 @@ addActionHandler('setUserSearchQuery', (global, actions, payload): ActionReturnT
       return;
     }
 
-    const { localUsers, globalUsers } = result;
+    const {
+      accountResultIds, globalResultIds,
+    } = result;
 
-    let localUserIds;
-    let globalUserIds;
-    if (localUsers.length) {
-      global = addUsers(global, buildCollectionByKey(localUsers, 'id'));
-      localUserIds = localUsers.map(({ id }) => id);
-    }
-    if (globalUsers.length) {
-      global = addUsers(global, buildCollectionByKey(globalUsers, 'id'));
-      globalUserIds = globalUsers.map(({ id }) => id);
-    }
+    const localUserIds = accountResultIds.filter(isUserId);
+    const globalUserIds = globalResultIds.filter(isUserId);
 
     global = updateUserSearchFetchingStatus(global, false, tabId);
     global = updateUserSearch(global, { localUserIds, globalUserIds }, tabId);
@@ -343,7 +444,7 @@ addActionHandler('importContact', async (global, actions, payload): Promise<void
   const result = await callApi('importContact', { phone, firstName, lastName });
   if (!result) {
     actions.showNotification({
-      message: langProvider.translate('Contacts.PhoneNumber.NotRegistred'),
+      message: langProvider.oldTranslate('Contacts.PhoneNumber.NotRegistred'),
       tabId,
     });
 
@@ -358,7 +459,7 @@ addActionHandler('importContact', async (global, actions, payload): Promise<void
 });
 
 addActionHandler('reportSpam', (global, actions, payload): ActionReturnType => {
-  const { chatId } = payload!;
+  const { chatId } = payload;
   const peer = selectPeer(global, chatId);
   if (!peer) {
     return;
@@ -367,14 +468,66 @@ addActionHandler('reportSpam', (global, actions, payload): ActionReturnType => {
   void callApi('reportSpam', peer);
 });
 
-addActionHandler('setEmojiStatus', (global, actions, payload): ActionReturnType => {
-  const { emojiStatus, expires } = payload!;
+addActionHandler('setEmojiStatus', async (global, actions, payload): Promise<void> => {
+  const {
+    emojiStatus, referrerWebAppKey, tabId = getCurrentTabId(),
+  } = payload;
 
-  void callApi('updateEmojiStatus', emojiStatus, expires);
+  const isCurrentUserPremium = selectIsCurrentUserPremium(global);
+  if (!isCurrentUserPremium) {
+    if (referrerWebAppKey) {
+      actions.sendWebAppEvent({
+        webAppKey: referrerWebAppKey,
+        event: {
+          eventType: 'emoji_status_failed',
+          eventData: {
+            error: 'USER_DECLINED',
+          },
+        },
+        tabId,
+      });
+    }
+
+    actions.openPremiumModal({ initialSection: 'emoji_status', tabId });
+    return;
+  }
+
+  const result = await callApi('updateEmojiStatus', emojiStatus);
+
+  if (referrerWebAppKey) {
+    if (!result) {
+      actions.sendWebAppEvent({
+        webAppKey: referrerWebAppKey,
+        event: {
+          eventType: 'emoji_status_failed',
+          eventData: {
+            error: 'SERVER_ERROR',
+          },
+        },
+        tabId,
+      });
+      return;
+    }
+
+    actions.sendWebAppEvent({
+      webAppKey: referrerWebAppKey,
+      event: {
+        eventType: 'emoji_status_set',
+      },
+      tabId,
+    });
+    actions.showNotification({
+      message: {
+        key: 'BotSuggestedStatusUpdated',
+      },
+      customEmojiIconId: emojiStatus.documentId,
+      tabId,
+    });
+  }
 });
 
 addActionHandler('saveCloseFriends', async (global, actions, payload): Promise<void> => {
-  const { userIds } = payload!;
+  const { userIds } = payload;
 
   const result = await callApi('saveCloseFriends', userIds);
   if (!result) {
@@ -395,5 +548,84 @@ addActionHandler('saveCloseFriends', async (global, actions, payload): Promise<v
       isCloseFriend: true,
     });
   });
+  setGlobal(global);
+});
+
+addActionHandler('openSuggestedStatusModal', async (global, actions, payload): Promise<void> => {
+  const {
+    customEmojiId, duration, botId, webAppKey, tabId = getCurrentTabId(),
+  } = payload;
+
+  const customEmoji = await callApi('fetchCustomEmoji', {
+    documentId: [customEmojiId],
+  });
+  if (!customEmoji?.[0]) {
+    if (webAppKey) {
+      actions.sendWebAppEvent({
+        webAppKey,
+        event: {
+          eventType: 'emoji_status_failed',
+          eventData: {
+            error: 'SUGGESTED_EMOJI_INVALID',
+          },
+        },
+        tabId,
+      });
+    }
+    return;
+  }
+
+  global = getGlobal();
+  global = updateTabState(global, {
+    suggestedStatusModal: {
+      customEmojiId,
+      duration,
+      webAppKey,
+      botId,
+    },
+  }, tabId);
+  setGlobal(global);
+});
+
+addActionHandler('loadPeerSettings', async (global, actions, payload): Promise<void> => {
+  const { peerId } = payload;
+
+  if (selectIsCurrentUserFrozen(global)) return;
+
+  const userFullInfo = selectUserFullInfo(global, peerId);
+  if (!userFullInfo) {
+    actions.loadFullUser({ userId: peerId });
+    return;
+  }
+
+  const user = selectUser(global, peerId);
+  if (!user) {
+    return;
+  }
+
+  const result = await callApi('fetchPeerSettings', user);
+  if (!result) return;
+
+  const { settings } = result;
+
+  global = getGlobal();
+  global = updateUserFullInfo(global, peerId, { settings });
+  setGlobal(global);
+});
+
+addActionHandler('markBotVerificationInfoShown', (global, actions, payload): ActionReturnType => {
+  const { peerId } = payload;
+
+  const currentPeerIds = global.settings.botVerificationShownPeerIds;
+  const newPeerIds = unique([peerId, ...currentPeerIds]).slice(0, BOT_VERIFICATION_PEERS_LIMIT);
+
+  global = {
+    ...global,
+    settings: {
+      ...global.settings,
+      botVerificationShownPeerIds: newPeerIds,
+    },
+  };
+
   setGlobal(global);
 });

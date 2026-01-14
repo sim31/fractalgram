@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useEffect, useRef } from '../../../lib/teact/teact';
+import { memo, useEffect, useRef } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiSticker } from '../../../api/types';
@@ -13,8 +13,8 @@ import captureEscKeyListener from '../../../util/captureEscKeyListener';
 import useHorizontalScroll from '../../../hooks/useHorizontalScroll';
 import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
 import useLastCallback from '../../../hooks/useLastCallback';
-import usePrevious from '../../../hooks/usePrevious';
-import useShowTransition from '../../../hooks/useShowTransition';
+import usePreviousDeprecated from '../../../hooks/usePreviousDeprecated';
+import useShowTransitionDeprecated from '../../../hooks/useShowTransitionDeprecated';
 
 import StickerButton from '../../common/StickerButton';
 import Loading from '../../ui/Loading';
@@ -50,10 +50,9 @@ const CustomEmojiTooltip: FC<OwnProps & StateProps> = ({
 }) => {
   const { clearCustomEmojiForEmoji } = getActions();
 
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
-  const { shouldRender, transitionClassNames } = useShowTransition(isOpen, undefined, undefined, false);
-  const prevStickers = usePrevious(customEmoji, true);
+  const containerRef = useRef<HTMLDivElement>();
+  const { shouldRender, transitionClassNames } = useShowTransitionDeprecated(isOpen, undefined, undefined, false);
+  const prevStickers = usePreviousDeprecated(customEmoji, true);
   const displayedStickers = customEmoji || prevStickers;
 
   useHorizontalScroll(containerRef);
@@ -75,7 +74,7 @@ const CustomEmojiTooltip: FC<OwnProps & StateProps> = ({
 
   const className = buildClassName(
     styles.root,
-    'composer-tooltip custom-scroll-x',
+    'composer-tooltip no-scrollbar',
     transitionClassNames,
     !displayedStickers?.length && styles.hidden,
   );
@@ -109,7 +108,7 @@ const CustomEmojiTooltip: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { chatId }): StateProps => {
+  (global, { chatId }): Complete<StateProps> => {
     const { stickers: customEmoji } = global.customEmojis.forEmoji;
     const isSavedMessages = selectIsChatWithSelf(global, chatId);
     const isCurrentUserPremium = selectIsCurrentUserPremium(global);

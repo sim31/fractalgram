@@ -1,3 +1,5 @@
+import { fetchBlob } from './files';
+
 type AudioMetadata = {
   title?: string;
   performer?: string;
@@ -6,12 +8,14 @@ type AudioMetadata = {
 };
 
 export async function parseAudioMetadata(url: string): Promise<AudioMetadata> {
-  const { fetchFromUrl, selectCover } = await import('../lib/music-metadata-browser');
-  const metadata = await fetchFromUrl(url);
+  const { parseBlob, selectCover } = await import('music-metadata');
+  const blob = await fetchBlob(url);
+  const metadata = await parseBlob(blob);
   const { common: { title, artist, picture }, format: { duration } } = metadata;
 
   const cover = selectCover(picture);
-  const coverUrl = cover ? `data:${cover.format};base64,${cover.data.toString('base64')}` : undefined;
+  const coverBlob = cover ? new Blob([cover.data as Uint8Array<ArrayBuffer>], { type: cover.format }) : undefined;
+  const coverUrl = coverBlob ? URL.createObjectURL(coverBlob) : undefined;
 
   return {
     title,

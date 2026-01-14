@@ -1,5 +1,4 @@
-import type { FC } from '../../lib/teact/teact';
-import React, { useState } from '../../lib/teact/teact';
+import { useState } from '../../lib/teact/teact';
 
 import Portal from '../ui/Portal';
 
@@ -8,13 +7,16 @@ const StateChecker = () => {
 
   return (
     <div>
-      state value: {value}!
+      state value:
+      {' '}
+      {value}
+      !
       <input type="button" onClick={() => setValue(value + 1)} value=" + " />
     </div>
   );
 };
 
-const TestPortal: FC = () => {
+const TestPortal = () => {
   const [value, setValue] = useState(0);
   const position = 100 + Math.round(Math.random() * 300);
 
@@ -22,7 +24,10 @@ const TestPortal: FC = () => {
     <div>
       <h2>Test normal</h2>
       <div>
-        state value: {value}!
+        state value:
+        {' '}
+        {value}
+        !
         <input type="button" onClick={() => setValue(value + 1)} value=" + " />
       </div>
       <Portal>

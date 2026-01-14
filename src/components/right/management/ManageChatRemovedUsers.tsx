@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback } from '../../../lib/teact/teact';
+import { memo, useCallback } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiChat, ApiChatMember, ApiUser } from '../../../api/types';
@@ -10,7 +10,7 @@ import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
 
 import useFlag from '../../../hooks/useFlag';
 import useHistoryBack from '../../../hooks/useHistoryBack';
-import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 
 import PrivateChatInfo from '../../common/PrivateChatInfo';
 import FloatingActionButton from '../../ui/FloatingActionButton';
@@ -42,7 +42,7 @@ const ManageChatRemovedUsers: FC<OwnProps & StateProps> = ({
 }) => {
   const { updateChatMemberBannedRights } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
   const [isRemoveUserModalOpen, openRemoveUserModal, closeRemoveUserModal] = useFlag();
 
   useHistoryBack({
@@ -82,9 +82,9 @@ const ManageChatRemovedUsers: FC<OwnProps & StateProps> = ({
 
   return (
     <div className="Management">
-      <div className="custom-scroll">
+      <div className="panel-content custom-scroll">
         <div className="section" dir={lang.isRtl ? 'rtl' : undefined}>
-          <p className="text-muted">{lang(isChannel ? 'NoBlockedChannel2' : 'NoBlockedGroup2')}</p>
+          <p className="section-help">{lang(isChannel ? 'NoBlockedChannel2' : 'NoBlockedGroup2')}</p>
 
           {removedMembers.map((member) => (
             <ListItem
@@ -105,9 +105,8 @@ const ManageChatRemovedUsers: FC<OwnProps & StateProps> = ({
               isShown
               onClick={openRemoveUserModal}
               ariaLabel={lang('Channel.EditAdmin.Permission.BanUsers')}
-            >
-              <i className="icon icon-add-user-filled" />
-            </FloatingActionButton>
+              iconName="add-user-filled"
+            />
           )}
           {chat && canDeleteMembers && (
             <RemoveGroupUserModal
@@ -123,7 +122,7 @@ const ManageChatRemovedUsers: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { chatId }): StateProps => {
+  (global, { chatId }): Complete<StateProps> => {
     const chat = selectChat(global, chatId);
     const { byId: usersById } = global.users;
     const canDeleteMembers = chat && (getHasAdminRight(chat, 'banUsers') || chat.isCreator);

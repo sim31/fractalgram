@@ -1,9 +1,12 @@
-import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback, useState } from '../../../lib/teact/teact';
+import type { FC } from '@teact';
+import { memo, useCallback, useState } from '@teact';
+import { getActions } from '../../../global';
 
-import { LeftColumnContent } from '../../../types';
+import { type AnimationLevel, LeftColumnContent } from '../../../types';
 
-import { LAYERS_ANIMATION_NAME } from '../../../util/windowEnvironment';
+import { resolveTransitionName } from '../../../util/resolveTransitionName';
+
+import useLastCallback from '../../../hooks/useLastCallback';
 
 import Transition from '../../ui/Transition';
 import NewChatStep1 from './NewChatStep1';
@@ -15,7 +18,7 @@ export type OwnProps = {
   isActive: boolean;
   isChannel?: boolean;
   content: LeftColumnContent;
-  onContentChange: (content: LeftColumnContent) => void;
+  animationLevel: AnimationLevel;
   onReset: () => void;
 };
 
@@ -25,19 +28,31 @@ const NewChat: FC<OwnProps> = ({
   isActive,
   isChannel = false,
   content,
-  onContentChange,
+  animationLevel,
   onReset,
 }) => {
+  const { openLeftColumnContent, setGlobalSearchQuery } = getActions();
   const [newChatMemberIds, setNewChatMemberIds] = useState<string[]>([]);
 
   const handleNextStep = useCallback(() => {
-    onContentChange(isChannel ? LeftColumnContent.NewChannelStep2 : LeftColumnContent.NewGroupStep2);
-  }, [isChannel, onContentChange]);
+    openLeftColumnContent({
+      contentKey: isChannel ? LeftColumnContent.NewChannelStep2 : LeftColumnContent.NewGroupStep2,
+    });
+  }, [isChannel]);
+
+  const changeSelectedMemberIdsHandler = useLastCallback((ids: string[]) => {
+    const isSelection = ids.length > newChatMemberIds.length;
+
+    setNewChatMemberIds(ids);
+    if (isSelection) {
+      setGlobalSearchQuery({ query: '' });
+    }
+  });
 
   return (
     <Transition
       id="NewChat"
-      name={LAYERS_ANIMATION_NAME}
+      name={resolveTransitionName('layers', animationLevel)}
       renderCount={RENDER_COUNT}
       activeKey={content}
     >
@@ -50,7 +65,7 @@ const NewChat: FC<OwnProps> = ({
                 isChannel={isChannel}
                 isActive={isActive}
                 selectedMemberIds={newChatMemberIds}
-                onSelectedMemberIdsChange={setNewChatMemberIds}
+                onSelectedMemberIdsChange={changeSelectedMemberIdsHandler}
                 onNextStep={handleNextStep}
                 onReset={onReset}
               />

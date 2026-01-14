@@ -1,6 +1,8 @@
 import type {
-  ApiPeer, ApiUser, ApiUserFullInfo, ApiUserStatus,
+  ApiUser, ApiUserCommonChats,
+  ApiUserFullInfo, ApiUserStatus,
 } from '../../api/types';
+import type { BotAppPermissions } from '../../types';
 import type { GlobalState } from '../types';
 
 import { isUserBot } from '../helpers';
@@ -17,6 +19,12 @@ export function selectUserFullInfo<T extends GlobalState>(global: T, userId: str
   return global.users.fullInfoById[userId];
 }
 
+export function selectUserCommonChats<T extends GlobalState>(
+  global: T, userId: string,
+): ApiUserCommonChats | undefined {
+  return global.users.commonChatsById[userId];
+}
+
 export function selectIsUserBlocked<T extends GlobalState>(global: T, userId: string) {
   return selectUserFullInfo(global, userId)?.isBlocked;
 }
@@ -27,19 +35,25 @@ export function selectIsCurrentUserPremium<T extends GlobalState>(global: T) {
   return Boolean(global.users.byId[global.currentUserId].isPremium);
 }
 
-export function selectIsPremiumPurchaseBlocked<T extends GlobalState>(global: T) {
-  return global.appConfig?.isPremiumPurchaseBlocked ?? true;
+export function selectIsCurrentUserFrozen<T extends GlobalState>(global: T) {
+  return Boolean(global.appConfig.freezeUntilDate);
 }
 
-// Slow, not to be used in `withGlobal`
+export function selectIsPremiumPurchaseBlocked<T extends GlobalState>(global: T) {
+  return global.appConfig.isPremiumPurchaseBlocked ?? true;
+}
+
+export function selectIsGiveawayGiftsPurchaseAvailable<T extends GlobalState>(global: T) {
+  return global.appConfig.isGiveawayGiftsPurchaseAvailable ?? true;
+}
+
+/**
+ * Slow, not to be used in `withGlobal`
+ */
 export function selectUserByPhoneNumber<T extends GlobalState>(global: T, phoneNumber: string) {
   const phoneNumberCleaned = phoneNumber.replace(/[^0-9]/g, '');
 
   return Object.values(global.users.byId).find((user) => user?.phoneNumber === phoneNumberCleaned);
-}
-
-export function selectIsUserOrChatContact<T extends GlobalState>(global: T, peer: ApiPeer) {
-  return global.contactList && global.contactList.userIds.includes(peer.id);
 }
 
 export function selectBot<T extends GlobalState>(global: T, userId: string): ApiUser | undefined {
@@ -49,4 +63,10 @@ export function selectBot<T extends GlobalState>(global: T, userId: string): Api
   }
 
   return user;
+}
+
+export function selectBotAppPermissions<T extends GlobalState>(
+  global: T, userId: string,
+): BotAppPermissions | undefined {
+  return global.users.botAppPermissionsById[userId];
 }

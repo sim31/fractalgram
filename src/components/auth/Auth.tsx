@@ -1,15 +1,14 @@
 import '../../global/actions/initial';
 
-import type { FC } from '../../lib/teact/teact';
-import React, { memo, useRef } from '../../lib/teact/teact';
+import { memo } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type { GlobalState } from '../../global/types';
 
-import { PLATFORM_ENV } from '../../util/windowEnvironment';
+import { IS_TAURI } from '../../util/browser/globalEnvironment';
+import { IS_MAC_OS, PLATFORM_ENV } from '../../util/browser/windowEnvironment';
 
 import useCurrentOrPrev from '../../hooks/useCurrentOrPrev';
-import useElectronDrag from '../../hooks/useElectronDrag';
 import useHistoryBack from '../../hooks/useHistoryBack';
 
 import Transition from '../ui/Transition';
@@ -21,11 +20,13 @@ import AuthRegister from './AuthRegister.async';
 
 import './Auth.scss';
 
-type StateProps = Pick<GlobalState, 'authState'>;
+type StateProps = {
+  authState: GlobalState['auth']['state'];
+};
 
-const Auth: FC<StateProps> = ({
+const Auth = ({
   authState,
-}) => {
+}: StateProps) => {
   const {
     returnToAuthPhoneNumber, goToAuthQrCode,
   } = getActions();
@@ -45,10 +46,6 @@ const Auth: FC<StateProps> = ({
       || (isMobile && authState === 'authorizationStateWaitQrCode'),
     onBack: handleChangeAuthorizationMethod,
   });
-
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
-  useElectronDrag(containerRef);
 
   // For animation purposes
   const renderingAuthState = useCurrentOrPrev(
@@ -91,16 +88,21 @@ const Auth: FC<StateProps> = ({
   }
 
   return (
-    <Transition activeKey={getActiveKey()} name="fade" className="Auth" ref={containerRef}>
+    <Transition
+      activeKey={getActiveKey()}
+      name="fade"
+      className="Auth"
+      data-tauri-drag-region={IS_TAURI && IS_MAC_OS ? true : undefined}
+    >
       {getScreen()}
     </Transition>
   );
 };
 
 export default memo(withGlobal(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     return {
-      authState: global.authState,
+      authState: global.auth.state,
     };
   },
 )(Auth));

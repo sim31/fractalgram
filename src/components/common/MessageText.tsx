@@ -1,25 +1,31 @@
-import React, {
+import {
   memo, useMemo, useRef,
 } from '../../lib/teact/teact';
 
 import type { ApiFormattedText, ApiMessage, ApiStory } from '../../api/types';
 import type { ObserveFn } from '../../hooks/useIntersectionObserver';
+import type { ThreadId } from '../../types';
 import { ApiMessageEntityTypes } from '../../api/types';
 
-import { extractMessageText, getMessageText, stripCustomEmoji } from '../../global/helpers';
+import { extractMessageText, stripCustomEmoji } from '../../global/helpers';
 import trimText from '../../util/trimText';
-import { renderTextWithEntities } from './helpers/renderTextWithEntities';
+import { insertTextEntity, renderTextWithEntities } from './helpers/renderTextWithEntities';
 
+import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
 import useSyncEffect from '../../hooks/useSyncEffect';
 import useUniqueId from '../../hooks/useUniqueId';
 
+import TypingWrapper from './TypingWrapper';
+
 interface OwnProps {
   messageOrStory: ApiMessage | ApiStory;
+  threadId?: ThreadId;
   translatedText?: ApiFormattedText;
   isForAnimation?: boolean;
   emojiSize?: number;
   highlight?: string;
-  isSimple?: boolean;
+  asPreview?: boolean;
   truncateLength?: number;
   isProtected?: boolean;
   observeIntersectionForLoading?: ObserveFn;
@@ -28,6 +34,12 @@ interface OwnProps {
   shouldRenderAsHtml?: boolean;
   inChatList?: boolean;
   forcePlayback?: boolean;
+  focusedQuote?: string;
+  focusedQuoteOffset?: number;
+  isInSelectMode?: boolean;
+  canBeEmpty?: boolean;
+  maxTimestamp?: number;
+  shouldAnimateTyping?: boolean;
 }
 
 const MIN_CUSTOM_EMOJIS_FOR_SHARED_CANVAS = 3;
@@ -38,7 +50,7 @@ function MessageText({
   isForAnimation,
   emojiSize,
   highlight,
-  isSimple,
+  asPreview,
   truncateLength,
   isProtected,
   observeIntersectionForLoading,
@@ -47,61 +59,101 @@ function MessageText({
   shouldRenderAsHtml,
   inChatList,
   forcePlayback,
+  focusedQuote,
+  focusedQuoteOffset,
+  isInSelectMode,
+  canBeEmpty,
+  maxTimestamp,
+  threadId,
+  shouldAnimateTyping,
 }: OwnProps) {
-  // eslint-disable-next-line no-null/no-null
-  const sharedCanvasRef = useRef<HTMLCanvasElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const sharedCanvasHqRef = useRef<HTMLCanvasElement>(null);
+  const sharedCanvasRef = useRef<HTMLCanvasElement>();
+  const sharedCanvasHqRef = useRef<HTMLCanvasElement>();
 
   const textCacheBusterRef = useRef(0);
+
+  const lang = useLang();
 
   const formattedText = translatedText || extractMessageText(messageOrStory, inChatList);
   const adaptedFormattedText = isForAnimation && formattedText ? stripCustomEmoji(formattedText) : formattedText;
   const { text, entities } = adaptedFormattedText || {};
 
+  const entitiesWithFocusedQuote = useMemo(() => {
+    if (!text || !focusedQuote) return entities;
+
+    const offsetIndex = text.indexOf(focusedQuote, focusedQuoteOffset);
+    const index = offsetIndex >= 0 ? offsetIndex : text.indexOf(focusedQuote); // Fallback to first occurrence
+    const lendth = focusedQuote.length;
+    if (index >= 0) {
+      return insertTextEntity(entities || [], {
+        offset: index,
+        length: lendth,
+        type: ApiMessageEntityTypes.QuoteFocus,
+      });
+    }
+
+    return entities;
+  }, [text, entities, focusedQuote, focusedQuoteOffset]);
+
   const containerId = useUniqueId();
 
   useSyncEffect(() => {
     textCacheBusterRef.current += 1;
-  }, [text, entities]);
+  }, [text, entitiesWithFocusedQuote]);
 
   const withSharedCanvas = useMemo(() => {
-    const hasSpoilers = entities?.some((e) => e.type === ApiMessageEntityTypes.Spoiler);
+    const hasSpoilers = entitiesWithFocusedQuote?.some((e) => e.type === ApiMessageEntityTypes.Spoiler);
     if (hasSpoilers) {
       return false;
     }
 
-    const customEmojisCount = entities?.filter((e) => e.type === ApiMessageEntityTypes.CustomEmoji).length || 0;
+    const customEmojisCount = entitiesWithFocusedQuote
+      ?.filter((e) => e.type === ApiMessageEntityTypes.CustomEmoji).length || 0;
     return customEmojisCount >= MIN_CUSTOM_EMOJIS_FOR_SHARED_CANVAS;
-  }, [entities]) || 0;
+  }, [entitiesWithFocusedQuote]) || 0;
 
-  if (!text) {
-    const contentNotSupportedText = getMessageText(messageOrStory);
-    return contentNotSupportedText ? [trimText(contentNotSupportedText, truncateLength)] : undefined as any;
+  const renderText = useLastCallback((t: ApiFormattedText) => {
+    return renderTextWithEntities({
+      text: t.text,
+      entities: t.entities,
+      highlight,
+      emojiSize,
+      shouldRenderAsHtml,
+      containerId,
+      asPreview,
+      isProtected,
+      observeIntersectionForLoading,
+      observeIntersectionForPlaying,
+      withTranslucentThumbs,
+      sharedCanvasRef,
+      sharedCanvasHqRef,
+      cacheBuster: textCacheBusterRef.current.toString(),
+      forcePlayback,
+      isInSelectMode,
+      maxTimestamp,
+      chatId: 'chatId' in messageOrStory ? messageOrStory.chatId : undefined,
+      messageId: messageOrStory.id,
+      threadId,
+    });
+  });
+
+  if (!text && !canBeEmpty) {
+    return <span className="content-unsupported">{lang('MessageUnsupported')}</span>;
   }
+
+  const textToRender: ApiFormattedText = {
+    text: trimText(text || '', truncateLength),
+    entities: entitiesWithFocusedQuote,
+  };
 
   return (
     <>
       {[
-        withSharedCanvas && <canvas ref={sharedCanvasRef} className="shared-canvas" />,
-        withSharedCanvas && <canvas ref={sharedCanvasHqRef} className="shared-canvas" />,
-        renderTextWithEntities({
-          text: trimText(text!, truncateLength),
-          entities,
-          highlight,
-          emojiSize,
-          shouldRenderAsHtml,
-          containerId,
-          isSimple,
-          isProtected,
-          observeIntersectionForLoading,
-          observeIntersectionForPlaying,
-          withTranslucentThumbs,
-          sharedCanvasRef,
-          sharedCanvasHqRef,
-          cacheBuster: textCacheBusterRef.current.toString(),
-          forcePlayback,
-        }),
+        withSharedCanvas && <canvas key="shared-canvas" ref={sharedCanvasRef} className="shared-canvas" />,
+        withSharedCanvas && <canvas key="shared-canvas-hq" ref={sharedCanvasHqRef} className="shared-canvas" />,
+        shouldAnimateTyping ? (
+          <TypingWrapper key="typing-wrapper" text={textToRender}>{renderText}</TypingWrapper>
+        ) : renderText(textToRender),
       ].flat().filter(Boolean)}
     </>
   );

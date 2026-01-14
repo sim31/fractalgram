@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useEffect, useRef, useState,
 } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
@@ -8,8 +8,10 @@ import buildClassName from '../../../util/buildClassName';
 import { copyTextToClipboard } from '../../../util/clipboard';
 import { areLinesWrapping } from '../helpers/renderText';
 
-import useLang from '../../../hooks/useLang';
-import useWindowSize from '../../../hooks/useWindowSize';
+import useOldLang from '../../../hooks/useOldLang';
+import useWindowSize from '../../../hooks/window/useWindowSize';
+
+import Icon from '../icons/Icon';
 
 import styles from './CodeOverlay.module.scss';
 
@@ -24,10 +26,9 @@ const CodeOverlay: FC<OwnProps> = ({
   text, className, noCopy, onWordWrapToggle,
 }) => {
   const { showNotification } = getActions();
-  // eslint-disable-next-line no-null/no-null
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement>();
   const windowSize = useWindowSize();
-  const lang = useLang();
+  const lang = useOldLang();
   const [isWordWrap, setIsWordWrap] = useState(true);
   const [withWordWrapButton, setWithWordWrapButton] = useState(false);
 
@@ -63,12 +64,12 @@ const CodeOverlay: FC<OwnProps> = ({
       <div className={contentClass}>
         {withWordWrapButton && (
           <div className={wrapClass} onClick={handleWordWrapClick} title="Word Wrap">
-            <i className="icon icon-word-wrap" />
+            <Icon name="word-wrap" />
           </div>
         )}
         {!noCopy && (
           <div className={styles.copy} onClick={handleCopy} title={lang('Copy')}>
-            <i className="icon icon-copy" />
+            <Icon name="copy" />
           </div>
         )}
       </div>

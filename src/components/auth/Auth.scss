@@ -7,35 +7,29 @@
   max-width: 25.5rem;
   margin: 0 auto;
   padding: 6rem 1rem 1rem;
+
   text-align: center;
-
-  @media (min-width: 600px) and (min-height: 450px) {
-    padding: 6.8125rem 1.5rem 1.5rem;
-
-    &.qr {
-      padding-top: 4rem;
-    }
-  }
 
   #logo,
   .AvatarEditable label {
     display: block;
-    margin-left: auto;
-    margin-right: auto;
+
     width: 7.5rem;
     height: 7.5rem;
+    margin-right: auto;
     margin-bottom: 1.75rem;
+    margin-left: auto;
+
+    body.is-tauri & {
+      width: 6rem;
+      height: 6rem;
+      margin-bottom: 1.75rem;
+    }
 
     @media (min-width: 600px) and (min-height: 450px) {
       width: 10rem;
       height: 10rem;
       margin-bottom: 2.5rem;
-    }
-
-    body.is-electron & {
-      width: 6rem;
-      height: 6rem;
-      margin-bottom: 1.75rem;
     }
   }
 
@@ -55,22 +49,30 @@
   }
 
   .note {
+    margin-bottom: 2.5rem;
     font-size: 0.875rem;
     line-height: 1.35;
-    margin-bottom: 2.5rem;
     color: var(--color-text-secondary);
 
     @media (min-width: 600px) {
-      font-size: 1rem;
       margin-bottom: 3rem;
+      font-size: 1rem;
     }
   }
 
-  body.is-electron #auth-phone-number-form & {
+  body.is-tauri #auth-phone-number-form & {
     padding-top: 3rem;
 
     .form {
       min-height: 0;
+    }
+  }
+
+  @media (min-width: 600px) and (min-height: 450px) {
+    padding: 6.8125rem 1.5rem 1.5rem;
+
+    &.qr {
+      padding-top: 4rem;
     }
   }
 }
@@ -80,29 +82,13 @@
 #auth-code-form,
 #auth-password-form,
 #auth-qr-form {
-  height: 100%;
   overflow-y: auto;
-
-  body.is-electron.is-macos & {
-    -webkit-app-region: drag;
-
-    .input-group {
-      -webkit-app-region: no-drag;
-    }
-  }
+  height: 100%;
 }
 
 #auth-phone-number-form {
   .form {
     min-height: 26.25rem;
-  }
-
-  .Button {
-    margin-top: 2.75rem;
-  }
-
-  .Button + .Button {
-    margin-top: 1rem;
   }
 }
 
@@ -116,16 +102,20 @@
 }
 
 .auth-number-edit {
-  width: 2.5rem;
-  height: 2.5rem;
-  padding: 0.5rem;
-  font-size: 1.5rem;
-  color: var(--color-text-secondary);
-  opacity: 0.75;
+  cursor: var(--custom-cursor, pointer);
+
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: var(--custom-cursor, pointer);
+
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0.5rem;
+
+  font-size: 1.5rem;
+  color: var(--color-text-secondary);
+
+  opacity: 0.75;
 
   &:hover,
   &:focus {
@@ -133,21 +123,35 @@
   }
 }
 
+.auth-button {
+  margin-top: 2.5rem;
+}
+
+.auth-button + .auth-button {
+  margin-top: 0.5rem;
+}
+
+.auth-button.text + .auth-button.text {
+  margin-top: 0;
+}
+
 #auth-qr-form {
   .qr-outer {
-    height: 280px;
     position: relative;
+    height: 280px;
   }
 
   .qr-inner,
   .qr-loading {
-    height: 280px;
-    width: 100%;
     position: absolute;
     top: 0;
     left: 0;
+
     display: flex;
     justify-content: center;
+
+    width: 100%;
+    height: 280px;
   }
 
   .qr-inner {
@@ -167,18 +171,20 @@
 
   .qr-plane {
     position: absolute;
+    z-index: 1;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    z-index: 1;
+
     border-radius: 50%;
+
     background-color: var(--color-telegram-blue);
   }
 
   .qr-container {
-    background-color: white;
-    border-radius: 1.5rem;
     overflow: hidden;
+    border-radius: 1.5rem;
+    background-color: white;
   }
 
   h1 {
@@ -187,29 +193,33 @@
   }
 
   ol {
-    list-style: none;
     counter-reset: item;
     padding: 0 1.75rem;
+    list-style: none;
 
     li {
       counter-increment: item;
-      text-align: left;
-      margin: 0.75rem 0;
       display: flex;
+      margin: 0.75rem 0;
+      text-align: left;
 
       &::before {
         content: counter(item);
+
         display: flex;
-        justify-content: center;
         align-items: center;
+        justify-content: center;
+
         min-width: 1.375rem;
         height: 1.375rem;
+        margin: 0.0625rem 0.75rem 0 0;
         padding: 0;
-        margin: 0 0.75rem 0 0;
-        background: var(--color-primary);
         border-radius: 50%;
-        font-size: smaller;
+
+        font-size: 0.875rem;
         color: white;
+
+        background: var(--color-primary);
       }
     }
   }
@@ -219,14 +229,30 @@
   word-break: normal !important;
 }
 
+.test-server-badge {
+  position: fixed;
+  right: 0.5rem;
+  bottom: 0.5rem;
+}
+
+.auth-close {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+
+  body.is-tauri & {
+    left: var(--window-controls-width);
+  }
+}
+
 @keyframes qr-show {
   0% {
-    opacity: 0;
     transform: scale(0.7);
+    opacity: 0;
   }
   50% {
-    opacity: 1;
     transform: scale(1.1);
+    opacity: 1;
   }
   100% {
     transform: scale(1);

@@ -1,12 +1,14 @@
 .root {
+  pointer-events: auto;
+  user-select: none;
+
+  position: relative;
+
   display: flex;
   flex-direction: column;
   align-items: center;
-  position: relative;
-  transition: opacity 0.2s ease;
-  user-select: none;
 
-  pointer-events: auto;
+  transition: opacity 0.2s ease;
 
   &:not(:first-child) {
     margin-top: 0.5rem;
@@ -15,30 +17,11 @@
       margin-top: 1rem;
     }
   }
-
-  @media (min-width: 1276px) {
-    transform: translateX(0);
-
-    transition: transform var(--layer-transition), opacity 0.2s ease;
-
-    :global(body.no-page-transitions) &,
-    :global(body.no-right-column-animations) & {
-      transition: none !important;
-    }
-
-    :global(body:not(.no-right-column-animations) #Main.right-column-open) & {
-      transition: transform var(--layer-transition), opacity 0.2s ease;
-    }
-
-    :global(#Main.right-column-open) & {
-      transform: translateX(calc(-1 * var(--right-column-width)));
-    }
-  }
 }
 
 .button {
-  box-shadow: 0 1px 2px var(--color-default-shadow);
   color: var(--color-composer-button);
+  box-shadow: 0 1px 2px var(--color-default-shadow);
 
   @media (max-width: 600px) {
     width: 2.875rem !important;
@@ -51,23 +34,25 @@
 }
 
 .unread-count {
-  min-width: 1.5rem;
-  height: 1.5rem;
-  padding: 0 0.4375rem;
-  border-radius: 0.75rem;
-  font-size: 0.875rem;
-  line-height: 1.5rem;
-  font-weight: 500;
-  text-align: center;
+  pointer-events: none;
 
   position: absolute;
   top: -0.3125rem;
   right: -0.3125rem;
 
-  background: var(--color-green);
-  color: white;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding: 0 0.4375rem;
+  border: 1px solid var(--color-background);
+  border-radius: 0.75rem;
 
-  pointer-events: none;
+  font-size: 0.875rem;
+  font-weight: var(--font-weight-medium);
+  line-height: 1.5rem;
+  color: white;
+  text-align: center;
+
+  background-color: var(--color-green);
 
   @media (max-width: 600px) {
     top: -0.6875rem;

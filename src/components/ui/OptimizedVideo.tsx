@@ -1,4 +1,6 @@
-import React, { memo, useMemo, useRef } from '../../lib/teact/teact';
+import type { ElementRef } from '../../lib/teact/teact';
+import type React from '../../lib/teact/teact';
+import { memo, useMemo, useRef } from '../../lib/teact/teact';
 
 import useBuffering from '../../hooks/useBuffering';
 import useLastCallback from '../../hooks/useLastCallback';
@@ -10,11 +12,12 @@ type VideoProps = React.DetailedHTMLProps<React.VideoHTMLAttributes<HTMLVideoEle
 
 type OwnProps =
   {
-    ref?: React.RefObject<HTMLVideoElement>;
+    ref?: ElementRef<HTMLVideoElement>;
     isPriority?: boolean;
     canPlay: boolean;
     children?: React.ReactNode;
     onReady?: NoneToVoidFunction;
+    onBroken?: NoneToVoidFunction;
   }
   & VideoProps;
 
@@ -24,17 +27,16 @@ function OptimizedVideo({
   canPlay,
   children,
   onReady,
+  onBroken,
   onTimeUpdate,
   ...restProps
 }: OwnProps) {
-  // eslint-disable-next-line no-null/no-null
-  const localRef = useRef<HTMLVideoElement>(null);
+  const localRef = useRef<HTMLVideoElement>();
   if (!ref) {
     ref = localRef;
   }
 
   const { handlePlaying: handlePlayingForAutoPause } = useVideoAutoPause(ref, canPlay, isPriority);
-  useVideoCleanup(ref, []);
 
   const isReadyRef = useRef(false);
   const handleReady = useLastCallback(() => {
@@ -45,7 +47,7 @@ function OptimizedVideo({
   });
 
   // This is only needed for browsers not allowing autoplay
-  const { isBuffered, bufferingHandlers } = useBuffering(true, onTimeUpdate);
+  const { isBuffered, bufferingHandlers } = useBuffering(true, onTimeUpdate, onBroken);
   const { onPlaying: handlePlayingForBuffering, ...otherBufferingHandlers } = bufferingHandlers;
   useSyncEffect(([prevIsBuffered]) => {
     if (prevIsBuffered === undefined) {
@@ -75,8 +77,10 @@ function OptimizedVideo({
     return mergedHandlers;
   }, [otherBufferingHandlers, restProps]);
 
+  useVideoCleanup(ref, mergedOtherBufferingHandlers);
+
   return (
-    // eslint-disable-next-line react/jsx-props-no-spreading
+
     <video ref={ref} autoPlay {...restProps} {...mergedOtherBufferingHandlers} onPlaying={handlePlaying}>
       {children}
     </video>

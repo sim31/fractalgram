@@ -2,13 +2,13 @@ import { useEffect, useState } from '../../../../lib/teact/teact';
 import { getGlobal } from '../../../../global';
 
 import type { ApiSticker } from '../../../../api/types';
-import type { EmojiData, EmojiModule, EmojiRawData } from '../../../../util/emoji';
+import type { EmojiData, EmojiModule, EmojiRawData } from '../../../../util/emoji/emoji';
 import type { Signal } from '../../../../util/signals';
 
 import { EDITABLE_INPUT_CSS_SELECTOR, EDITABLE_INPUT_ID } from '../../../../config';
 import { requestNextMutation } from '../../../../lib/fasterdom/fasterdom';
 import { selectCustomEmojiForEmojis } from '../../../../global/selectors';
-import { uncompressEmoji } from '../../../../util/emoji';
+import { uncompressEmoji } from '../../../../util/emoji/emoji';
 import focusEditableElement from '../../../../util/focusEditableElement';
 import {
   buildCollectionByKey, mapValues, pickTruthy, unique, uniqueByField,
@@ -32,7 +32,7 @@ interface Library {
   maxKeyLength: number;
 }
 
-let emojiDataPromise: Promise<EmojiModule>;
+let emojiDataPromise: Promise<EmojiModule> | undefined;
 let emojiRawData: EmojiRawData;
 let emojiData: EmojiData;
 
@@ -118,7 +118,9 @@ export default function useEmojiTooltip(
     const atIndex = html.lastIndexOf(':', isForce ? html.lastIndexOf(':') - 1 : undefined);
 
     if (atIndex !== -1) {
-      const emojiHtml = typeof emoji === 'string' ? renderText(emoji, ['emoji_html']) : buildCustomEmojiHtml(emoji);
+      const emojiHtml = typeof emoji === 'string'
+        ? renderText(emoji, ['emoji_html'])[0] as string
+        : buildCustomEmojiHtml(emoji);
       setHtml(`${html.substring(0, atIndex)}${emojiHtml}`);
 
       const messageInput = inputId === EDITABLE_INPUT_ID
@@ -254,7 +256,7 @@ function searchInLibrary(library: Library, filter: string, limit: number) {
   }
 
   const matchedKeywords = keywords.filter((keyword) => keyword.startsWith(filter)).sort();
-  matched = matched.concat(Object.values(pickTruthy(byKeyword!, matchedKeywords)).flat());
+  matched = matched.concat(Object.values(pickTruthy(byKeyword, matchedKeywords)).flat());
 
   // Also search by names, which is useful for non-English languages
   const matchedNames = names.filter((name) => name.startsWith(filter));

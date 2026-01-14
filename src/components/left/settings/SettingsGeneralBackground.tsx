@@ -1,5 +1,6 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import type React from '../../../lib/teact/teact';
+import {
   memo, useCallback, useEffect, useRef,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
@@ -9,14 +10,14 @@ import type { ThemeKey } from '../../../types';
 import { SettingsScreens, UPLOADING_WALLPAPER_SLUG } from '../../../types';
 
 import { DARK_THEME_PATTERN_COLOR, DEFAULT_PATTERN_COLOR } from '../../../config';
-import { selectTheme } from '../../../global/selectors';
+import { selectTheme, selectThemeValues } from '../../../global/selectors';
 import { getAverageColor, getPatternColor, rgb2hex } from '../../../util/colors';
 import { validateFiles } from '../../../util/files';
 import { throttle } from '../../../util/schedulers';
 import { openSystemFilesDialog } from '../../../util/systemFilesDialog';
 
 import useHistoryBack from '../../../hooks/useHistoryBack';
-import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 
 import Checkbox from '../../ui/Checkbox';
 import ListItem from '../../ui/ListItem';
@@ -27,7 +28,6 @@ import './SettingsGeneralBackground.scss';
 
 type OwnProps = {
   isActive?: boolean;
-  onScreenSelect: (screen: SettingsScreens) => void;
   onReset: () => void;
 };
 
@@ -44,7 +44,6 @@ const runThrottled = throttle((cb) => cb(), 60000, true);
 
 const SettingsGeneralBackground: FC<OwnProps & StateProps> = ({
   isActive,
-  onScreenSelect,
   onReset,
   background,
   isBlurred,
@@ -55,6 +54,7 @@ const SettingsGeneralBackground: FC<OwnProps & StateProps> = ({
     loadWallpapers,
     uploadWallpaper,
     setThemeSettings,
+    openSettingsScreen,
   } = getActions();
 
   const themeRef = useRef<ThemeKey>();
@@ -81,8 +81,8 @@ const SettingsGeneralBackground: FC<OwnProps & StateProps> = ({
   }, [handleFileSelect]);
 
   const handleSetColor = useCallback(() => {
-    onScreenSelect(SettingsScreens.GeneralChatBackgroundColor);
-  }, [onScreenSelect]);
+    openSettingsScreen({ screen: SettingsScreens.GeneralChatBackgroundColor });
+  }, []);
 
   const handleResetToDefault = useCallback(() => {
     setThemeSettings({
@@ -99,10 +99,12 @@ const SettingsGeneralBackground: FC<OwnProps & StateProps> = ({
     const currentWallpaper = loadedWallpapers && loadedWallpapers.find((wallpaper) => wallpaper.slug === slug);
     if (currentWallpaper?.document.thumbnail) {
       getAverageColor(currentWallpaper.document.thumbnail.dataUri)
-        .then((color) => {
-          const patternColor = getPatternColor(color);
-          const rgbColor = `#${rgb2hex(color)}`;
-          setThemeSettings({ theme: themeRef.current!, backgroundColor: rgbColor, patternColor });
+        .then((averageColor) => {
+          setThemeSettings({
+            theme: themeRef.current!,
+            backgroundColor: rgb2hex(averageColor),
+            patternColor: getPatternColor(averageColor),
+          });
         });
     }
   }, [loadedWallpapers, setThemeSettings]);
@@ -111,7 +113,7 @@ const SettingsGeneralBackground: FC<OwnProps & StateProps> = ({
     setThemeSettings({ theme: themeRef.current!, isBlurred: e.target.checked });
   }, [setThemeSettings]);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   useHistoryBack({
     isActive,
@@ -122,7 +124,7 @@ const SettingsGeneralBackground: FC<OwnProps & StateProps> = ({
 
   return (
     <div className="SettingsGeneralBackground settings-content custom-scroll">
-      <div className="settings-item pt-3">
+      <div className="settings-item">
         <ListItem
           icon="camera-add"
           className="mb-0"
@@ -171,9 +173,9 @@ const SettingsGeneralBackground: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const theme = selectTheme(global);
-    const { background, isBlurred } = global.settings.themes[theme] || {};
+    const { background, isBlurred } = selectThemeValues(global, theme) || {};
     const { loadedWallpapers } = global.settings;
 
     return {

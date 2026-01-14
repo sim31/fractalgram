@@ -8,15 +8,17 @@ type VirtualFields =
   | 'classType'
   | 'getBytes';
 
+export type OmitVirtualFields<T> = Omit<T, VirtualFields>;
+
 export function bytesToDataUri(bytes: Buffer, shouldOmitPrefix = false, mimeType: string = 'image/jpeg') {
   const prefix = shouldOmitPrefix ? '' : `data:${mimeType};base64,`;
 
   return `${prefix}${btoa(String.fromCharCode(...bytes))}`;
 }
 
-export function omitVirtualClassFields<T extends GramJs.VirtualClass<T> & { flags?: any }>(
+export function omitVirtualClassFields<T extends GramJs.VirtualClass<T> & { flags?: unknown }>(
   instance: T,
-): Omit<T, VirtualFields> {
+): OmitVirtualFields<T> {
   const {
     flags,
     CONSTRUCTOR_ID,

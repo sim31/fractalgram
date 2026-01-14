@@ -1,6 +1,6 @@
 import { DEBUG } from '../../config';
 import { createWorkerInterface } from '../../util/createPostMessageInterface';
-import fasttextInitializer from './fasttext-wasm';
+import fasttextInitializer from './fasttext-wasm.cjs';
 import fasttextWasmPath from './fasttext-wasm.wasm';
 
 type FastTextMethods = {
@@ -39,8 +39,8 @@ function parseLabelsWithProbabilities(labels: string) {
     .map((labelWithProb: string) => {
       const [label, prob] = labelWithProb.split(' ');
       return {
-        label: parseLabel(label),
-        prob: parseFloat(prob),
+        detectedLanguage: parseLabel(label),
+        confidence: parseFloat(prob),
       };
     });
 }

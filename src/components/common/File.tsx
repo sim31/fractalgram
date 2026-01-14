@@ -1,30 +1,34 @@
-import type { FC } from '../../lib/teact/teact';
-import React, {
-  memo, useMemo, useRef, useState,
+import type { ElementRef } from '../../lib/teact/teact';
+import {
+  memo, useRef, useState,
 } from '../../lib/teact/teact';
 
 import type { IconName } from '../../types/icons';
 
+import { IS_CANVAS_FILTER_SUPPORTED } from '../../util/browser/windowEnvironment';
 import buildClassName from '../../util/buildClassName';
-import { formatMediaDateTime, formatPastTimeShort } from '../../util/dateFormat';
-import { IS_CANVAS_FILTER_SUPPORTED } from '../../util/windowEnvironment';
-import { getColorFromExtension, getFileSizeString } from './helpers/documentInfo';
+import { formatMediaDateTime, formatPastTimeShort } from '../../util/dates/dateFormat';
+import { getColorFromExtension } from './helpers/documentInfo';
 import { getDocumentThumbnailDimensions } from './helpers/mediaDimensions';
 import renderText from './helpers/renderText';
 
 import useAppLayout from '../../hooks/useAppLayout';
 import useCanvasBlur from '../../hooks/useCanvasBlur';
 import useLang from '../../hooks/useLang';
-import useMediaTransition from '../../hooks/useMediaTransition';
-import useShowTransition from '../../hooks/useShowTransition';
+import useMediaTransitionDeprecated from '../../hooks/useMediaTransitionDeprecated';
+import useOldLang from '../../hooks/useOldLang';
+import useShowTransitionDeprecated from '../../hooks/useShowTransitionDeprecated';
 
 import Link from '../ui/Link';
 import ProgressSpinner from '../ui/ProgressSpinner';
+import AnimatedFileSize from './AnimatedFileSize';
+import Icon from './icons/Icon';
 
 import './File.scss';
 
 type OwnProps = {
-  ref?: React.RefObject<HTMLDivElement>;
+  ref?: ElementRef<HTMLDivElement>;
+  id?: string;
   name: string;
   extension?: string;
   size: number;
@@ -44,8 +48,9 @@ type OwnProps = {
   onDateClick?: (e: React.MouseEvent<HTMLAnchorElement>) => void;
 };
 
-const File: FC<OwnProps> = ({
+const File = ({
   ref,
+  id,
   name,
   size,
   extension = '',
@@ -63,10 +68,10 @@ const File: FC<OwnProps> = ({
   actionIcon,
   onClick,
   onDateClick,
-}) => {
+}: OwnProps) => {
+  const oldLang = useOldLang();
   const lang = useLang();
-  // eslint-disable-next-line no-null/no-null
-  let elementRef = useRef<HTMLDivElement>(null);
+  let elementRef = useRef<HTMLDivElement>();
   if (ref) {
     elementRef = ref;
   }
@@ -75,19 +80,14 @@ const File: FC<OwnProps> = ({
   const [withThumb] = useState(!previewData);
   const noThumb = Boolean(previewData);
   const thumbRef = useCanvasBlur(thumbnailDataUri, noThumb, isMobile && !IS_CANVAS_FILTER_SUPPORTED);
-  const thumbClassNames = useMediaTransition(!noThumb);
+  const thumbClassNames = useMediaTransitionDeprecated(!noThumb);
 
   const {
     shouldRender: shouldSpinnerRender,
     transitionClassNames: spinnerClassNames,
-  } = useShowTransition(isTransferring, undefined, true);
+  } = useShowTransitionDeprecated(isTransferring, undefined, true);
 
   const color = getColorFromExtension(extension);
-  const sizeString = getFileSizeString(size);
-  const subtitle = useMemo(() => {
-    if (!isTransferring || !transferProgress) return sizeString;
-    return `${getFileSizeString(size * transferProgress)} / ${sizeString}`;
-  }, [isTransferring, size, sizeString, transferProgress]);
 
   const { width, height } = getDocumentThumbnailDimensions(smaller);
 
@@ -100,10 +100,10 @@ const File: FC<OwnProps> = ({
   );
 
   return (
-    <div ref={elementRef} className={fullClassName} dir={lang.isRtl ? 'rtl' : undefined}>
+    <div id={id} ref={elementRef} className={fullClassName} dir={lang.isRtl ? 'rtl' : undefined}>
       {isSelectable && (
-        <div className="message-select-control">
-          {isSelected && <i className="icon icon-select" />}
+        <div className="message-select-control no-selection">
+          {isSelected && <Icon name="select" />}
         </div>
       )}
       <div className="file-icon-container" onClick={isUploading ? undefined : onClick}>
@@ -141,33 +141,32 @@ const File: FC<OwnProps> = ({
           </div>
         )}
         {onClick && (
-          <i
-            className={buildClassName(
-              'action-icon',
-              'icon',
-              actionIcon ? `icon-${actionIcon}` : 'icon-download',
-              shouldSpinnerRender && 'hidden',
-            )}
+          <Icon
+            name={actionIcon || 'download'}
+            className={buildClassName('action-icon', shouldSpinnerRender && 'hidden')}
           />
         )}
       </div>
       <div className="file-info">
         <div className="file-title" dir="auto" title={name}>{renderText(name)}</div>
         <div className="file-subtitle" dir="auto">
-          <span>
-            {subtitle}
-          </span>
-          {sender && <span className="file-sender">{renderText(sender)}</span>}
+          <AnimatedFileSize size={size} progress={isTransferring ? transferProgress : undefined} />
+          {sender && (
+            <>
+              <span className="bullet">&bull;</span>
+              <span className="file-sender">{renderText(sender)}</span>
+            </>
+          )}
           {!sender && Boolean(timestamp) && (
             <>
-              <span className="bullet" />
-              <Link onClick={onDateClick}>{formatMediaDateTime(lang, timestamp * 1000, true)}</Link>
+              <span className="bullet">&bull;</span>
+              <Link onClick={onDateClick}>{formatMediaDateTime(oldLang, timestamp * 1000, true)}</Link>
             </>
           )}
         </div>
       </div>
       {sender && Boolean(timestamp) && (
-        <Link onClick={onDateClick}>{formatPastTimeShort(lang, timestamp * 1000)}</Link>
+        <Link onClick={onDateClick}>{formatPastTimeShort(oldLang, timestamp * 1000)}</Link>
       )}
     </div>
   );

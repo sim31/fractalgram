@@ -1,12 +1,15 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useEffect, useMemo, useRef, useState,
 } from '../../lib/teact/teact';
 
 import buildClassName from '../../util/buildClassName';
 import buildStyle from '../../util/buildStyle';
+import getPointerPosition from '../../util/events/getPointerPosition';
 
-import useLang from '../../hooks/useLang';
+import useOldLang from '../../hooks/useOldLang';
+
+import Icon from '../common/icons/Icon';
 
 import styles from './Draggable.module.scss';
 
@@ -44,9 +47,8 @@ const Draggable: FC<OwnProps> = ({
   knobStyle,
   isDisabled,
 }) => {
-  const lang = useLang();
-  // eslint-disable-next-line no-null/no-null
-  const ref = useRef<HTMLDivElement>(null);
+  const lang = useOldLang();
+  const ref = useRef<HTMLDivElement>();
 
   const [state, setState] = useState<DraggableState>({
     isDragging: false,
@@ -57,7 +59,7 @@ const Draggable: FC<OwnProps> = ({
   const handleMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    const { x, y } = getClientCoordinate(e);
+    const { x, y } = getPointerPosition(e);
 
     setState({
       ...state,
@@ -69,7 +71,7 @@ const Draggable: FC<OwnProps> = ({
   };
 
   const handleMouseMove = useCallback((e: MouseEvent | TouchEvent) => {
-    const { x, y } = getClientCoordinate(e);
+    const { x, y } = getPointerPosition(e);
 
     const translation = {
       x: x - state.origin.x,
@@ -162,7 +164,7 @@ const Draggable: FC<OwnProps> = ({
           onTouchStart={handleMouseDown}
           style={knobStyle}
         >
-          <i className="icon icon-sort" aria-hidden />
+          <Icon name="sort" className={styles.icon} />
         </div>
       )}
     </div>
@@ -170,18 +172,3 @@ const Draggable: FC<OwnProps> = ({
 };
 
 export default memo(Draggable);
-
-function getClientCoordinate(e: MouseEvent | TouchEvent | React.MouseEvent | React.TouchEvent) {
-  let x;
-  let y;
-
-  if ('touches' in e) {
-    x = e.touches[0].clientX;
-    y = e.touches[0].clientY;
-  } else {
-    x = e.clientX;
-    y = e.clientY;
-  }
-
-  return { x, y };
-}

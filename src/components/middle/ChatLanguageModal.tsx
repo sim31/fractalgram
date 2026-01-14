@@ -1,5 +1,6 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
+import type React from '../../lib/teact/teact';
+import {
   memo, useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
@@ -14,8 +15,8 @@ import {
 import buildClassName from '../../util/buildClassName';
 import renderText from '../common/helpers/renderText';
 
-import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
+import useOldLang from '../../hooks/useOldLang';
 
 import InputText from '../ui/InputText';
 import ListItem from '../ui/ListItem';
@@ -55,7 +56,7 @@ const ChatLanguageModal: FC<OwnProps & StateProps> = ({
   } = getActions();
 
   const [search, setSearch] = useState('');
-  const lang = useLang();
+  const lang = useOldLang();
 
   const handleSelect = useLastCallback((langCode: string) => {
     if (!chatId) return;
@@ -129,7 +130,7 @@ const ChatLanguageModal: FC<OwnProps & StateProps> = ({
             disabled={activeTranslationLanguage === langCode}
             multiline
             narrow
-            // eslint-disable-next-line react/jsx-no-bind
+
             onClick={() => handleSelect(langCode)}
           >
             <span className={buildClassName('title', styles.title)}>
@@ -146,7 +147,7 @@ const ChatLanguageModal: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const { chatId, messageId } = selectTabState(global).chatLanguageModal || {};
 
     const currentLanguageCode = selectLanguageCode(global);

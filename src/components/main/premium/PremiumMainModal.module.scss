@@ -1,4 +1,4 @@
-@import '../../../styles/mixins';
+@use '../../../styles/mixins';
 
 .root {
   --premium-gradient: linear-gradient(88.39deg, #6C93FF -2.56%, #976FFF 51.27%, #DF69D1 107.39%);
@@ -26,52 +26,51 @@
 }
 
 .button {
-  font-weight: 600;
-  font-size: 1rem;
   height: 3rem;
+  font-size: 1rem;
+  font-weight: var(--font-weight-semibold);
 }
 
 .main {
-  padding: 1rem 0.5rem;
-  height: 100%;
   overflow-y: scroll;
   display: flex;
   flex-direction: column;
   align-items: center;
 
-  @include adapt-padding-to-scrollbar(0.5rem);
-}
+  height: 100%;
+  padding: 1rem 0.5rem;
 
-.logo {
-  margin: 1rem;
-  width: 6.25rem;
-  height: 6.25rem;
-  min-height: 6.25rem;
+  @include mixins.adapt-padding-to-scrollbar(0.5rem);
 }
 
 .status-emoji {
   --custom-emoji-size: 8rem;
 
-  margin: 1rem;
   cursor: var(--custom-cursor, pointer);
+  margin: 1rem;
+}
+
+.sticker-wrapper {
+  position: relative;
+  margin: 1rem;
 }
 
 .header-text {
-  font-size: 1.5rem;
-  font-weight: 500;
-  text-align: center;
   margin-inline: 0.5rem;
+  font-size: 1.5rem;
+  font-weight: var(--font-weight-medium);
+  text-align: center;
 }
 
 .description {
-  text-align: center;
-  margin-inline: 0.5rem;
   margin-bottom: 2rem;
+  margin-inline: 0.5rem;
+  text-align: center;
 }
 
 .list {
-  margin-bottom: 5rem;
   width: 100%;
+  margin-bottom: 5rem;
 }
 
 .no-button {
@@ -79,17 +78,21 @@
 }
 
 .header {
+  position: absolute;
   z-index: 2;
+  top: 0;
+  left: 0;
+
   display: flex;
   align-items: center;
-  border-bottom: 0.0625rem solid var(--color-borders);
-  position: absolute;
+
   width: 100%;
-  left: 0;
-  top: 0;
   height: 3.5rem;
   padding: 0.5rem;
+  border-bottom: 0.0625rem solid var(--color-borders);
+
   background: var(--color-background);
+
   transition: 0.25s ease-out transform;
 }
 
@@ -99,23 +102,23 @@
 
 .close-button {
   position: absolute;
-  top: 0.5rem;
-  left: 0.5rem;
   z-index: 3;
+  top: 0.875rem;
+  left: 0.875rem;
 }
 
 .premium-header-text {
-  font-size: 1.25rem;
-  font-weight: 500;
-  margin: 0 0 0 3rem;
   unicode-bidi: plaintext;
+  margin: 0 0 0 3rem;
+  font-size: 1.25rem;
+  font-weight: var(--font-weight-medium);
 }
 
 .footer-text {
-  color: var(--color-text-secondary);
+  unicode-bidi: plaintext;
   margin: 0.5rem;
   font-size: 0.875rem;
-  unicode-bidi: plaintext;
+  color: var(--color-text-secondary);
 }
 
 .primary-footer-text {
@@ -124,12 +127,14 @@
 
 .footer {
   position: absolute;
-  width: 100%;
-  background: var(--color-background);
-  border-top: 0.0625rem solid var(--color-borders);
-  left: 0;
   bottom: 0;
+  left: 0;
+
+  width: 100%;
   padding: 1rem;
+  border-top: 0.0625rem solid var(--color-borders);
+
+  background: var(--color-background);
 }
 
 .stickerSetText {
@@ -139,8 +144,8 @@
 .stickerSetLink {
   --custom-emoji-size: 1.5rem;
 
-  color: var(--color-links);
   cursor: var(--custom-cursor, pointer);
+  color: var(--color-links);
 
   &:hover {
     text-decoration: underline;
@@ -148,15 +153,15 @@
 }
 
 .stickerSetLinkIcon {
-  vertical-align: middle;
   margin-inline-end: 0.25rem;
+  vertical-align: middle;
 }
 
 @media (max-width: 600px) {
   .root :global(.modal-dialog) {
     width: 100%;
-    height: 100%;
     max-width: 100% !important;
+    height: 100%;
     border-radius: 0;
   }
 
@@ -167,4 +172,25 @@
   .root .transition {
     height: 100%;
   }
+}
+
+.subscriptionOptions {
+  width: 100%;
+}
+
+.subscriptionOption {
+  margin: 0.8125rem;
+}
+
+.starParticlesHeader,
+.giftParticlesHeader {
+  position: relative !important;
+}
+
+.starParticlesHeader {
+  padding-top: 10rem !important;
+}
+
+.giftParticlesHeader {
+  padding-top: 11rem !important;
 }

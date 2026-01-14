@@ -1,17 +1,18 @@
-import React, { memo, useLayoutEffect, useRef } from '../../../../lib/teact/teact';
+import { memo, useLayoutEffect, useRef } from '../../../../lib/teact/teact';
 import { withGlobal } from '../../../../global';
 
 import type { ApiUser } from '../../../../api/types';
+import type { IconName } from '../../../../types/icons';
 
 import { selectUser } from '../../../../global/selectors';
 import buildClassName from '../../../../util/buildClassName';
-import { DPR } from '../../../../util/windowEnvironment';
 import { REM } from '../../../common/helpers/mediaDimensions';
 
-import useLang from '../../../../hooks/useLang';
+import useOldLang from '../../../../hooks/useOldLang';
 import useScrolledState from '../../../../hooks/useScrolledState';
+import useDevicePixelRatio from '../../../../hooks/window/useDevicePixelRatio';
 
-import Avatar from '../../../common/Avatar';
+import Avatar, { AVATAR_SIZES } from '../../../common/Avatar';
 import { drawGradientCircle } from '../../../common/AvatarStoryCircle';
 import PremiumFeatureItem from '../PremiumFeatureItem';
 
@@ -20,6 +21,8 @@ import styles from './PremiumFeaturePreviewStories.module.scss';
 type StateProps = {
   currentUser: ApiUser;
 };
+
+const STORY_COLORS = ['#A667FF', '#55A5FF'];
 
 const STORY_FEATURE_TITLES = {
   stories_order: 'PremiumStoriesPriority',
@@ -41,9 +44,9 @@ const STORY_FEATURE_DESCRIPTIONS = {
   stories_link: 'PremiumStoriesFormattingDescription',
 };
 
-const STORY_FEATURE_ICONS = {
+const STORY_FEATURE_ICONS: Record<string, IconName> = {
   stories_order: 'story-priority',
-  stories_stealth: 'eye-closed-outline',
+  stories_stealth: 'eye-crossed-outline',
   stories_views: 'eye-outline',
   stories_timer: 'timer',
   stories_save: 'arrow-down-circle',
@@ -53,17 +56,19 @@ const STORY_FEATURE_ICONS = {
 
 const STORY_FEATURE_ORDER = Object.keys(STORY_FEATURE_TITLES) as (keyof typeof STORY_FEATURE_TITLES)[];
 
-const CIRCLE_SIZE = 5.25 * DPR * REM;
+const CIRCLE_STROKE_WIDTH = 0.25 * REM;
+const CIRCLE_SIZE = AVATAR_SIZES.giant + CIRCLE_STROKE_WIDTH;
 const CIRCLE_SEGMENTS = 8;
 const CIRCLE_READ_SEGMENTS = 0;
 
 const PremiumFeaturePreviewVideo = ({
   currentUser,
 }: StateProps) => {
-  // eslint-disable-next-line no-null/no-null
-  const circleRef = useRef<HTMLCanvasElement>(null);
+  const circleRef = useRef<HTMLCanvasElement>();
 
-  const lang = useLang();
+  const lang = useOldLang();
+
+  const dpr = useDevicePixelRatio();
 
   useLayoutEffect(() => {
     if (!circleRef.current) {
@@ -73,16 +78,18 @@ const PremiumFeaturePreviewVideo = ({
     drawGradientCircle({
       canvas: circleRef.current,
       size: CIRCLE_SIZE,
+      strokeWidth: CIRCLE_STROKE_WIDTH,
       segmentsCount: CIRCLE_SEGMENTS,
-      color: 'purple',
+      colorStops: STORY_COLORS,
       readSegmentsCount: CIRCLE_READ_SEGMENTS,
       readSegmentColor: 'transparent',
+      dpr,
     });
-  }, []);
+  }, [dpr]);
 
   const { handleScroll, isAtBeginning } = useScrolledState();
 
-  const maxSize = CIRCLE_SIZE / DPR;
+  const maxSize = CIRCLE_SIZE;
 
   return (
     <div className={styles.root}>
@@ -105,6 +112,7 @@ const PremiumFeaturePreviewVideo = ({
               isFontIcon
               index={index}
               count={STORY_FEATURE_ORDER.length}
+              section={section}
             />
           );
         })}
@@ -115,7 +123,7 @@ const PremiumFeaturePreviewVideo = ({
 };
 
 export default memo(withGlobal(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     return {
       currentUser: selectUser(global, global.currentUserId!)!,
     };

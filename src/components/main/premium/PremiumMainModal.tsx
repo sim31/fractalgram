@@ -1,55 +1,67 @@
-import type { FC } from '../../../lib/teact/teact';
-import React, {
-  memo, useCallback, useEffect, useMemo, useRef, useState,
-} from '../../../lib/teact/teact';
+import type { FC } from '@teact';
+import { memo, useEffect, useMemo, useRef, useState } from '@teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type {
-  ApiPremiumPromo, ApiSticker, ApiStickerSet, ApiUser,
+  ApiPremiumPromo,
+  ApiPremiumSection,
+  ApiPremiumSubscriptionOption,
+  ApiStarGift,
+  ApiSticker,
+  ApiStickerSet,
+  ApiUser,
 } from '../../../api/types';
 import type { GlobalState } from '../../../global/types';
+import type { LangPair } from '../../../types/language';
 
-import { TME_LINK_PREFIX } from '../../../config';
+import { PREMIUM_FEATURE_SECTIONS, TME_LINK_PREFIX } from '../../../config';
 import { getUserFullName } from '../../../global/helpers';
 import {
-  selectIsCurrentUserPremium, selectStickerSet,
-  selectTabState, selectUser,
+  selectCustomEmoji,
+  selectIsCurrentUserPremium,
+  selectStickerSet,
+  selectTabState,
+  selectUser,
 } from '../../../global/selectors';
 import { selectPremiumLimit } from '../../../global/selectors/limits';
 import buildClassName from '../../../util/buildClassName';
+import { formatCountdownDays } from '../../../util/dates/dateFormat';
 import { formatCurrency } from '../../../util/formatCurrency';
+import { getStickerFromGift } from '../../common/helpers/gifts';
 import { REM } from '../../common/helpers/mediaDimensions';
 import renderText from '../../common/helpers/renderText';
 import { renderTextWithEntities } from '../../common/helpers/renderTextWithEntities';
 
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
+import useOldLang from '../../../hooks/useOldLang';
 import useSyncEffect from '../../../hooks/useSyncEffect';
 
 import CustomEmoji from '../../common/CustomEmoji';
+import ParticlesHeader from '../../modals/common/ParticlesHeader.tsx';
 import Button from '../../ui/Button';
 import Modal from '../../ui/Modal';
 import Transition from '../../ui/Transition';
 import PremiumFeatureItem from './PremiumFeatureItem';
-import PremiumFeatureModal, {
-  PREMIUM_FEATURE_DESCRIPTIONS,
-  PREMIUM_FEATURE_SECTIONS,
-  PREMIUM_FEATURE_TITLES,
-} from './PremiumFeatureModal';
+import PremiumFeatureModal, { PREMIUM_FEATURE_DESCRIPTIONS, PREMIUM_FEATURE_TITLES } from './PremiumFeatureModal';
+import PremiumSubscriptionOption from './PremiumSubscriptionOption';
 
 import styles from './PremiumMainModal.module.scss';
 
 import PremiumAds from '../../../assets/premium/PremiumAds.svg';
 import PremiumBadge from '../../../assets/premium/PremiumBadge.svg';
 import PremiumChats from '../../../assets/premium/PremiumChats.svg';
+import PremiumEffects from '../../../assets/premium/PremiumEffects.svg';
 import PremiumEmoji from '../../../assets/premium/PremiumEmoji.svg';
 import PremiumFile from '../../../assets/premium/PremiumFile.svg';
+import PremiumLastSeen from '../../../assets/premium/PremiumLastSeen.svg';
 import PremiumLimits from '../../../assets/premium/PremiumLimits.svg';
-import PremiumLogo from '../../../assets/premium/PremiumLogo.svg';
+import PremiumMessagePrivacy from '../../../assets/premium/PremiumMessagePrivacy.svg';
 import PremiumReactions from '../../../assets/premium/PremiumReactions.svg';
 import PremiumSpeed from '../../../assets/premium/PremiumSpeed.svg';
 import PremiumStatus from '../../../assets/premium/PremiumStatus.svg';
 import PremiumStickers from '../../../assets/premium/PremiumStickers.svg';
+import PremiumTags from '../../../assets/premium/PremiumTags.svg';
 import PremiumTranslate from '../../../assets/premium/PremiumTranslate.svg';
 import PremiumVideo from '../../../assets/premium/PremiumVideo.svg';
 import PremiumVoice from '../../../assets/premium/PremiumVoice.svg';
@@ -57,7 +69,7 @@ import PremiumVoice from '../../../assets/premium/PremiumVoice.svg';
 const LIMIT_ACCOUNTS = 4;
 const STATUS_EMOJI_SIZE = 8 * REM;
 
-const PREMIUM_FEATURE_COLOR_ICONS: Record<string, string> = {
+const PREMIUM_FEATURE_COLOR_ICONS: Record<ApiPremiumSection, string> = {
   stories: PremiumStatus,
   double_limits: PremiumLimits,
   infinite_reactions: PremiumReactions,
@@ -72,6 +84,11 @@ const PREMIUM_FEATURE_COLOR_ICONS: Record<string, string> = {
   animated_userpics: PremiumVideo,
   emoji_status: PremiumStatus,
   translations: PremiumTranslate,
+  saved_tags: PremiumTags,
+  last_seen: PremiumLastSeen,
+  message_privacy: PremiumMessagePrivacy,
+  effects: PremiumEffects,
+  todo: PremiumBadge,
 };
 
 export type OwnProps = {
@@ -81,16 +98,16 @@ export type OwnProps = {
 type StateProps = {
   currentUserId?: string;
   promo?: ApiPremiumPromo;
-  isClosing?: boolean;
   fromUser?: ApiUser;
   fromUserStatusEmoji?: ApiSticker;
   fromUserStatusSet?: ApiStickerSet;
   toUser?: ApiUser;
-  initialSection?: string;
+  initialSection?: ApiPremiumSection;
   isPremium?: boolean;
   isSuccess?: boolean;
   isGift?: boolean;
-  monthsAmount?: number;
+  daysAmount?: number;
+  gift?: ApiStarGift;
   limitChannels: number;
   limitPins: number;
   limitLinks: number;
@@ -98,7 +115,7 @@ type StateProps = {
   limits?: NonNullable<GlobalState['appConfig']>['limits'];
   premiumSlug?: string;
   premiumBotUsername?: string;
-  premiumPromoOrder?: string[];
+  premiumPromoOrder?: ApiPremiumSection[];
 };
 
 const PremiumMainModal: FC<OwnProps & StateProps> = ({
@@ -117,28 +134,40 @@ const PremiumMainModal: FC<OwnProps & StateProps> = ({
   limits,
   premiumSlug,
   premiumBotUsername,
-  isClosing,
   isSuccess,
   isGift,
   toUser,
-  monthsAmount,
+  daysAmount,
   premiumPromoOrder,
+  gift,
 }) => {
-  // eslint-disable-next-line no-null/no-null
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>();
   const {
     closePremiumModal, openInvoice, requestConfetti, openTelegramLink, loadStickers, openStickerSet,
   } = getActions();
 
+  const oldLang = useOldLang();
   const lang = useLang();
   const [isHeaderHidden, setHeaderHidden] = useState(true);
-  const [currentSection, setCurrentSection] = useState<string | undefined>(initialSection);
+  const [currentSection, setCurrentSection] = useState<ApiPremiumSection | undefined>(initialSection);
+  const [selectedSubscriptionOption, setSubscriptionOption] = useState<ApiPremiumSubscriptionOption>();
 
-  const handleOpen = useCallback((section: string | undefined) => {
-    return () => {
-      setCurrentSection(section);
-    };
-  }, []);
+  useEffect(() => {
+    if (!isOpen) {
+      setHeaderHidden(true);
+      setCurrentSection(undefined);
+    } else if (initialSection) {
+      setCurrentSection(initialSection);
+    }
+  }, [isOpen, initialSection]);
+
+  const handleOpenSection = useLastCallback((section: ApiPremiumSection) => {
+    setCurrentSection(section);
+  });
+
+  const handleResetSection = useLastCallback(() => {
+    setCurrentSection(undefined);
+  });
 
   function handleScroll(e: React.UIEvent<HTMLDivElement>) {
     const { scrollTop } = e.currentTarget;
@@ -146,12 +175,13 @@ const PremiumMainModal: FC<OwnProps & StateProps> = ({
     setHeaderHidden(scrollTop <= 150);
   }
 
-  function handleClickWithStartParam(startParam?: string) {
+  const handleClickWithStartParam = useLastCallback((startParam?: string) => {
     const dialog = dialogRef.current;
     if (!dialog) return;
 
     if (premiumSlug) {
       openInvoice({
+        type: 'slug',
         slug: premiumSlug,
       });
     } else if (premiumBotUsername) {
@@ -160,13 +190,22 @@ const PremiumMainModal: FC<OwnProps & StateProps> = ({
       });
       closePremiumModal();
     }
-  }
-
-  const handleClick = useLastCallback(() => {
-    handleClickWithStartParam();
   });
 
-  const showConfetti = useCallback(() => {
+  const handleClick = useLastCallback(() => {
+    if (selectedSubscriptionOption) {
+      handleClickWithStartParam(String(selectedSubscriptionOption.months));
+    } else {
+      handleClickWithStartParam();
+    }
+  });
+
+  const handleChangeSubscriptionOption = useLastCallback((months: number) => {
+    const foundOption = promo?.options.find((option) => option.months === months);
+    setSubscriptionOption(foundOption);
+  });
+
+  const showConfetti = useLastCallback(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
     if (isOpen) {
@@ -178,9 +217,10 @@ const PremiumMainModal: FC<OwnProps & StateProps> = ({
         left,
         width,
         height,
+        withStars: true,
       });
     }
-  }, [isOpen, requestConfetti]);
+  });
 
   useEffect(() => {
     if (isSuccess) {
@@ -206,6 +246,11 @@ const PremiumMainModal: FC<OwnProps & StateProps> = ({
     });
   }, [loadStickers, fromUserStatusEmoji, fromUserStatusSet]);
 
+  useEffect(() => {
+    const [defaultOption] = promo?.options ?? [];
+    setSubscriptionOption(defaultOption);
+  }, [promo]);
+
   const handleOpenStatusSet = useLastCallback(() => {
     if (!fromUserStatusSet) return;
 
@@ -214,54 +259,134 @@ const PremiumMainModal: FC<OwnProps & StateProps> = ({
     });
   });
 
-  const stickerSetTitle = useMemo(() => {
-    if (!fromUserStatusSet || !fromUser) return undefined;
+  const fullMonthlyAmount = useMemo(() => {
+    const monthOption = promo?.options.find((option) => option.months === 1);
+    if (!monthOption) {
+      return undefined;
+    }
+    return Number(monthOption.amount);
+  }, [promo]);
 
-    const template = lang('lng_premium_emoji_status_title').replace('{user}', getUserFullName(fromUser)!);
-    const [first, second] = template.split('{link}');
-
-    const emoji = fromUserStatusSet.thumbCustomEmojiId ? (
-      <CustomEmoji className={styles.stickerSetLinkIcon} documentId={fromUserStatusSet.thumbCustomEmojiId} />
-    ) : undefined;
-    const link = (
-      <span className={styles.stickerSetLink} onClick={handleOpenStatusSet}>
-        {emoji}{renderText(fromUserStatusSet.title)}
-      </span>
+  const subscribeButtonText = useMemo(() => {
+    if (!selectedSubscriptionOption) {
+      return undefined;
+    }
+    const { amount, months, currency } = selectedSubscriptionOption;
+    const perMonthPrice = Math.floor(amount / months);
+    return formatCurrency(
+      lang,
+      perMonthPrice,
+      currency,
     );
-    return [renderText(first), link, renderText(second)];
-  }, [fromUser, fromUserStatusSet, lang]);
+  }, [selectedSubscriptionOption, lang]);
 
   if (!promo || (fromUserStatusEmoji && !fromUserStatusSet)) return undefined;
 
-  // TODO Support all subscription options
-  const month = promo.options.find((option) => option.months === 1)!;
-
   function getHeaderText() {
-    if (isGift) {
-      return fromUser?.id === currentUserId
-        ? lang('TelegramPremiumUserGiftedPremiumOutboundDialogTitle', [getUserFullName(toUser), monthsAmount])
-        : lang('TelegramPremiumUserGiftedPremiumDialogTitle', [getUserFullName(fromUser), monthsAmount]);
+    if (gift) {
+      return lang('PremiumGiftHeader');
     }
 
-    return fromUser
-      ? lang('TelegramPremiumUserDialogTitle', getUserFullName(fromUser))
-      : lang(isPremium ? 'TelegramPremiumSubscribedTitle' : 'TelegramPremium');
+    if (isGift) {
+      const formattedDuration = daysAmount ? formatCountdownDays(lang, daysAmount) : '';
+      return renderText(
+        fromUser?.id === currentUserId
+          ? lang('DialogTitlePremiumGiftSentTo', { user: getUserFullName(toUser), amount: formattedDuration })
+          : lang('DialogTitlePremiumGiftReceivedFrom', { user: getUserFullName(fromUser), amount: formattedDuration }),
+        ['simple_markdown', 'emoji'],
+      );
+    }
+
+    if (fromUserStatusSet && fromUser) {
+      const template = oldLang('lng_premium_emoji_status_title').replace('{user}', getUserFullName(fromUser)!);
+      const [first, second] = template.split('{link}');
+
+      const emoji = fromUserStatusSet.thumbCustomEmojiId ? (
+        <CustomEmoji className={styles.stickerSetLinkIcon} documentId={fromUserStatusSet.thumbCustomEmojiId} />
+      ) : undefined;
+      const link = (
+        <span className={styles.stickerSetLink} onClick={handleOpenStatusSet}>
+          {emoji}
+          {renderText(fromUserStatusSet.title)}
+        </span>
+      );
+      return [renderText(first), link, renderText(second)];
+    }
+
+    return renderText(
+      fromUser
+        ? oldLang('TelegramPremiumUserDialogTitle', getUserFullName(fromUser))
+        : oldLang(isPremium ? 'TelegramPremiumSubscribedTitle' : 'TelegramPremium'),
+      ['simple_markdown', 'emoji'],
+    );
   }
 
   function getHeaderDescription() {
+    if (gift && gift.type !== 'starGiftUnique' && gift.perUserTotal) {
+      return lang('DescriptionGiftPremiumRequired2', { count: gift.perUserTotal }, {
+        pluralValue: gift.perUserTotal,
+      });
+    }
+
     if (isGift) {
       return fromUser?.id === currentUserId
-        ? lang('TelegramPremiumUserGiftedPremiumOutboundDialogSubtitle', getUserFullName(toUser))
-        : lang('TelegramPremiumUserGiftedPremiumDialogSubtitle');
+        ? oldLang('TelegramPremiumUserGiftedPremiumOutboundDialogSubtitle', getUserFullName(toUser))
+        : oldLang('TelegramPremiumUserGiftedPremiumDialogSubtitle');
     }
 
     if (fromUserStatusSet) {
-      return lang('TelegramPremiumUserStatusDialogSubtitle');
+      return oldLang('TelegramPremiumUserStatusDialogSubtitle');
     }
 
     return fromUser
-      ? lang('TelegramPremiumUserDialogSubtitle')
-      : lang(isPremium ? 'TelegramPremiumSubscribedSubtitle' : 'TelegramPremiumSubtitle');
+      ? oldLang('TelegramPremiumUserDialogSubtitle')
+      : oldLang(isPremium ? 'TelegramPremiumSubscribedSubtitle' : 'TelegramPremiumSubtitle');
+  }
+
+  function renderHeader() {
+    if (gift) {
+      const giftSticker = getStickerFromGift(gift);
+      return (
+        <ParticlesHeader
+          model="sticker"
+          sticker={giftSticker}
+          color="purple"
+          title={getHeaderText()}
+          description={renderText(getHeaderDescription(), ['simple_markdown', 'emoji'])}
+          className={styles.giftParticlesHeader}
+        />
+      );
+    }
+
+    if (!fromUserStatusEmoji) {
+      return (
+        <ParticlesHeader
+          model="swaying-star"
+          color="purple"
+          title={getHeaderText()}
+          description={renderText(getHeaderDescription(), ['simple_markdown', 'emoji'])}
+          className={styles.starParticlesHeader}
+        />
+      );
+    }
+
+    return (
+      <>
+        <CustomEmoji
+          className={styles.statusEmoji}
+          onClick={handleOpenStatusSet}
+          documentId={fromUserStatusEmoji.id}
+          isBig
+          size={STATUS_EMOJI_SIZE}
+        />
+        <h2 className={buildClassName(styles.headerText, fromUserStatusSet && styles.stickerSetText)}>
+          {getHeaderText()}
+        </h2>
+        <div className={styles.description}>
+          {renderText(getHeaderDescription(), ['simple_markdown', 'emoji'])}
+        </div>
+      </>
+    );
   }
 
   function renderFooterText() {
@@ -279,66 +404,62 @@ const PremiumMainModal: FC<OwnProps & StateProps> = ({
     );
   }
 
+  function renderSubscriptionOptions() {
+    return (
+      <div className={styles.subscriptionOptions}>
+        {promo?.options
+          .map((option) => (
+            <PremiumSubscriptionOption
+              className={styles.subscriptionOption}
+              key={option.amount}
+              option={option}
+              onChange={handleChangeSubscriptionOption}
+              fullMonthlyAmount={fullMonthlyAmount}
+              checked={selectedSubscriptionOption?.months === option.months}
+            />
+          ))}
+      </div>
+    );
+  }
+
   return (
     <Modal
       className={styles.root}
-      // eslint-disable-next-line react/jsx-no-bind
-      onCloseAnimationEnd={() => closePremiumModal({ isClosed: true })}
       onClose={closePremiumModal}
-      isOpen={isOpen && !isClosing}
+      isOpen={isOpen}
       dialogRef={dialogRef}
+      hasAbsoluteCloseButton
     >
       <Transition name="slide" activeKey={currentSection ? 1 : 0} className={styles.transition}>
         {!currentSection ? (
           <div className={buildClassName(styles.main, 'custom-scroll')} onScroll={handleScroll}>
-            <Button
-              round
-              size="smaller"
-              className={styles.closeButton}
-              color="translucent"
-              // eslint-disable-next-line react/jsx-no-bind
-              onClick={() => closePremiumModal()}
-              ariaLabel={lang('Close')}
-            >
-              <i className="icon icon-close" />
-            </Button>
-            {fromUserStatusEmoji ? (
-              <CustomEmoji
-                className={styles.statusEmoji}
-                onClick={handleOpenStatusSet}
-                documentId={fromUserStatusEmoji.id}
-                isBig
-                size={STATUS_EMOJI_SIZE}
-              />
-            ) : (
-              <img className={styles.logo} src={PremiumLogo} alt="" draggable={false} />
-            )}
-            <h2 className={buildClassName(styles.headerText, fromUserStatusSet && styles.stickerSetText)}>
-              {fromUserStatusSet ? stickerSetTitle : renderText(getHeaderText(), ['simple_markdown', 'emoji'])}
-            </h2>
-            <div className={styles.description}>
-              {renderText(getHeaderDescription(), ['simple_markdown', 'emoji'])}
-            </div>
+            {renderHeader()}
+            {!isPremium && !isGift && renderSubscriptionOptions()}
             <div className={buildClassName(styles.header, isHeaderHidden && styles.hiddenHeader)}>
               <h2 className={styles.premiumHeaderText}>
-                {lang('TelegramPremium')}
+                {oldLang('TelegramPremium')}
               </h2>
             </div>
-
             <div className={buildClassName(styles.list, isPremium && styles.noButton)}>
               {filteredSections.map((section, index) => {
+                const shouldUseNewLang = section === 'todo';
                 return (
                   <PremiumFeatureItem
                     key={section}
-                    title={lang(PREMIUM_FEATURE_TITLES[section])}
+                    title={shouldUseNewLang
+                      ? lang(PREMIUM_FEATURE_TITLES[section] as keyof LangPair)
+                      : oldLang(PREMIUM_FEATURE_TITLES[section])}
                     text={section === 'double_limits'
-                      ? lang(PREMIUM_FEATURE_DESCRIPTIONS[section],
+                      ? oldLang(PREMIUM_FEATURE_DESCRIPTIONS[section],
                         [limitChannels, limitFolders, limitPins, limitLinks, LIMIT_ACCOUNTS])
-                      : lang(PREMIUM_FEATURE_DESCRIPTIONS[section])}
+                      : shouldUseNewLang
+                        ? lang(PREMIUM_FEATURE_DESCRIPTIONS[section] as keyof LangPair)
+                        : oldLang(PREMIUM_FEATURE_DESCRIPTIONS[section])}
                     icon={PREMIUM_FEATURE_COLOR_ICONS[section]}
                     index={index}
                     count={filteredSections.length}
-                    onClick={handleOpen(section)}
+                    section={section}
+                    onClick={handleOpenSection}
                   />
                 );
               })}
@@ -347,18 +468,18 @@ const PremiumMainModal: FC<OwnProps & StateProps> = ({
                 dir={lang.isRtl ? 'rtl' : undefined}
               >
                 <p>
-                  {renderText(lang('AboutPremiumDescription'), ['simple_markdown'])}
+                  {renderText(oldLang('AboutPremiumDescription'), ['simple_markdown'])}
                 </p>
                 <p>
-                  {renderText(lang('AboutPremiumDescription2'), ['simple_markdown'])}
+                  {renderText(oldLang('AboutPremiumDescription2'), ['simple_markdown'])}
                 </p>
               </div>
               {renderFooterText()}
             </div>
-            {!isPremium && (
+            {!isPremium && selectedSubscriptionOption && (
               <div className={styles.footer}>
                 <Button className={styles.button} isShiny withPremiumGradient onClick={handleClick}>
-                  {lang('SubscribeToPremium', formatCurrency(Number(month.amount), month.currency, lang.code))}
+                  {oldLang('SubscribeToPremium', subscribeButtonText)}
                 </Button>
               </div>
             )}
@@ -366,12 +487,13 @@ const PremiumMainModal: FC<OwnProps & StateProps> = ({
         ) : (
           <PremiumFeatureModal
             initialSection={currentSection}
-            onBack={handleOpen(undefined)}
+            onBack={handleResetSection}
             promo={promo}
-            // eslint-disable-next-line react/jsx-no-bind
             onClickSubscribe={handleClickWithStartParam}
             isPremium={isPremium}
             limits={limits}
+            premiumPromoOrder={premiumPromoOrder}
+            subscriptionOption={selectedSubscriptionOption}
           />
         )}
       </Transition>
@@ -379,13 +501,13 @@ const PremiumMainModal: FC<OwnProps & StateProps> = ({
   );
 };
 
-export default memo(withGlobal<OwnProps>((global): StateProps => {
+export default memo(withGlobal<OwnProps>((global): Complete<StateProps> => {
   const {
     premiumModal,
   } = selectTabState(global);
 
   const fromUser = premiumModal?.fromUserId ? selectUser(global, premiumModal.fromUserId) : undefined;
-  const fromUserStatusEmoji = fromUser?.emojiStatus ? global.customEmojis.byId[fromUser.emojiStatus.documentId]
+  const fromUserStatusEmoji = fromUser?.emojiStatus ? selectCustomEmoji(global, fromUser.emojiStatus.documentId)
     : undefined;
   const fromUserStatusSet = fromUserStatusEmoji ? selectStickerSet(global, fromUserStatusEmoji.stickerSetInfo)
     : undefined;
@@ -393,10 +515,10 @@ export default memo(withGlobal<OwnProps>((global): StateProps => {
   return {
     currentUserId: global.currentUserId,
     promo: premiumModal?.promo,
-    isClosing: premiumModal?.isClosing,
     isSuccess: premiumModal?.isSuccess,
     isGift: premiumModal?.isGift,
-    monthsAmount: premiumModal?.monthsAmount,
+    daysAmount: premiumModal?.daysAmount,
+    gift: premiumModal?.gift,
     fromUser,
     fromUserStatusEmoji,
     fromUserStatusSet,
@@ -407,9 +529,9 @@ export default memo(withGlobal<OwnProps>((global): StateProps => {
     limitFolders: selectPremiumLimit(global, 'dialogFilters'),
     limitPins: selectPremiumLimit(global, 'dialogFolderPinned'),
     limitLinks: selectPremiumLimit(global, 'channelsPublic'),
-    limits: global.appConfig?.limits,
-    premiumSlug: global.appConfig?.premiumInvoiceSlug,
-    premiumBotUsername: global.appConfig?.premiumBotUsername,
-    premiumPromoOrder: global.appConfig?.premiumPromoOrder,
+    limits: global.appConfig.limits,
+    premiumSlug: global.appConfig.premiumInvoiceSlug,
+    premiumBotUsername: global.appConfig.premiumBotUsername,
+    premiumPromoOrder: global.appConfig.premiumPromoOrder,
   };
 })(PremiumMainModal));

@@ -1,17 +1,17 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useRef, useState } from '../../../lib/teact/teact';
+import { memo, useRef, useState } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
 import type { ApiSticker, ApiVideo } from '../../../api/types';
-import type { IAnchorPosition } from '../../../types';
+import type { IAnchorPosition, ThreadId } from '../../../types';
 
 import { EDITABLE_INPUT_CSS_SELECTOR, EDITABLE_INPUT_MODAL_CSS_SELECTOR } from '../../../config';
 import buildClassName from '../../../util/buildClassName';
 
 import useFlag from '../../../hooks/useFlag';
 import useLastCallback from '../../../hooks/useLastCallback';
-import useMenuPosition from '../../../hooks/useMenuPosition';
 
+import Icon from '../../common/icons/Icon';
 import Button from '../../ui/Button';
 import ResponsiveHoverButton from '../../ui/ResponsiveHoverButton';
 import Spinner from '../../ui/Spinner';
@@ -21,7 +21,7 @@ const MOBILE_KEYBOARD_HIDE_DELAY_MS = 100;
 
 type OwnProps = {
   chatId: string;
-  threadId?: number;
+  threadId?: ThreadId;
   isMobile?: boolean;
   isReady?: boolean;
   isSymbolMenuOpen?: boolean;
@@ -85,14 +85,13 @@ const SymbolMenuButton: FC<OwnProps> = ({
     addRecentCustomEmoji,
   } = getActions();
 
-  // eslint-disable-next-line no-null/no-null
-  const triggerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>();
 
   const [isSymbolMenuLoaded, onSymbolMenuLoadingComplete] = useFlag();
-  const [contextMenuPosition, setContextMenuPosition] = useState<IAnchorPosition | undefined>(undefined);
+  const [contextMenuAnchor, setContextMenuAnchor] = useState<IAnchorPosition | undefined>(undefined);
 
   const symbolMenuButtonClassName = buildClassName(
-    'mobile-symbol-menu-button',
+    'composer-action-button mobile-symbol-menu-button',
     !isReady && 'not-ready',
     isSymbolMenuLoaded
       ? (isSymbolMenuOpen && 'menu-opened')
@@ -106,7 +105,7 @@ const SymbolMenuButton: FC<OwnProps> = ({
     const triggerEl = triggerRef.current;
     if (!triggerEl) return;
     const { x, y } = triggerEl.getBoundingClientRect();
-    setContextMenuPosition({ x, y });
+    setContextMenuAnchor({ x, y });
   });
 
   const handleSearchOpen = useLastCallback((type: 'stickers' | 'gifs') => {
@@ -141,16 +140,6 @@ const SymbolMenuButton: FC<OwnProps> = ({
   const getMenuElement = useLastCallback(() => document.querySelector('#portals .SymbolMenu .bubble'));
   const getLayout = useLastCallback(() => ({ withPortal: true }));
 
-  const {
-    positionX, positionY, transformOriginX, transformOriginY, style: menuStyle,
-  } = useMenuPosition(
-    contextMenuPosition,
-    getTriggerElement,
-    getRootElement,
-    getMenuElement,
-    getLayout,
-  );
-
   return (
     <>
       {isMobile ? (
@@ -161,20 +150,20 @@ const SymbolMenuButton: FC<OwnProps> = ({
           onClick={isSymbolMenuOpen ? closeSymbolMenu : handleSymbolMenuOpen}
           ariaLabel="Choose emoji, sticker or GIF"
         >
-          <i className="icon icon-smile" />
-          <i className="icon icon-keyboard" />
+          <Icon name="smile" />
+          <Icon name="keyboard" />
           {isSymbolMenuOpen && !isSymbolMenuLoaded && <Spinner color="gray" />}
         </Button>
       ) : (
         <ResponsiveHoverButton
-          className={buildClassName('symbol-menu-button', isSymbolMenuOpen && 'activated')}
+          className={buildClassName('composer-action-button symbol-menu-button', isSymbolMenuOpen && 'activated')}
           round
           color="translucent"
           onActivate={handleActivateSymbolMenu}
           ariaLabel="Choose emoji, sticker or GIF"
         >
           <div ref={triggerRef} className="symbol-menu-trigger" />
-          <i className="icon icon-smile" />
+          <Icon name="smile" />
         </ResponsiveHoverButton>
       )}
 
@@ -199,11 +188,11 @@ const SymbolMenuButton: FC<OwnProps> = ({
         isAttachmentModal={isAttachmentModal}
         canSendPlainText={canSendPlainText}
         className={buildClassName(className, forceDarkTheme && 'component-theme-dark')}
-        positionX={isAttachmentModal ? positionX : undefined}
-        positionY={isAttachmentModal ? positionY : undefined}
-        transformOriginX={isAttachmentModal ? transformOriginX : undefined}
-        transformOriginY={isAttachmentModal ? transformOriginY : undefined}
-        style={isAttachmentModal ? menuStyle : undefined}
+        anchor={isAttachmentModal ? contextMenuAnchor : undefined}
+        getTriggerElement={isAttachmentModal ? getTriggerElement : undefined}
+        getRootElement={isAttachmentModal ? getRootElement : undefined}
+        getMenuElement={isAttachmentModal ? getMenuElement : undefined}
+        getLayout={isAttachmentModal ? getLayout : undefined}
       />
     </>
   );

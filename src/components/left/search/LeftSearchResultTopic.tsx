@@ -1,10 +1,10 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback } from '../../../lib/teact/teact';
-import { withGlobal } from '../../../global';
+import { memo, useCallback } from '../../../lib/teact/teact';
+import { getActions, withGlobal } from '../../../global';
 
 import type { ApiTopic } from '../../../api/types';
 
-import { selectChat } from '../../../global/selectors';
+import { selectTopic } from '../../../global/selectors';
 import { REM } from '../../common/helpers/mediaDimensions';
 import renderText from '../../common/helpers/renderText';
 
@@ -26,15 +26,23 @@ type StateProps = {
 const TOPIC_ICON_SIZE = 2 * REM;
 
 const LeftSearchResultTopic: FC<OwnProps & StateProps> = ({
+  chatId,
   topicId,
   topic,
   onClick,
 }) => {
-  const handleClick = useCallback(() => {
-    onClick(topicId);
-  }, [topicId, onClick]);
+  const { openQuickPreview } = getActions();
 
-  const buttonRef = useSelectWithEnter(handleClick);
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    if (e.altKey) {
+      e.preventDefault();
+      openQuickPreview({ id: chatId, threadId: topicId });
+      return;
+    }
+    onClick(topicId);
+  }, [chatId, topicId, onClick, openQuickPreview]);
+
+  const buttonRef = useSelectWithEnter(() => onClick(topicId));
 
   if (!topic) {
     return undefined;
@@ -59,9 +67,8 @@ const LeftSearchResultTopic: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { chatId, topicId }): StateProps => {
-    const chat = selectChat(global, chatId);
-    const topic = chat?.topics?.[topicId];
+  (global, { chatId, topicId }): Complete<StateProps> => {
+    const topic = selectTopic(global, chatId, topicId);
 
     return {
       topic,

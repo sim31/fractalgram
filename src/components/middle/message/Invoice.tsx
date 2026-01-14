@@ -1,10 +1,11 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useRef } from '../../../lib/teact/teact';
+import { memo, useRef } from '../../../lib/teact/teact';
 
 import type { ApiMessage } from '../../../api/types';
-import type { ISettings } from '../../../types';
+import type { ThemeKey } from '../../../types';
 
 import { CUSTOM_APPENDIX_ATTRIBUTE, MESSAGE_CONTENT_SELECTOR } from '../../../config';
+import { requestMutation } from '../../../lib/fasterdom/fasterdom';
 import { getMessageInvoice, getWebDocumentHash } from '../../../global/helpers';
 import buildStyle from '../../../util/buildStyle';
 import { formatCurrency } from '../../../util/formatCurrency';
@@ -14,6 +15,7 @@ import getCustomAppendixBg from './helpers/getCustomAppendixBg';
 import useLang from '../../../hooks/useLang';
 import useLayoutEffectWithPrevDeps from '../../../hooks/useLayoutEffectWithPrevDeps';
 import useMedia from '../../../hooks/useMedia';
+import useOldLang from '../../../hooks/useOldLang';
 import useBlurredMediaThumbRef from './hooks/useBlurredMediaThumbRef';
 
 import Skeleton from '../../ui/placeholder/Skeleton';
@@ -25,7 +27,7 @@ type OwnProps = {
   shouldAffectAppendix?: boolean;
   isInSelectMode?: boolean;
   isSelected?: boolean;
-  theme: ISettings['theme'];
+  theme: ThemeKey;
   forcedWidth?: number;
 };
 
@@ -37,15 +39,15 @@ const Invoice: FC<OwnProps> = ({
   theme,
   forcedWidth,
 }) => {
-  // eslint-disable-next-line no-null/no-null
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement>();
 
+  const oldLang = useOldLang();
   const lang = useLang();
   const invoice = getMessageInvoice(message);
 
   const {
     title,
-    text,
+    description,
     amount,
     currency,
     isTest,
@@ -54,7 +56,8 @@ const Invoice: FC<OwnProps> = ({
 
   const photoUrl = useMedia(getWebDocumentHash(photo));
   const withBlurredBackground = Boolean(forcedWidth);
-  const blurredBackgroundRef = useBlurredMediaThumbRef(message, !withBlurredBackground, photoUrl);
+  const blurredBackgroundRef = useBlurredMediaThumbRef(photoUrl, !withBlurredBackground);
+  const messageId = message.id;
 
   useLayoutEffectWithPrevDeps(([prevShouldAffectAppendix]) => {
     if (!shouldAffectAppendix) {
@@ -66,12 +69,14 @@ const Invoice: FC<OwnProps> = ({
 
     if (photoUrl) {
       const contentEl = ref.current!.closest<HTMLDivElement>(MESSAGE_CONTENT_SELECTOR)!;
-      getCustomAppendixBg(photoUrl, false, isSelected, theme).then((appendixBg) => {
-        contentEl.style.setProperty('--appendix-bg', appendixBg);
-        contentEl.setAttribute(CUSTOM_APPENDIX_ATTRIBUTE, '');
+      getCustomAppendixBg(photoUrl, false, messageId, isSelected, theme).then((appendixBg) => {
+        requestMutation(() => {
+          contentEl.style.setProperty('--appendix-bg', appendixBg);
+          contentEl.setAttribute(CUSTOM_APPENDIX_ATTRIBUTE, '');
+        });
       });
     }
-  }, [shouldAffectAppendix, photoUrl, isInSelectMode, isSelected, theme]);
+  }, [shouldAffectAppendix, photoUrl, isInSelectMode, isSelected, theme, messageId]);
 
   const width = forcedWidth || photo?.dimensions?.width;
 
@@ -89,8 +94,8 @@ const Invoice: FC<OwnProps> = ({
       {title && (
         <p className="title">{renderText(title)}</p>
       )}
-      {text && (
-        <div>{renderText(text, ['emoji', 'br'])}</div>
+      {description && (
+        <div className="info">{renderText(description, ['emoji', 'br'])}</div>
       )}
       <div className={`description ${photo ? 'has-image' : ''}`}>
         {Boolean(photo) && (
@@ -116,8 +121,8 @@ const Invoice: FC<OwnProps> = ({
           </div>
         )}
         <p className="description-text">
-          {formatCurrency(amount, currency, lang.code)}
-          {isTest && <span>{lang('PaymentTestInvoice')}</span>}
+          {formatCurrency(lang, amount, currency, { iconClassName: 'invoice-currency-icon' })}
+          {isTest && <span className="test-invoice">{oldLang('PaymentTestInvoice')}</span>}
         </p>
       </div>
     </div>

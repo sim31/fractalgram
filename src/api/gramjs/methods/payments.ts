@@ -1,34 +1,44 @@
-import BigInt from 'big-integer';
 import { Api as GramJs } from '../../../lib/gramjs';
+import { RPCError } from '../../../lib/gramjs/errors';
 
 import type {
-  ApiChat, ApiRequestInputInvoice,
-  OnApiUpdate,
+  ApiChat,
+  ApiInputStorePaymentPurpose,
+  ApiPeer,
+  ApiRequestInputInvoice,
+  ApiThemeParameters,
 } from '../../types';
 
+import { DEBUG } from '../../../config';
 import {
-  buildApiInvoiceFromForm,
+  buildApiBoost,
+  buildApiBoostsStatus,
+  buildApiCheckedGiftCode,
+  buildApiGiveawayInfo,
+  buildApiMyBoost,
   buildApiPaymentForm,
+  buildApiPremiumGiftCodeOption,
   buildApiPremiumPromo,
   buildApiReceipt,
   buildShippingOptions,
 } from '../apiBuilders/payments';
-import { buildApiUser } from '../apiBuilders/users';
-import { buildInputInvoice, buildInputPeer, buildShippingInfo } from '../gramjsBuilders';
+import { buildApiPeerId } from '../apiBuilders/peers';
 import {
-  addEntitiesToLocalDb,
+  buildInputInvoice,
+  buildInputPeer,
+  buildInputStorePaymentPurpose,
+  buildInputThemeParams,
+  buildShippingInfo,
+  DEFAULT_PRIMITIVES,
+} from '../gramjsBuilders';
+import {
   deserializeBytes,
   serializeBytes,
-} from '../helpers';
+} from '../helpers/misc';
 import localDb from '../localDb';
-import { invokeRequest } from './client';
+import { sendApiUpdate } from '../updates/apiUpdateEmitter';
+import { handleGramJsUpdate, invokeRequest } from './client';
 import { getTemporaryPaymentPassword } from './twoFaSettings';
-
-let onUpdate: OnApiUpdate;
-
-export function init(_onUpdate: OnApiUpdate) {
-  onUpdate = _onUpdate;
-}
 
 export async function validateRequestedInfo({
   inputInvoice,
@@ -39,9 +49,9 @@ export async function validateRequestedInfo({
   requestInfo: GramJs.TypePaymentRequestedInfo;
   shouldSave?: boolean;
 }): Promise<{
-    id: string;
-    shippingOptions: any;
-  } | undefined> {
+  id: string;
+  shippingOptions: any;
+} | undefined> {
   const result = await invokeRequest(new GramJs.payments.ValidateRequestedInfo({
     invoice: buildInputInvoice(inputInvoice),
     save: shouldSave || undefined,
@@ -99,38 +109,91 @@ export async function sendPaymentForm({
     ...(tipAmount && { tipAmount: BigInt(tipAmount) }),
   }));
 
+  if (!result) return false;
+
   if (result instanceof GramJs.payments.PaymentVerificationNeeded) {
-    onUpdate({
+    sendApiUpdate({
       '@type': 'updatePaymentVerificationNeeded',
       url: result.url,
     });
 
     return undefined;
+  } else {
+    handleGramJsUpdate(result.updates);
   }
 
   return Boolean(result);
 }
 
-export async function getPaymentForm(inputInvoice: ApiRequestInputInvoice) {
-  const result = await invokeRequest(new GramJs.payments.GetPaymentForm({
+export async function sendStarPaymentForm({
+  formId,
+  inputInvoice,
+}: {
+  formId: string;
+  inputInvoice: ApiRequestInputInvoice;
+}) {
+  const result = await invokeRequest(new GramJs.payments.SendStarsForm({
+    formId: BigInt(formId),
     invoice: buildInputInvoice(inputInvoice),
   }));
 
-  if (!result) {
+  if (!result) return undefined;
+
+  if (result instanceof GramJs.payments.PaymentVerificationNeeded) {
+    if (DEBUG) {
+      // eslint-disable-next-line no-console
+      console.warn('Unexpected PaymentVerificationNeeded in sendStarsForm');
+    }
+
     return undefined;
   }
 
-  if (result.photo) {
-    localDb.webDocuments[result.photo.url] = result.photo;
+  handleGramJsUpdate(result.updates);
+
+  if (inputInvoice.type === 'chatInviteSubscription') {
+    const updates = 'updates' in result.updates ? result.updates.updates : undefined;
+
+    const mtpChannelId = updates?.find((update): update is GramJs.UpdateChannel => (
+      update instanceof GramJs.UpdateChannel
+    ))?.channelId;
+
+    if (!mtpChannelId) {
+      return undefined;
+    }
+
+    return {
+      channelId: buildApiPeerId(mtpChannelId, 'channel'),
+    };
   }
 
-  addEntitiesToLocalDb(result.users);
-
   return {
-    form: buildApiPaymentForm(result),
-    invoice: buildApiInvoiceFromForm(result),
-    users: result.users.map(buildApiUser).filter(Boolean),
+    completed: true,
   };
+}
+
+export async function getPaymentForm(inputInvoice: ApiRequestInputInvoice, theme?: ApiThemeParameters) {
+  try {
+    const result = await invokeRequest(new GramJs.payments.GetPaymentForm({
+      invoice: buildInputInvoice(inputInvoice),
+      themeParams: theme ? buildInputThemeParams(theme) : undefined,
+    }), {
+      shouldThrow: true,
+    });
+
+    if (!result) {
+      return undefined;
+    }
+
+    return buildApiPaymentForm(result);
+  } catch (err: any) {
+    if (err instanceof RPCError) {
+      return {
+        error: err.errorMessage,
+      };
+    } else {
+      throw err;
+    }
+  }
 }
 
 export async function getReceipt(chat: ApiChat, msgId: number) {
@@ -143,11 +206,8 @@ export async function getReceipt(chat: ApiChat, msgId: number) {
     return undefined;
   }
 
-  addEntitiesToLocalDb(result.users);
-
   return {
     receipt: buildApiReceipt(result),
-    users: result.users.map(buildApiUser).filter(Boolean),
   };
 }
 
@@ -155,9 +215,6 @@ export async function fetchPremiumPromo() {
   const result = await invokeRequest(new GramJs.help.GetPremiumPromo());
   if (!result) return undefined;
 
-  addEntitiesToLocalDb(result.users);
-
-  const users = result.users.map(buildApiUser).filter(Boolean);
   result.videos.forEach((video) => {
     if (video instanceof GramJs.Document) {
       localDb.documents[video.id.toString()] = video;
@@ -166,7 +223,6 @@ export async function fetchPremiumPromo() {
 
   return {
     promo: buildApiPremiumPromo(result),
-    users,
   };
 }
 
@@ -185,4 +241,167 @@ export async function fetchTemporaryPaymentPassword(password: string) {
     value: serializeBytes(result.tmpPassword),
     validUntil: result.validUntil,
   };
+}
+
+export async function fetchMyBoosts() {
+  const result = await invokeRequest(new GramJs.premium.GetMyBoosts());
+
+  if (!result) return undefined;
+
+  const boosts = result.myBoosts.map(buildApiMyBoost);
+
+  return {
+    boosts,
+  };
+}
+
+export async function applyBoost({
+  chat,
+  slots,
+}: {
+  chat: ApiChat;
+  slots: number[];
+}) {
+  const result = await invokeRequest(new GramJs.premium.ApplyBoost({
+    peer: buildInputPeer(chat.id, chat.accessHash),
+    slots,
+  }));
+
+  if (!result) return undefined;
+
+  const boosts = result.myBoosts.map(buildApiMyBoost);
+
+  return {
+    boosts,
+  };
+}
+
+export async function fetchBoostStatus({
+  chat,
+}: {
+  chat: ApiChat;
+}) {
+  const result = await invokeRequest(new GramJs.premium.GetBoostsStatus({
+    peer: buildInputPeer(chat.id, chat.accessHash),
+  }));
+
+  if (!result) {
+    return undefined;
+  }
+
+  return buildApiBoostsStatus(result);
+}
+
+export async function fetchBoostList({
+  chat,
+  isGifts,
+  offset = DEFAULT_PRIMITIVES.STRING,
+  limit = DEFAULT_PRIMITIVES.INT,
+}: {
+  chat: ApiChat;
+  isGifts?: boolean;
+  offset?: string;
+  limit?: number;
+}) {
+  const result = await invokeRequest(new GramJs.premium.GetBoostsList({
+    peer: buildInputPeer(chat.id, chat.accessHash),
+    gifts: isGifts || undefined,
+    offset,
+    limit,
+  }));
+
+  if (!result) {
+    return undefined;
+  }
+
+  const boostList = result.boosts.map(buildApiBoost);
+
+  return {
+    count: result.count,
+    boostList,
+    nextOffset: result.nextOffset,
+  };
+}
+
+export async function fetchGiveawayInfo({
+  peer,
+  messageId,
+}: {
+  peer: ApiPeer;
+  messageId: number;
+}) {
+  const result = await invokeRequest(new GramJs.payments.GetGiveawayInfo({
+    peer: buildInputPeer(peer.id, peer.accessHash),
+    msgId: messageId,
+  }));
+
+  if (!result) {
+    return undefined;
+  }
+
+  return buildApiGiveawayInfo(result);
+}
+
+export async function checkGiftCode({
+  slug,
+}: {
+  slug: string;
+}) {
+  const result = await invokeRequest(new GramJs.payments.CheckGiftCode({
+    slug,
+  }));
+
+  if (!result) {
+    return undefined;
+  }
+
+  return {
+    code: buildApiCheckedGiftCode(result),
+  };
+}
+
+export function applyGiftCode({
+  slug,
+}: {
+  slug: string;
+}) {
+  return invokeRequest(new GramJs.payments.ApplyGiftCode({
+    slug,
+  }), {
+    shouldReturnTrue: true,
+  });
+}
+
+export async function getPremiumGiftCodeOptions({
+  chat,
+}: {
+  chat?: ApiChat;
+}) {
+  const result = await invokeRequest(new GramJs.payments.GetPremiumGiftCodeOptions({
+    boostPeer: chat && buildInputPeer(chat.id, chat.accessHash),
+  }));
+
+  if (!result) {
+    return undefined;
+  }
+
+  return result.map(buildApiPremiumGiftCodeOption);
+}
+
+export function launchPrepaidGiveaway({
+  chat,
+  giveawayId,
+  paymentPurpose,
+}: {
+  chat: ApiChat;
+  giveawayId: string;
+  paymentPurpose: ApiInputStorePaymentPurpose;
+}) {
+  return invokeRequest(new GramJs.payments.LaunchPrepaidGiveaway({
+    peer: buildInputPeer(chat.id, chat.accessHash),
+    giveawayId: BigInt(giveawayId),
+    purpose: buildInputStorePaymentPurpose(paymentPurpose),
+  }), {
+    shouldReturnTrue: true,
+  });
 }

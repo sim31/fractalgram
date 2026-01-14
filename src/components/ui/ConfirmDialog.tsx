@@ -1,5 +1,6 @@
 import type { FC, TeactNode } from '../../lib/teact/teact';
-import React, { memo, useCallback, useRef } from '../../lib/teact/teact';
+import type React from '../../lib/teact/teact';
+import { memo, useCallback, useRef } from '../../lib/teact/teact';
 
 import type { TextPart } from '../../types';
 
@@ -14,10 +15,11 @@ import Modal from './Modal';
 type OwnProps = {
   isOpen: boolean;
   title?: string;
+  noDefaultTitle?: boolean;
   header?: TeactNode;
   textParts?: TextPart;
   text?: string;
-  confirmLabel?: string;
+  confirmLabel?: TeactNode;
   confirmIsDestructive?: boolean;
   isConfirmDisabled?: boolean;
   isOnlyConfirm?: boolean;
@@ -32,10 +34,11 @@ type OwnProps = {
 const ConfirmDialog: FC<OwnProps> = ({
   isOpen,
   title,
+  noDefaultTitle,
   header,
   text,
   textParts,
-  confirmLabel = 'Confirm',
+  confirmLabel,
   confirmIsDestructive,
   isConfirmDisabled,
   isOnlyConfirm,
@@ -48,8 +51,7 @@ const ConfirmDialog: FC<OwnProps> = ({
 }) => {
   const lang = useLang();
 
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>();
 
   const handleSelectWithEnter = useCallback((index: number) => {
     if (index === -1) confirmHandler();
@@ -60,7 +62,7 @@ const ConfirmDialog: FC<OwnProps> = ({
   return (
     <Modal
       className={buildClassName('confirm', className)}
-      title={title || lang('Telegram')}
+      title={(title || (!noDefaultTitle ? lang('Telegram') : undefined))}
       header={header}
       isOpen={isOpen}
       onClose={onClose}
@@ -82,7 +84,7 @@ const ConfirmDialog: FC<OwnProps> = ({
           color={confirmIsDestructive ? 'danger' : 'primary'}
           disabled={isConfirmDisabled}
         >
-          {confirmLabel}
+          {confirmLabel || lang('GeneralConfirm')}
         </Button>
         {!isOnlyConfirm && <Button className="confirm-dialog-button" isText onClick={onClose}>{lang('Cancel')}</Button>}
       </div>

@@ -1,18 +1,18 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
-  memo, useCallback,
-  useMemo, useState,
+import {
+  memo, useMemo, useState,
 } from '../../../lib/teact/teact';
-import { getActions, getGlobal, withGlobal } from '../../../global';
+import { getActions, withGlobal } from '../../../global';
 
 import type { ApiChat, ApiChatMember } from '../../../api/types';
 
-import { filterUsersByName } from '../../../global/helpers';
+import { filterPeersByQuery } from '../../../global/helpers/peers';
 import { selectChatFullInfo } from '../../../global/selectors';
 
-import useLang from '../../../hooks/useLang';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useOldLang from '../../../hooks/useOldLang';
 
-import ChatOrUserPicker from '../../common/ChatOrUserPicker';
+import ChatOrUserPicker from '../../common/pickers/ChatOrUserPicker';
 
 export type OwnProps = {
   chat: ApiChat;
@@ -37,7 +37,7 @@ const RemoveGroupUserModal: FC<OwnProps & StateProps> = ({
     deleteChatMember,
   } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
   const [search, setSearch] = useState('');
 
   const usersId = useMemo(() => {
@@ -49,16 +49,17 @@ const RemoveGroupUserModal: FC<OwnProps & StateProps> = ({
         return acc;
       }, []);
 
-    // No need for expensive global updates on users, so we avoid them
-    const usersById = getGlobal().users.byId;
-
-    return filterUsersByName(availableMemberIds, usersById, search);
+    return filterPeersByQuery({ ids: availableMemberIds, query: search, type: 'user' });
   }, [chatMembers, currentUserId, search]);
 
-  const handleRemoveUser = useCallback((userId: string) => {
+  const handleLoadMore = useLastCallback(() => {
+    loadMoreMembers({ chatId: chat.id });
+  });
+
+  const handleRemoveUser = useLastCallback((userId: string) => {
     deleteChatMember({ chatId: chat.id, userId });
     onClose();
-  }, [chat.id, deleteChatMember, onClose]);
+  });
 
   return (
     <ChatOrUserPicker
@@ -67,7 +68,7 @@ const RemoveGroupUserModal: FC<OwnProps & StateProps> = ({
       searchPlaceholder={lang('ChannelBlockUser')}
       search={search}
       onSearchChange={setSearch}
-      loadMore={loadMoreMembers}
+      loadMore={handleLoadMore}
       onSelectChatOrUser={handleRemoveUser}
       onClose={onClose}
     />
@@ -75,7 +76,7 @@ const RemoveGroupUserModal: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { chat }): StateProps => {
+  (global, { chat }): Complete<StateProps> => {
     const { currentUserId } = global;
 
     return {

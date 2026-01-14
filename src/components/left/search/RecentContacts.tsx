@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo,
   useCallback, useEffect, useRef,
 } from '../../../lib/teact/teact';
@@ -13,7 +13,7 @@ import { throttle } from '../../../util/schedulers';
 import renderText from '../../common/helpers/renderText';
 
 import useHorizontalScroll from '../../../hooks/useHorizontalScroll';
-import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 
 import Avatar from '../../common/Avatar';
 import Button from '../../ui/Button';
@@ -47,8 +47,7 @@ const RecentContacts: FC<OwnProps & StateProps> = ({
     addRecentlyFoundChatId, clearRecentlyFoundChats,
   } = getActions();
 
-  // eslint-disable-next-line no-null/no-null
-  const topUsersRef = useRef<HTMLDivElement>(null);
+  const topUsersRef = useRef<HTMLDivElement>();
 
   // Due to the parent Transition, this component never gets unmounted,
   // that's why we use throttled API call on every update.
@@ -72,7 +71,7 @@ const RecentContacts: FC<OwnProps & StateProps> = ({
     clearRecentlyFoundChats();
   }, [clearRecentlyFoundChats]);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   return (
     <div className="RecentContacts custom-scroll">
@@ -105,19 +104,20 @@ const RecentContacts: FC<OwnProps & StateProps> = ({
             {lang('Recent')}
 
             <Button
+              className="clear-recent-chats"
               round
               size="smaller"
               color="translucent"
-              ariaLabel="Clear recent chats"
+              ariaLabel={lang('Clear')}
               onClick={handleClearRecentlyFoundChats}
               isRtl={lang.isRtl}
-            >
-              <i className="icon icon-close" />
-            </Button>
+              iconName="close"
+            />
           </h3>
           {recentlyFoundChatIds.map((id) => (
             <LeftSearchResultChat
               chatId={id}
+              withOpenAppButton
               onClick={handleClick}
             />
           ))}
@@ -128,7 +128,7 @@ const RecentContacts: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const { userIds: topUserIds } = global.topPeers;
     const usersById = global.users.byId;
     const { recentlyFoundChatIds } = global;

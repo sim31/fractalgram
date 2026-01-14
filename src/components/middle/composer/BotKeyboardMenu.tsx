@@ -1,12 +1,15 @@
-import type { FC } from '../../../lib/teact/teact';
-import React, { memo } from '../../../lib/teact/teact';
+import type { FC, TeactNode } from '../../../lib/teact/teact';
+import { memo, useMemo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiMessage } from '../../../api/types';
+import type { ThreadId } from '../../../types';
 
 import { selectChatMessage, selectCurrentMessageList } from '../../../global/selectors';
-import { IS_TOUCH_ENV } from '../../../util/windowEnvironment';
+import { IS_TOUCH_ENV } from '../../../util/browser/windowEnvironment';
+import renderKeyboardButtonText from './helpers/renderKeyboardButtonText';
 
+import useLang from '../../../hooks/useLang';
 import useMouseInside from '../../../hooks/useMouseInside';
 
 import Button from '../../ui/Button';
@@ -17,6 +20,7 @@ import './BotKeyboardMenu.scss';
 export type OwnProps = {
   isOpen: boolean;
   messageId: number;
+  threadId?: ThreadId;
   onClose: NoneToVoidFunction;
 };
 
@@ -25,12 +29,23 @@ type StateProps = {
 };
 
 const BotKeyboardMenu: FC<OwnProps & StateProps> = ({
-  isOpen, message, onClose,
+  isOpen, threadId, message, onClose,
 }) => {
   const { clickBotInlineButton } = getActions();
 
+  const lang = useLang();
+
   const [handleMouseEnter, handleMouseLeave] = useMouseInside(isOpen, onClose);
   const { isKeyboardSingleUse } = message || {};
+
+  const buttonTexts = useMemo(() => {
+    const texts: TeactNode[][] = [];
+    message?.keyboardButtons!.forEach((row) => {
+      texts.push(row.map((button) => renderKeyboardButtonText(lang, button)));
+    });
+
+    return texts;
+  }, [lang, message?.keyboardButtons]);
 
   if (!message || !message.keyboardButtons) {
     return undefined;
@@ -50,16 +65,18 @@ const BotKeyboardMenu: FC<OwnProps & StateProps> = ({
       noCompact
     >
       <div className="content custom-scroll">
-        {message.keyboardButtons.map((row) => (
+        {message.keyboardButtons.map((row, i) => (
           <div className="row">
-            {row.map((button) => (
+            {row.map((button, j) => (
               <Button
                 ripple
                 disabled={button.type === 'unsupported'}
-                // eslint-disable-next-line react/jsx-no-bind
-                onClick={() => clickBotInlineButton({ messageId: message.id, button })}
+
+                onClick={() => clickBotInlineButton({
+                  chatId: message.chatId, messageId: message.id, threadId, button,
+                })}
               >
-                {button.text}
+                {buttonTexts?.[i][j]}
               </Button>
             ))}
           </div>
@@ -70,12 +87,12 @@ const BotKeyboardMenu: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { messageId }): StateProps => {
+  (global, { messageId }): Complete<StateProps> => {
     const { chatId } = selectCurrentMessageList(global) || {};
-    if (!chatId) {
-      return {};
-    }
 
-    return { message: selectChatMessage(global, chatId, messageId) };
+    const message = chatId ? selectChatMessage(global, chatId, messageId) : undefined;
+    return {
+      message,
+    };
   },
 )(BotKeyboardMenu));

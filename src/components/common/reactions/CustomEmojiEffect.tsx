@@ -1,12 +1,12 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useMemo } from '../../../lib/teact/teact';
+import { memo, useMemo } from '../../../lib/teact/teact';
 
-import type { ApiEmojiStatus, ApiReactionCustomEmoji } from '../../../api/types';
+import type { ApiEmojiStatusType, ApiReactionCustomEmoji } from '../../../api/types';
 
-import { getStickerPreviewHash } from '../../../global/helpers';
+import { getStickerHashById } from '../../../global/helpers';
+import { IS_OFFSET_PATH_SUPPORTED } from '../../../util/browser/windowEnvironment';
 import buildClassName from '../../../util/buildClassName';
 import buildStyle from '../../../util/buildStyle';
-import { IS_OFFSET_PATH_SUPPORTED } from '../../../util/windowEnvironment';
 
 import useMedia from '../../../hooks/useMedia';
 
@@ -15,7 +15,7 @@ import CustomEmoji from '../CustomEmoji';
 import styles from './CustomEmojiEffect.module.scss';
 
 type OwnProps = {
-  reaction: ApiReactionCustomEmoji | ApiEmojiStatus;
+  reaction: ApiReactionCustomEmoji | ApiEmojiStatusType;
   className?: string;
   isLottie?: boolean;
   particleSize?: number;
@@ -31,7 +31,7 @@ const CustomEmojiEffect: FC<OwnProps> = ({
   particleSize,
   onEnded,
 }) => {
-  const stickerHash = getStickerPreviewHash(reaction.documentId);
+  const stickerHash = getStickerHashById(reaction.documentId, true);
 
   const previewMediaData = useMedia(!isLottie ? stickerHash : undefined);
 

@@ -1,5 +1,5 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo, useCallback } from '../../lib/teact/teact';
+import { memo } from '../../lib/teact/teact';
 
 import type { ApiSticker, ApiStickerSet } from '../../api/types';
 import type { ObserveFn } from '../../hooks/useIntersectionObserver';
@@ -7,7 +7,8 @@ import type { ObserveFn } from '../../hooks/useIntersectionObserver';
 import { STICKER_SIZE_GENERAL_SETTINGS } from '../../config';
 import buildClassName from '../../util/buildClassName';
 
-import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
+import useOldLang from '../../hooks/useOldLang';
 
 import StickerSetCover from '../middle/composer/StickerSetCover';
 import Button from '../ui/Button';
@@ -31,15 +32,15 @@ const StickerSetCard: FC<OwnProps> = ({
   observeIntersection,
   onClick,
 }) => {
-  const lang = useLang();
+  const lang = useOldLang();
 
   const firstSticker = stickerSet?.stickers?.[0];
 
-  const handleCardClick = useCallback(() => {
+  const handleCardClick = useLastCallback(() => {
     if (firstSticker) onClick(firstSticker);
-  }, [firstSticker, onClick]);
+  });
 
-  if (!stickerSet || !stickerSet.stickers) {
+  if (!stickerSet?.stickers) {
     return undefined;
   }
 
@@ -78,13 +79,12 @@ const StickerSetCard: FC<OwnProps> = ({
 
   return (
     <ListItem
-      narrow
-      className={buildClassName('StickerSetCard', className)}
+      className={buildClassName('StickerSetCard', 'small-icon', className)}
       inactive={!firstSticker}
       onClick={handleCardClick}
     >
       {renderPreview()}
-      <div className="multiline-menu-item">
+      <div className="multiline-item">
         <div className="title">{stickerSet.title}</div>
         <div className="subtitle">{lang('StickerPack.StickerCount', stickerSet.count, 'i')}</div>
       </div>

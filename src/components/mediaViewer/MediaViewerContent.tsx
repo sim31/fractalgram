@@ -1,24 +1,31 @@
-import type { FC } from '../../lib/teact/teact';
-import React, { memo } from '../../lib/teact/teact';
-import { withGlobal } from '../../global';
+import type React from '../../lib/teact/teact';
+import { memo } from '../../lib/teact/teact';
+import { getActions, withGlobal } from '../../global';
 
 import type {
-  ApiDimensions, ApiMessage, ApiPeer,
+  ApiDimensions, ApiMessage, ApiSponsoredMessage,
 } from '../../api/types';
-import { MediaViewerOrigin } from '../../types';
+import type { MediaViewerOrigin, ThreadId } from '../../types';
+import type { MediaViewerItem, ViewableMedia } from './helpers/getViewableMedia';
 
+import { MEDIA_TIMESTAMP_SAVE_MINIMUM_DURATION } from '../../config';
 import {
-  selectChat, selectChatMessage, selectIsMessageProtected, selectScheduledMessage, selectTabState, selectUser,
+  selectIsMessageProtected, selectTabState,
 } from '../../global/selectors';
+import { selectMessageTimestampableDuration } from '../../global/selectors/media';
+import { IS_TOUCH_ENV } from '../../util/browser/windowEnvironment';
 import buildClassName from '../../util/buildClassName';
 import stopEvent from '../../util/stopEvent';
-import { ARE_WEBCODECS_SUPPORTED, IS_TOUCH_ENV } from '../../util/windowEnvironment';
 import { calculateMediaViewerDimensions } from '../common/helpers/mediaDimensions';
 import { renderMessageText } from '../common/helpers/renderMessageText';
+import selectViewableMedia from './helpers/getViewableMedia';
 
 import useAppLayout from '../../hooks/useAppLayout';
-import useLang from '../../hooks/useLang';
+import useCurrentTimeSignal from '../../hooks/useCurrentTimeSignal';
 import useLastCallback from '../../hooks/useLastCallback';
+import useOldLang from '../../hooks/useOldLang';
+import { useSignalEffect } from '../../hooks/useSignalEffect';
+import useThrottledCallback from '../../hooks/useThrottledCallback';
 import useControlsSignal from './hooks/useControlsSignal';
 import { useMediaProps } from './hooks/useMediaProps';
 
@@ -29,86 +36,106 @@ import VideoPlayer from './VideoPlayer';
 import './MediaViewerContent.scss';
 
 type OwnProps = {
-  mediaId?: number;
-  chatId?: string;
-  threadId?: number;
-  avatarOwnerId?: string;
-  origin?: MediaViewerOrigin;
+  item: MediaViewerItem;
   isActive?: boolean;
   withAnimation?: boolean;
-  onClose: () => void;
-  onFooterClick: () => void;
   isMoving?: boolean;
+  onClose: () => void;
+  onFooterClick: (e: React.MouseEvent<HTMLDivElement>) => void;
+  handleSponsoredClick: () => void;
 };
 
 type StateProps = {
-  chatId?: string;
-  mediaId?: number;
-  senderId?: string;
-  threadId?: number;
-  avatarOwner?: ApiPeer;
-  message?: ApiMessage;
+  viewableMedia?: ViewableMedia;
+  textMessage?: ApiMessage | ApiSponsoredMessage;
   origin?: MediaViewerOrigin;
   isProtected?: boolean;
   volume: number;
   isMuted: boolean;
   isHidden?: boolean;
   playbackRate: number;
+  threadId?: ThreadId;
+  timestamp?: number;
+  maxTimestamp?: number;
 };
 
 const ANIMATION_DURATION = 350;
 const MOBILE_VERSION_CONTROL_WIDTH = 350;
+const PLAYBACK_SAVE_INTERVAL = 1000;
 
-const MediaViewerContent: FC<OwnProps & StateProps> = (props) => {
-  const {
-    mediaId,
-    isActive,
-    avatarOwner,
-    chatId,
-    message,
-    origin,
-    withAnimation,
-    isProtected,
-    volume,
-    playbackRate,
-    isMuted,
-    isHidden,
-    onClose,
-    onFooterClick,
-    isMoving,
-  } = props;
+const MediaViewerContent = ({
+  item,
+  viewableMedia,
+  isActive,
+  textMessage,
+  origin,
+  withAnimation,
+  isProtected,
+  volume,
+  playbackRate,
+  isMuted,
+  isHidden,
+  isMoving,
+  threadId,
+  timestamp,
+  maxTimestamp,
+  onClose,
+  onFooterClick,
+  handleSponsoredClick,
+}: OwnProps & StateProps) => {
+  const { updateLastPlaybackTimestamp } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
+
+  const isAvatar = item.type === 'avatar';
+  const isSponsoredMessage = item.type === 'sponsoredMessage';
+  const { media } = viewableMedia || {};
 
   const {
     isVideo,
     isPhoto,
-    actionPhoto,
     bestImageData,
     bestData,
     dimensions,
     isGif,
-    isLocal,
     isVideoAvatar,
-    videoSize,
+    mediaSize,
     loadProgress,
   } = useMediaProps({
-    message, avatarOwner, mediaId, origin, delay: withAnimation ? ANIMATION_DURATION : false,
+    media, isAvatar, origin, delay: withAnimation ? ANIMATION_DURATION : false,
   });
 
   const [, toggleControls] = useControlsSignal();
+  const [getCurrentTime] = useCurrentTimeSignal();
 
-  const isOpen = Boolean(avatarOwner || mediaId);
+  const isOpen = Boolean(media);
   const { isMobile } = useAppLayout();
 
   const toggleControlsOnMove = useLastCallback(() => {
     toggleControls(true);
   });
 
-  if (avatarOwner || actionPhoto) {
+  const updatePlaybackTimestamp = useThrottledCallback(() => {
+    if (!isActive || !textMessage || media?.mediaType !== 'video') return;
+    if (media.duration < MEDIA_TIMESTAMP_SAVE_MINIMUM_DURATION) return;
+
+    const message = 'id' in textMessage ? textMessage : undefined;
+    const currentTime = getCurrentTime();
+    if (!currentTime || !message || message.isInAlbum) return;
+
+    // Reset timestamp if we are close to the end of the video
+    const newTimestamp = media.duration - currentTime > PLAYBACK_SAVE_INTERVAL / 1000 ? currentTime : undefined;
+    updateLastPlaybackTimestamp({ chatId: message.chatId, messageId: message.id, timestamp: newTimestamp });
+  }, [getCurrentTime, isActive, media, textMessage], PLAYBACK_SAVE_INTERVAL);
+
+  useSignalEffect(updatePlaybackTimestamp, [getCurrentTime]);
+
+  if (!media) return undefined;
+
+  if (item.type === 'avatar') {
     if (!isVideoAvatar) {
       return (
-        <div key={chatId} className="MediaViewerContent">
+        <div key={media.id} className="MediaViewerContent">
           {renderPhoto(
             bestData,
             calculateMediaViewerDimensions(dimensions!, false),
@@ -119,18 +146,17 @@ const MediaViewerContent: FC<OwnProps & StateProps> = (props) => {
       );
     } else {
       return (
-        <div key={chatId} className="MediaViewerContent">
+        <div key={media.id} className="MediaViewerContent">
           <VideoPlayer
-            key={mediaId}
+            key={media.id}
             url={bestData}
             isGif
             posterData={bestImageData}
             posterSize={calculateMediaViewerDimensions(dimensions!, false, true)}
             loadProgress={loadProgress}
-            fileSize={videoSize!}
+            fileSize={mediaSize!}
             isMediaViewerOpen={isOpen && isActive}
             isProtected={isProtected}
-            isPreviewDisabled={!ARE_WEBCODECS_SUPPORTED || isLocal}
             noPlay={!isActive}
             onClose={onClose}
             isMuted
@@ -138,19 +164,24 @@ const MediaViewerContent: FC<OwnProps & StateProps> = (props) => {
             volume={0}
             isClickDisabled={isMoving}
             playbackRate={1}
+            isSponsoredMessage={isSponsoredMessage}
+            handleSponsoredClick={handleSponsoredClick}
           />
         </div>
       );
     }
   }
 
-  if (!message) return undefined;
-  const textParts = message.content.action?.type === 'suggestProfilePhoto'
-    ? lang('Conversation.SuggestedPhotoTitle')
-    : renderMessageText({ message, forcePlayback: true, isForMediaViewer: true });
-
+  const textParts = textMessage && (
+    textMessage.content.action
+      ? (textMessage.content.action.type === 'suggestProfilePhoto'
+        ? lang('Conversation.SuggestedPhotoTitle') : undefined)
+      : renderMessageText({
+        message: textMessage, maxTimestamp, threadId, forcePlayback: true, isForMediaViewer: true,
+      }));
+  const buttonText = textMessage && 'buttonText' in textMessage ? textMessage.buttonText : undefined;
   const hasFooter = Boolean(textParts);
-  const posterSize = message && calculateMediaViewerDimensions(dimensions!, hasFooter, isVideo);
+  const posterSize = calculateMediaViewerDimensions(dimensions!, hasFooter, isVideo);
   const isForceMobileVersion = isMobile || shouldForceMobileVersion(posterSize);
 
   return (
@@ -171,16 +202,16 @@ const MediaViewerContent: FC<OwnProps & StateProps> = (props) => {
         isProtected,
       ) : (
         <VideoPlayer
-          key={mediaId}
+          key={media.id}
           url={bestData}
+          storyboardInfo={'storyboardInfo' in media ? media.storyboardInfo : undefined}
           isGif={isGif}
           posterData={bestImageData}
           posterSize={posterSize}
           loadProgress={loadProgress}
-          fileSize={videoSize!}
+          fileSize={mediaSize!}
           isMediaViewerOpen={isOpen && isActive}
           noPlay={!isActive}
-          isPreviewDisabled={!ARE_WEBCODECS_SUPPORTED || isLocal}
           onClose={onClose}
           isMuted={isMuted}
           isHidden={isHidden}
@@ -189,15 +220,20 @@ const MediaViewerContent: FC<OwnProps & StateProps> = (props) => {
           volume={volume}
           isClickDisabled={isMoving}
           playbackRate={playbackRate}
+          isSponsoredMessage={isSponsoredMessage}
+          handleSponsoredClick={handleSponsoredClick}
+          timestamp={timestamp}
         />
       ))}
       {textParts && (
         <MediaViewerFooter
           text={textParts}
+          buttonText={buttonText}
           onClick={onFooterClick}
           isProtected={isProtected}
           isForceMobileVersion={isForceMobileVersion}
           isForVideo={isVideo && !isGif}
+          handleSponsoredClick={handleSponsoredClick}
         />
       )}
     </div>
@@ -205,88 +241,35 @@ const MediaViewerContent: FC<OwnProps & StateProps> = (props) => {
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, ownProps): StateProps => {
-    const {
-      chatId,
-      threadId,
-      mediaId,
-      avatarOwnerId,
-      origin,
-    } = ownProps;
-
+  (global, { item }): Complete<StateProps> => {
     const {
       volume,
       isMuted,
       playbackRate,
       isHidden,
+      origin,
+      timestamp,
+      threadId,
     } = selectTabState(global).mediaViewer;
+    const message = item.type === 'message' ? item.message : undefined;
+    const sponsoredMessage = item.type === 'sponsoredMessage' ? item.message : undefined;
+    const textMessage = message || sponsoredMessage;
+    const viewableMedia = selectViewableMedia(global, origin, item);
 
-    if (origin === MediaViewerOrigin.SearchResult) {
-      if (!(chatId && mediaId)) {
-        return { volume, isMuted, playbackRate };
-      }
-
-      const message = selectChatMessage(global, chatId, mediaId);
-      if (!message) {
-        return { volume, isMuted, playbackRate };
-      }
-
-      return {
-        chatId,
-        mediaId,
-        senderId: message.senderId,
-        origin,
-        message,
-        isProtected: selectIsMessageProtected(global, message),
-        volume,
-        isMuted,
-        isHidden,
-        playbackRate,
-      };
-    }
-
-    if (avatarOwnerId) {
-      const sender = selectUser(global, avatarOwnerId) || selectChat(global, avatarOwnerId);
-
-      return {
-        mediaId,
-        senderId: avatarOwnerId,
-        avatarOwner: sender,
-        origin,
-        volume,
-        isMuted,
-        isHidden,
-        playbackRate,
-      };
-    }
-
-    if (!(chatId && threadId && mediaId)) {
-      return { volume, isMuted, playbackRate };
-    }
-
-    let message: ApiMessage | undefined;
-    if (origin && [MediaViewerOrigin.ScheduledAlbum, MediaViewerOrigin.ScheduledInline].includes(origin)) {
-      message = selectScheduledMessage(global, chatId, mediaId);
-    } else {
-      message = selectChatMessage(global, chatId, mediaId);
-    }
-
-    if (!message) {
-      return { volume, isMuted, playbackRate };
-    }
+    const maxTimestamp = message && selectMessageTimestampableDuration(global, message, true);
 
     return {
-      chatId,
-      threadId,
-      mediaId,
-      senderId: message.senderId,
       origin,
-      message,
-      isProtected: selectIsMessageProtected(global, message),
+      textMessage,
+      isProtected: message && selectIsMessageProtected(global, message),
       volume,
       isMuted,
       isHidden,
       playbackRate,
+      threadId,
+      timestamp,
+      maxTimestamp,
+      viewableMedia,
     };
   },
 )(MediaViewerContent));
@@ -327,7 +310,6 @@ function renderVideoPreview(blobUrl?: string, imageSize?: ApiDimensions, canDrag
         <div
           style={wrapperStyle}
         >
-          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
           <video
             style={videoStyle}
             className={buildClassName(isProtected && 'is-protected')}

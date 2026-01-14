@@ -1,10 +1,10 @@
-import type { FC } from '../../../lib/teact/teact';
-import React, {
-  memo, useEffect, useState,
-} from '../../../lib/teact/teact';
+import type { ElementRef, FC } from '../../../lib/teact/teact';
+import type React from '../../../lib/teact/teact';
+import { memo, useEffect, useState } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { GroupCallParticipant } from '../../../lib/secret-sauce';
+import type { MenuPositionOptions } from '../../ui/Menu';
 
 import { GROUP_CALL_DEFAULT_VOLUME, GROUP_CALL_VOLUME_MULTIPLIER } from '../../../config';
 import { selectIsAdminInActiveGroupCall } from '../../../global/selectors/calls';
@@ -12,8 +12,8 @@ import buildClassName from '../../../util/buildClassName';
 import { LOCAL_TGS_URLS } from '../../common/helpers/animatedAssets';
 
 import useFlag from '../../../hooks/useFlag';
-import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
+import useOldLang from '../../../hooks/useOldLang';
 import useRunThrottled from '../../../hooks/useRunThrottled';
 
 import AnimatedIcon from '../../common/AnimatedIcon';
@@ -26,18 +26,15 @@ import './GroupCallParticipantMenu.scss';
 const SPEAKER_ICON_DISABLED_SEGMENT: [number, number] = [0, 17];
 const SPEAKER_ICON_ENABLED_SEGMENT: [number, number] = [17, 34];
 
-type OwnProps = {
-  participant?: GroupCallParticipant;
-  onCloseAnimationEnd: VoidFunction;
-  onClose: VoidFunction;
-  isDropdownOpen: boolean;
-  positionX?: 'left' | 'right';
-  positionY?: 'top' | 'bottom';
-  transformOriginX?: number;
-  transformOriginY?: number;
-  style?: string;
-  menuRef?: React.RefObject<HTMLDivElement>;
-};
+type OwnProps =
+  {
+    participant?: GroupCallParticipant;
+    onCloseAnimationEnd: VoidFunction;
+    onClose: VoidFunction;
+    isDropdownOpen: boolean;
+    menuRef?: ElementRef<HTMLDivElement>;
+  }
+  & MenuPositionOptions;
 
 type StateProps = {
   isAdmin: boolean;
@@ -58,12 +55,8 @@ const GroupCallParticipantMenu: FC<OwnProps & StateProps> = ({
   onClose,
   isDropdownOpen,
   isAdmin,
-  positionY,
   menuRef,
-  positionX,
-  style,
-  transformOriginY,
-  transformOriginX,
+  ...menuPositionOptions
 }) => {
   const {
     toggleGroupCallMute,
@@ -73,7 +66,7 @@ const GroupCallParticipantMenu: FC<OwnProps & StateProps> = ({
     requestToSpeak,
   } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
   const [isDeleteUserModalOpen, openDeleteUserModal, closeDeleteUserModal] = useFlag();
 
   const id = participant?.id;
@@ -175,16 +168,13 @@ const GroupCallParticipantMenu: FC<OwnProps & StateProps> = ({
     <div>
       <Menu
         isOpen={isDropdownOpen}
-        positionX={positionX}
-        positionY={positionY}
-        transformOriginX={transformOriginX}
-        transformOriginY={transformOriginY}
-        style={style}
         ref={menuRef}
         withPortal
         onClose={onClose}
         onCloseAnimationEnd={onCloseAnimationEnd}
         className="participant-menu with-menu-transitions"
+
+        {...menuPositionOptions}
       >
         {!isSelf && !shouldRaiseHand && (
           <div className="group">
@@ -210,7 +200,10 @@ const GroupCallParticipantMenu: FC<OwnProps & StateProps> = ({
                   playSegment={speakerIconPlaySegment}
                   size={SPEAKER_ICON_SIZE}
                 />
-                <span>{localVolume}%</span>
+                <span>
+                  {localVolume}
+                  %
+                </span>
               </div>
             </div>
           </div>
@@ -257,7 +250,7 @@ const GroupCallParticipantMenu: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     return {
       isAdmin: selectIsAdminInActiveGroupCall(global),
     };

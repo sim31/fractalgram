@@ -1,6 +1,16 @@
 import type { API_CHAT_TYPES } from '../../config';
 import type { ApiBotInfo } from './bots';
-import type { ApiDocument, ApiPhoto } from './messages';
+import type { ApiBusinessIntro, ApiBusinessLocation, ApiBusinessWorkHours } from './business';
+import type { ApiDocument, ApiFormattedText, ApiPhoto } from './messages';
+import type {
+  ApiBotVerification,
+  ApiEmojiStatusType,
+  ApiFakeType,
+  ApiPeerSettings,
+  ApiProfileTab,
+  ApiTypePeerColor,
+} from './peers';
+import type { ApiSavedStarGift, ApiStarsRating } from './stars';
 
 export interface ApiUser {
   id: string;
@@ -16,25 +26,28 @@ export interface ApiUser {
   lastName?: string;
   noStatus?: boolean;
   usernames?: ApiUsername[];
+  hasUsername?: boolean;
   phoneNumber: string;
   accessHash?: string;
   hasVideoAvatar?: boolean;
-  avatarHash?: string;
-  photos?: ApiPhoto[];
+  avatarPhotoId?: string;
   botPlaceholder?: string;
   canBeInvitedToGroup?: boolean;
-  commonChats?: {
-    ids: string[];
-    maxId: string;
-    isFullyLoaded: boolean;
-  };
   fakeType?: ApiFakeType;
   isAttachBot?: boolean;
-  emojiStatus?: ApiEmojiStatus;
+  emojiStatus?: ApiEmojiStatusType;
   areStoriesHidden?: boolean;
   hasStories?: boolean;
   hasUnreadStories?: boolean;
   maxStoryId?: number;
+  color?: ApiTypePeerColor;
+  profileColor?: ApiTypePeerColor;
+  canEditBot?: boolean;
+  hasMainMiniApp?: boolean;
+  botActiveUsers?: number;
+  botVerificationIconId?: string;
+  paidMessagesStars?: number;
+  isBotForum?: boolean;
 }
 
 export interface ApiUserFullInfo {
@@ -47,12 +60,31 @@ export interface ApiUserFullInfo {
   fallbackPhoto?: ApiPhoto;
   personalPhoto?: ApiPhoto;
   noVoiceMessages?: boolean;
-  premiumGifts?: ApiPremiumGiftOption[];
   isTranslationDisabled?: true;
+  areAdsEnabled?: boolean;
   hasPinnedStories?: boolean;
+  isContactRequirePremium?: boolean;
+  shouldDisplayGiftsButton?: boolean;
+  disallowedGifts?: ApiDisallowedGifts;
+  birthday?: ApiBirthday;
+  personalChannelId?: string;
+  personalChannelMessageId?: number;
+  businessLocation?: ApiBusinessLocation;
+  businessWorkHours?: ApiBusinessWorkHours;
+  businessIntro?: ApiBusinessIntro;
+  starGiftCount?: number;
+  starsRating?: ApiStarsRating;
+  starsMyPendingRating?: ApiStarsRating;
+  starsMyPendingRatingDate?: number;
+  isBotCanManageEmojiStatus?: boolean;
+  isBotAccessEmojiGranted?: boolean;
+  hasScheduledMessages?: boolean;
+  botVerification?: ApiBotVerification;
+  paidMessagesStars?: number;
+  settings?: ApiPeerSettings;
+  mainTab?: ApiProfileTab;
+  note?: ApiFormattedText;
 }
-
-export type ApiFakeType = 'fake' | 'scam';
 
 export type ApiUserType = 'userTypeBot' | 'userTypeRegular' | 'userTypeDeleted' | 'userTypeUnknown';
 
@@ -63,6 +95,19 @@ export interface ApiUserStatus {
   );
   wasOnline?: number;
   expires?: number;
+  isReadDateRestrictedByMe?: boolean;
+  isReadDateRestricted?: boolean;
+}
+
+export interface ApiUserCommonChats {
+  ids: string[];
+  maxId?: string;
+  isFullyLoaded: boolean;
+}
+
+export interface ApiSavedGifts {
+  gifts: ApiSavedStarGift[];
+  nextOffset?: string;
 }
 
 export interface ApiUsername {
@@ -74,14 +119,15 @@ export interface ApiUsername {
 export type ApiChatType = typeof API_CHAT_TYPES[number];
 export type ApiAttachMenuPeerType = 'self' | ApiChatType;
 
+export type ApiInlineQueryPeerType = 'self' | 'supergroups' | ApiChatType;
+
 type ApiAttachBotForMenu = {
   isForAttachMenu: true;
-  attachMenuPeerTypes: ApiAttachMenuPeerType[];
+  attachMenuPeerTypes?: ApiAttachMenuPeerType[];
 };
 
 type ApiAttachBotBase = {
   id: string;
-  hasSettings?: boolean;
   shouldRequestWriteAccess?: boolean;
   shortName: string;
   isForSideMenu?: true;
@@ -97,14 +143,15 @@ export interface ApiAttachBotIcon {
   document: ApiDocument;
 }
 
-export interface ApiPremiumGiftOption {
-  months: number;
-  currency: string;
-  amount: number;
-  botUrl: string;
+export interface ApiBirthday {
+  day: number;
+  month: number;
+  year?: number;
 }
 
-export interface ApiEmojiStatus {
-  documentId: string;
-  until?: number;
+export interface ApiDisallowedGifts {
+  shouldDisallowUnlimitedStarGifts?: boolean;
+  shouldDisallowLimitedStarGifts?: boolean;
+  shouldDisallowUniqueStarGifts?: boolean;
+  shouldDisallowPremiumGifts?: boolean;
 }

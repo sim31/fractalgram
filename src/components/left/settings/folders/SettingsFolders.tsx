@@ -1,5 +1,5 @@
 import type { FC } from '../../../../lib/teact/teact';
-import React, { memo, useCallback } from '../../../../lib/teact/teact';
+import { memo, useCallback } from '../../../../lib/teact/teact';
 import { getActions } from '../../../../global';
 
 import type { ApiChatFolder } from '../../../../api/types';
@@ -7,6 +7,7 @@ import type { FolderEditDispatch, FoldersState } from '../../../../hooks/reducer
 import { SettingsScreens } from '../../../../types';
 
 import { selectChatFilters } from '../../../../hooks/reducers/useFoldersReducer';
+import useAppLayout from '../../../../hooks/useAppLayout';
 
 import SettingsFoldersChatFilters from './SettingsFoldersChatFilters';
 import SettingsFoldersEdit, { ERROR_NO_CHATS, ERROR_NO_TITLE } from './SettingsFoldersEdit';
@@ -23,7 +24,6 @@ export type OwnProps = {
   state: FoldersState;
   dispatch: FolderEditDispatch;
   isActive?: boolean;
-  onScreenSelect: (screen: SettingsScreens) => void;
   onReset: () => void;
 };
 
@@ -33,13 +33,15 @@ const SettingsFolders: FC<OwnProps> = ({
   state,
   dispatch,
   isActive,
-  onScreenSelect,
   onReset,
 }) => {
+  const { isMobile } = useAppLayout();
+
   const {
     openShareChatFolderModal,
     editChatFolder,
     addChatFolder,
+    openSettingsScreen,
   } = getActions();
 
   const handleReset = useCallback(() => {
@@ -59,23 +61,20 @@ const SettingsFolders: FC<OwnProps> = ({
       || currentScreen === SettingsScreens.FoldersExcludedChats
     ) {
       if (state.mode === 'create') {
-        onScreenSelect(SettingsScreens.FoldersCreateFolder);
+        openSettingsScreen({ screen: SettingsScreens.FoldersCreateFolder });
       } else {
-        onScreenSelect(SettingsScreens.FoldersEditFolder);
+        openSettingsScreen({ screen: SettingsScreens.FoldersEditFolder });
       }
       return;
     }
 
     onReset();
-  }, [
-    state.mode, dispatch,
-    currentScreen, onReset, onScreenSelect,
-  ]);
+  }, [state.mode, dispatch, currentScreen, onReset]);
 
   const isCreating = state.mode === 'create';
 
   const saveState = useCallback((newState: FoldersState) => {
-    const { title } = newState.folder;
+    const { title: { text: title } } = newState.folder;
 
     if (!title) {
       dispatch({ type: 'setError', payload: ERROR_NO_TITLE });
@@ -112,45 +111,48 @@ const SettingsFolders: FC<OwnProps> = ({
   }, [saveState, state]);
 
   const handleSaveFilter = useCallback(() => {
-    const newState = dispatch({ type: 'saveFilters' });
+    dispatch({ type: 'saveFilters' });
     handleReset();
-    saveState(newState);
-  }, [dispatch, handleReset, saveState]);
+  }, [dispatch, handleReset]);
 
   const handleCreateFolder = useCallback(() => {
     dispatch({ type: 'reset' });
-    onScreenSelect(SettingsScreens.FoldersCreateFolder);
-  }, [onScreenSelect, dispatch]);
+    openSettingsScreen({ screen: SettingsScreens.FoldersCreateFolder });
+  }, [dispatch]);
 
   const handleEditFolder = useCallback((folder: ApiChatFolder) => {
     dispatch({ type: 'editFolder', payload: folder });
-    onScreenSelect(SettingsScreens.FoldersEditFolder);
-  }, [dispatch, onScreenSelect]);
+    openSettingsScreen({ screen: SettingsScreens.FoldersEditFolder });
+  }, [dispatch]);
 
   const handleAddIncludedChats = useCallback(() => {
     dispatch({ type: 'editIncludeFilters' });
-    onScreenSelect(currentScreen === SettingsScreens.FoldersEditFolderFromChatList
-      ? SettingsScreens.FoldersIncludedChatsFromChatList
-      : SettingsScreens.FoldersIncludedChats);
-  }, [currentScreen, dispatch, onScreenSelect]);
+    openSettingsScreen({
+      screen: currentScreen === SettingsScreens.FoldersEditFolderFromChatList
+        ? SettingsScreens.FoldersIncludedChatsFromChatList
+        : SettingsScreens.FoldersIncludedChats,
+    });
+  }, [currentScreen, dispatch]);
 
   const handleAddExcludedChats = useCallback(() => {
     dispatch({ type: 'editExcludeFilters' });
-    onScreenSelect(currentScreen === SettingsScreens.FoldersEditFolderFromChatList
-      ? SettingsScreens.FoldersExcludedChatsFromChatList
-      : SettingsScreens.FoldersExcludedChats);
-  }, [currentScreen, dispatch, onScreenSelect]);
+    openSettingsScreen({
+      screen: currentScreen === SettingsScreens.FoldersEditFolderFromChatList
+        ? SettingsScreens.FoldersExcludedChatsFromChatList
+        : SettingsScreens.FoldersExcludedChats,
+    });
+  }, [currentScreen, dispatch]);
 
   const handleShareFolder = useCallback(() => {
     openShareChatFolderModal({ folderId: state.folderId!, noRequestNextScreen: true });
     dispatch({ type: 'setIsChatlist', payload: true });
-    onScreenSelect(SettingsScreens.FoldersShare);
-  }, [dispatch, onScreenSelect, state.folderId]);
+    openSettingsScreen({ screen: SettingsScreens.FoldersShare });
+  }, [dispatch, state.folderId]);
 
   const handleOpenInvite = useCallback((url: string) => {
     openShareChatFolderModal({ folderId: state.folderId!, url, noRequestNextScreen: true });
-    onScreenSelect(SettingsScreens.FoldersShare);
-  }, [onScreenSelect, state.folderId]);
+    openSettingsScreen({ screen: SettingsScreens.FoldersShare });
+  }, [state.folderId]);
 
   switch (currentScreen) {
     case SettingsScreens.Folders:
@@ -165,6 +167,7 @@ const SettingsFolders: FC<OwnProps> = ({
             SettingsScreens.FoldersExcludedChats,
           ].includes(shownScreen)}
           onReset={onReset}
+          isMobile={isMobile}
         />
       );
     case SettingsScreens.FoldersCreateFolder:
@@ -187,6 +190,7 @@ const SettingsFolders: FC<OwnProps> = ({
           isOnlyInvites={currentScreen === SettingsScreens.FoldersEditFolderInvites}
           onBack={onReset}
           onSaveFolder={handleSaveFolder}
+          isMobile={isMobile}
         />
       );
     case SettingsScreens.FoldersIncludedChats:

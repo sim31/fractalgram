@@ -1,13 +1,14 @@
-import React, {
+import {
   memo, useMemo, useRef, useState,
 } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
 import type { ApiMediaAreaSuggestedReaction, ApiStory } from '../../../api/types';
 
-import { getStoryKey, isSameReaction, isUserId } from '../../../global/helpers';
+import { getStoryKey, isSameReaction } from '../../../global/helpers';
 import buildClassName from '../../../util/buildClassName';
 import buildStyle from '../../../util/buildStyle';
+import { isUserId } from '../../../util/entities/ids';
 import { REM } from '../../common/helpers/mediaDimensions';
 
 import useEffectWithPrevDeps from '../../../hooks/useEffectWithPrevDeps';
@@ -28,7 +29,7 @@ type OwnProps = {
 };
 
 const REACTION_SIZE_MULTIPLIER = 0.6;
-const EFFECT_SIZE_MULTIPLIER = 2;
+const EFFECT_SIZE_MULTIPLIER = 4;
 
 const MediaAreaSuggestedReaction = ({
   story,
@@ -40,11 +41,11 @@ const MediaAreaSuggestedReaction = ({
 }: OwnProps) => {
   const { sendStoryReaction } = getActions();
 
-  // eslint-disable-next-line no-null/no-null
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement>();
   const [customEmojiSize, setCustomEmojiSize] = useState(1.5 * REM);
 
-  const { peerId, id, reactions } = story;
+  const { peerId, id, views } = story;
+  const { reactions } = views || {};
   const { reaction, isDark, isFlipped } = mediaArea;
 
   const isChannel = !isUserId(peerId);
@@ -81,22 +82,24 @@ const MediaAreaSuggestedReaction = ({
   return (
     <div
       ref={ref}
-      className={buildClassName(styles.suggestedReaction, isDark && styles.dark, className)}
+      className={buildClassName(isDark ? styles.dark : styles.light, className)}
       style={buildStyle(style, `--custom-emoji-size: ${customEmojiSize}px`)}
       onClick={handleClick}
     >
       <div
-        className={buildClassName(styles.background, isFlipped && styles.flipped)}
+        className={buildClassName(styles.reactionBackground, isFlipped && styles.flipped)}
       />
-      <ReactionAnimatedEmoji
-        className={buildClassName(styles.reaction, shouldDisplayCount && styles.withCount)}
-        reaction={reaction}
-        containerId={containerId}
-        size={customEmojiSize}
-        effectSize={customEmojiSize * EFFECT_SIZE_MULTIPLIER}
-        shouldPause={isPreview}
-        shouldLoop={!isPreview}
-      />
+      {Boolean(customEmojiSize) && (
+        <ReactionAnimatedEmoji
+          className={buildClassName(styles.reaction, shouldDisplayCount && styles.withCount)}
+          reaction={reaction}
+          containerId={containerId}
+          size={customEmojiSize}
+          effectSize={customEmojiSize * EFFECT_SIZE_MULTIPLIER}
+          shouldPause={isPreview}
+          shouldLoop={!isPreview}
+        />
+      )}
       {shouldDisplayCount && (
         <span className={styles.reactionCount}>{reactionCount}</span>
       )}

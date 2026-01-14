@@ -1,6 +1,7 @@
-import type { ChangeEvent, MutableRefObject, RefObject } from 'react';
+import type { ChangeEvent } from 'react';
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import type React from '../../../lib/teact/teact';
+import {
   memo, useCallback, useEffect, useRef, useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
@@ -8,11 +9,11 @@ import { getActions, withGlobal } from '../../../global';
 import type { ThemeKey } from '../../../types';
 import type { RealTouchEvent } from '../../../util/captureEvents';
 
-import { selectTheme } from '../../../global/selectors';
+import { selectTheme, selectThemeValues } from '../../../global/selectors';
 import buildClassName from '../../../util/buildClassName';
 import { captureEvents } from '../../../util/captureEvents';
 import {
-  getPatternColor, hex2rgb, hsb2rgb, rgb2hex, rgb2hsb,
+  getPatternColor, hex2rgb, hsv2rgb, rgb2hex, rgb2hsv,
 } from '../../../util/colors';
 import { pick } from '../../../util/iteratees';
 
@@ -46,7 +47,7 @@ interface CanvasRects {
   };
 }
 
-const DEFAULT_HSB = rgb2hsb(hex2rgb('e6ebee'));
+const DEFAULT_HSV = rgb2hsv(hex2rgb('e6ebee'));
 const PREDEFINED_COLORS = [
   '#e6ebee', '#b2cee1', '#008dd0', '#c6e7cb', '#c4e1a6', '#60b16e',
   '#ccd0af', '#a6a997', '#7a7072', '#fdd7af', '#fdb76e', '#dd8851',
@@ -62,20 +63,17 @@ const SettingsGeneralBackground: FC<OwnProps & StateProps> = ({
 
   const themeRef = useRef<ThemeKey>();
   themeRef.current = theme;
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const colorPickerRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const huePickerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>();
+  const colorPickerRef = useRef<HTMLDivElement>();
+  const huePickerRef = useRef<HTMLDivElement>();
   const isFirstRunRef = useRef(true);
 
-  const [hsb, setHsb] = useState(getInitialHsb(backgroundColor));
+  const [hsv, setHsv] = useState(() => getInitialHsv(backgroundColor));
   // Cache for drag handlers
-  const hsbRef = useRef(hsb);
+  const hsvRef = useRef(hsv);
   useEffect(() => {
-    hsbRef.current = hsb;
-  }, [hsb]);
+    hsvRef.current = hsv;
+  }, [hsv]);
 
   const [isDragging, markIsDragging, unmarkIsDragging] = useFlag();
   const [rgbInput, setRgbInput] = useState('');
@@ -104,9 +102,9 @@ const SettingsGeneralBackground: FC<OwnProps & StateProps> = ({
         Math.min(Math.max(0, e.pageY! - colorRect.top + containerRef.current!.scrollTop), colorRect.height - 1),
       ];
 
-      const { huePosition } = hsb2positions(hsbRef.current, rectsRef.current!);
+      const { huePosition } = hsv2positions(hsvRef.current, rectsRef.current!);
 
-      setHsb(positions2hsb({ colorPosition, huePosition }, rectsRef.current!));
+      setHsv(positions2hsv({ colorPosition, huePosition }, rectsRef.current!));
       markIsDragging();
 
       return true;
@@ -122,10 +120,10 @@ const SettingsGeneralBackground: FC<OwnProps & StateProps> = ({
     });
 
     function handleHueDrag(e: MouseEvent | RealTouchEvent) {
-      const { colorPosition } = hsb2positions(hsbRef.current, rectsRef.current!);
+      const { colorPosition } = hsv2positions(hsvRef.current, rectsRef.current!);
       const huePosition = Math.min(Math.max(0, e.pageX! - hueRect.offsetLeft), hueRect.width - 1);
 
-      setHsb(positions2hsb({ colorPosition, huePosition }, rectsRef.current!));
+      setHsv(positions2hsv({ colorPosition, huePosition }, rectsRef.current!));
       markIsDragging();
 
       return true;
@@ -141,15 +139,15 @@ const SettingsGeneralBackground: FC<OwnProps & StateProps> = ({
     });
   }, [markIsDragging, unmarkIsDragging]);
 
-  const { colorPosition = [0, 0], huePosition = 0 } = rectsRef.current ? hsb2positions(hsb, rectsRef.current) : {};
-  const hex = rgb2hex(hsb2rgb(hsb));
-  const hue = hsb[0];
-  const hueHex = rgb2hex(hsb2rgb([hue, 1, 1]));
+  const { colorPosition = [0, 0], huePosition = 0 } = rectsRef.current ? hsv2positions(hsv, rectsRef.current) : {};
+  const hex = rgb2hex(hsv2rgb(hsv));
+  const hue = hsv[0];
+  const hueHex = rgb2hex(hsv2rgb([hue, 1, 1]));
 
   // Save value and update inputs when HSL changes
   useEffect(() => {
-    const rgb = hsb2rgb(hsb);
-    const color = `#${rgb2hex(rgb)}`;
+    const rgb = hsv2rgb(hsv);
+    const color = rgb2hex(rgb);
 
     setRgbInput(rgb.join(', '));
     setHexInput(color);
@@ -164,7 +162,7 @@ const SettingsGeneralBackground: FC<OwnProps & StateProps> = ({
       });
     }
     isFirstRunRef.current = false;
-  }, [hsb, setThemeSettings]);
+  }, [hsv, setThemeSettings]);
 
   // Redraw color picker when hue changes
   useEffect(() => {
@@ -181,7 +179,7 @@ const SettingsGeneralBackground: FC<OwnProps & StateProps> = ({
 
     if (rgbValue.match(/^\d{1,3},\s?\d{1,3},\s?\d{1,3}$/)) {
       const rgb = rgbValue.split(',').map((channel) => Number(channel.trim())) as [number, number, number];
-      setHsb(rgb2hsb(rgb));
+      setHsv(rgb2hsv(rgb));
     }
 
     e.currentTarget.value = rgbValue;
@@ -191,14 +189,14 @@ const SettingsGeneralBackground: FC<OwnProps & StateProps> = ({
     const hexValue = e.currentTarget.value.replace(/[^0-9a-fA-F]/g, '').slice(0, 6);
 
     if (hexValue.match(/^#?[0-9a-fA-F]{6}$/)) {
-      setHsb(rgb2hsb(hex2rgb(hexValue.replace('#', ''))));
+      setHsv(rgb2hsv(hex2rgb(hexValue)));
     }
 
     e.currentTarget.value = hexValue;
   }, []);
 
   const handlePredefinedColorClick = useCallback((e: React.MouseEvent<HTMLInputElement>) => {
-    setHsb(rgb2hsb(hex2rgb(e.currentTarget.dataset.color!.replace('#', ''))));
+    setHsv(rgb2hsv(hex2rgb(e.currentTarget.dataset.color!)));
   }, []);
 
   const className = buildClassName(
@@ -218,14 +216,14 @@ const SettingsGeneralBackground: FC<OwnProps & StateProps> = ({
           <canvas />
           <div
             className="handle"
-            style={`transform: translate(${colorPosition[0]}px, ${colorPosition[1]}px); background-color: #${hex};`}
+            style={`transform: translate(${colorPosition[0]}px, ${colorPosition[1]}px); background-color: ${hex};`}
           />
         </div>
         <div ref={huePickerRef} className="hue-picker">
           <canvas />
           <div
             className="handle"
-            style={`transform: translateX(${huePosition}px); background-color: #${hueHex};`}
+            style={`transform: translateX(${huePosition}px); background-color: ${hueHex};`}
           />
         </div>
         <div className="tools">
@@ -236,7 +234,7 @@ const SettingsGeneralBackground: FC<OwnProps & StateProps> = ({
       <div className="predefined-colors">
         {PREDEFINED_COLORS.map((color) => (
           <div
-            className={buildClassName('predefined-color', color === `#${hex}` ? 'active' : undefined)}
+            className={buildClassName('predefined-color', color === hex ? 'active' : undefined)}
             data-color={color}
             style={`background-color: ${color};`}
             onClick={handlePredefinedColorClick}
@@ -247,23 +245,23 @@ const SettingsGeneralBackground: FC<OwnProps & StateProps> = ({
   );
 };
 
-function getInitialHsb(backgroundColor?: string) {
-  return backgroundColor && backgroundColor.startsWith('#')
-    ? rgb2hsb(hex2rgb(backgroundColor.replace('#', '')))
-    : DEFAULT_HSB;
+function getInitialHsv(backgroundColor?: string) {
+  return backgroundColor?.startsWith('#')
+    ? rgb2hsv(hex2rgb(backgroundColor))
+    : DEFAULT_HSV;
 }
 
-function hsb2positions(hsb: [number, number, number], rects: CanvasRects) {
+function hsv2positions(hsv: [number, number, number], rects: CanvasRects) {
   return {
     colorPosition: [
-      Math.round((hsb[1]) * (rects.colorRect.width - 1)),
-      Math.round((1 - hsb[2]) * (rects.colorRect.height - 1)),
+      Math.round((hsv[1]) * (rects.colorRect.width - 1)),
+      Math.round((1 - hsv[2]) * (rects.colorRect.height - 1)),
     ],
-    huePosition: Math.round(hsb[0] * (rects.hueRect.width - 1)),
+    huePosition: Math.round(hsv[0] * (rects.hueRect.width - 1)),
   };
 }
 
-function positions2hsb(
+function positions2hsv(
   { colorPosition, huePosition }: { colorPosition: number[]; huePosition: number },
   rects: CanvasRects,
 ): [number, number, number] {
@@ -277,8 +275,8 @@ function positions2hsb(
 function drawColor(
   canvas: HTMLCanvasElement,
   hue: number,
-  colorCtxRef: MutableRefObject<CanvasRenderingContext2D | undefined>,
-  rectsRef: RefObject<CanvasRects | undefined>,
+  colorCtxRef: React.RefObject<CanvasRenderingContext2D | undefined>,
+  rectsRef: React.RefObject<CanvasRects | undefined>,
 ) {
   let w: number;
   let h: number;
@@ -302,7 +300,7 @@ function drawColor(
 
   const imgData = ctx!.createImageData(w, h);
   const pixels = imgData.data;
-  const col = hsb2rgb([hue, 1, 1]);
+  const col = hsv2rgb([hue, 1, 1]);
 
   let index = 0;
 
@@ -336,12 +334,12 @@ function drawHue(canvas: HTMLCanvasElement) {
 
   for (let x = 0; x < w; x++) {
     const hue = x / (w - 1);
-    const rgb = hsb2rgb([hue, 1, 1]);
-    /* eslint-disable prefer-destructuring */
+    const rgb = hsv2rgb([hue, 1, 1]);
+
     pixels[index++] = rgb[0];
     pixels[index++] = rgb[1];
     pixels[index++] = rgb[2];
-    /* eslint-enable prefer-destructuring */
+
     pixels[index++] = 255;
   }
 
@@ -349,9 +347,9 @@ function drawHue(canvas: HTMLCanvasElement) {
 }
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const theme = selectTheme(global);
-    const { backgroundColor } = global.settings.themes[theme] || {};
+    const { backgroundColor } = selectThemeValues(global, theme) || {};
     return {
       backgroundColor,
       theme,

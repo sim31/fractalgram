@@ -1,11 +1,11 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo, useEffect, useLayoutEffect, useMemo, useRef, useState,
 } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
 import type { ApiMessage, ApiPeer } from '../../../api/types';
-import type { ISettings } from '../../../types';
+import type { ThemeKey } from '../../../types';
 
 import { requestMutation } from '../../../lib/fasterdom/fasterdom';
 import {
@@ -14,19 +14,20 @@ import {
   isGeoLiveExpired,
 } from '../../../global/helpers';
 import buildClassName from '../../../util/buildClassName';
-import { formatCountdownShort, formatLastUpdated } from '../../../util/dateFormat';
+import { formatCountdownShort, formatLocationLastUpdate } from '../../../util/dates/dateFormat';
 import {
   getMetersPerPixel, getVenueColor, getVenueIconUrl,
 } from '../../../util/map';
 import { getServerTime } from '../../../util/serverTime';
 
+import useInterval from '../../../hooks/schedulers/useInterval';
+import useTimeout from '../../../hooks/schedulers/useTimeout';
 import useForceUpdate from '../../../hooks/useForceUpdate';
-import useInterval from '../../../hooks/useInterval';
-import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useMedia from '../../../hooks/useMedia';
-import usePrevious from '../../../hooks/usePrevious';
-import useTimeout from '../../../hooks/useTimeout';
+import useOldLang from '../../../hooks/useOldLang';
+import usePreviousDeprecated from '../../../hooks/usePreviousDeprecated';
+import useDevicePixelRatio from '../../../hooks/window/useDevicePixelRatio';
 
 import Avatar from '../../common/Avatar';
 import Skeleton from '../../ui/placeholder/Skeleton';
@@ -42,7 +43,6 @@ const DEFAULT_MAP_CONFIG = {
   width: 400,
   height: 300,
   zoom: 16,
-  scale: 2,
 };
 
 type OwnProps = {
@@ -50,7 +50,7 @@ type OwnProps = {
   peer?: ApiPeer;
   isInSelectMode?: boolean;
   isSelected?: boolean;
-  theme: ISettings['theme'];
+  theme: ThemeKey;
 };
 
 const Location: FC<OwnProps> = ({
@@ -58,48 +58,45 @@ const Location: FC<OwnProps> = ({
   peer,
 }) => {
   const { openMapModal } = getActions();
-  // eslint-disable-next-line no-null/no-null
-  const ref = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line no-null/no-null
-  const countdownRef = useRef<HTMLDivElement>(null);
-  const lang = useLang();
+  const ref = useRef<HTMLDivElement>();
+  const countdownRef = useRef<HTMLDivElement>();
+  const lang = useOldLang();
   const forceUpdate = useForceUpdate();
 
   const location = getMessageLocation(message)!;
-  const { type, geo } = location;
+  const { mediaType, geo } = location;
 
   const serverTime = getServerTime();
   const isExpired = isGeoLiveExpired(message);
-  const secondsBeforeEnd = (type === 'geoLive' && !isExpired) ? message.date + location.period - serverTime
+  const secondsBeforeEnd = (mediaType === 'geoLive' && !isExpired) ? message.date + location.period - serverTime
     : undefined;
 
   const [point, setPoint] = useState(geo);
 
-  const shouldRenderText = type === 'venue' || (type === 'geoLive' && !isExpired);
-  const {
-    width, height, zoom, scale,
-  } = DEFAULT_MAP_CONFIG;
+  const shouldRenderText = mediaType === 'venue' || (mediaType === 'geoLive' && !isExpired);
+  const { width, height, zoom } = DEFAULT_MAP_CONFIG;
+  const dpr = useDevicePixelRatio();
 
-  const mediaHash = buildStaticMapHash(point, width, height, zoom, scale);
+  const mediaHash = buildStaticMapHash(point, width, height, zoom, dpr);
   const mediaBlobUrl = useMedia(mediaHash);
-  const prevMediaBlobUrl = usePrevious(mediaBlobUrl, true);
+  const prevMediaBlobUrl = usePreviousDeprecated(mediaBlobUrl, true);
   const mapBlobUrl = mediaBlobUrl || prevMediaBlobUrl;
 
   const accuracyRadiusPx = useMemo(() => {
-    if (type !== 'geoLive' || !point.accuracyRadius) {
+    if (mediaType !== 'geoLive' || !point.accuracyRadius) {
       return 0;
     }
 
     const { lat, accuracyRadius } = point;
     return accuracyRadius / getMetersPerPixel(lat, zoom);
-  }, [type, point, zoom]);
+  }, [mediaType, point, zoom]);
 
   const handleClick = () => {
     openMapModal({ geoPoint: point, zoom });
   };
 
   const updateCountdown = useLastCallback((countdownEl: HTMLDivElement) => {
-    if (type !== 'geoLive') return;
+    if (mediaType !== 'geoLive') return;
     const svgEl = countdownEl.lastElementChild!;
     const timerEl = countdownEl.firstElementChild!;
 
@@ -145,7 +142,7 @@ const Location: FC<OwnProps> = ({
 
   function renderInfo() {
     if (!shouldRenderText) return undefined;
-    if (type === 'venue') {
+    if (mediaType === 'venue') {
       return (
         <div className="location-info">
           <div className="location-info-title">
@@ -157,12 +154,12 @@ const Location: FC<OwnProps> = ({
         </div>
       );
     }
-    if (type === 'geoLive') {
+    if (mediaType === 'geoLive') {
       return (
         <div className="location-info">
           <div className="location-info-title">{lang('AttachLiveLocation')}</div>
           <div className="location-info-subtitle">
-            {formatLastUpdated(lang, serverTime, message.editDate)}
+            {formatLocationLastUpdate(lang, serverTime, message.editDate)}
           </div>
           {!isExpired && (
             <div className="geo-countdown" ref={countdownRef}>
@@ -202,10 +199,10 @@ const Location: FC<OwnProps> = ({
   function renderPin() {
     const pinClassName = buildClassName(
       'pin',
-      type,
+      mediaType,
       isExpired && 'expired',
     );
-    if (type === 'geoLive') {
+    if (mediaType === 'geoLive') {
       return (
         <div className={pinClassName}>
           <PinSvg />
@@ -217,7 +214,7 @@ const Location: FC<OwnProps> = ({
       );
     }
 
-    if (type === 'venue') {
+    if (mediaType === 'venue') {
       const color = getVenueColor(location.venueType);
       const iconSrc = getVenueIconUrl(location.venueType);
       if (iconSrc) {

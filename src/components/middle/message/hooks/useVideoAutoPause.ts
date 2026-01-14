@@ -1,14 +1,15 @@
-import { useEffect, useRef } from '../../../../lib/teact/teact';
+import type { ElementRef } from '../../../../lib/teact/teact';
+import { getIsHeavyAnimating, useEffect, useRef } from '../../../../lib/teact/teact';
 
 import { requestMeasure } from '../../../../lib/fasterdom/fasterdom';
 
-import useBackgroundMode, { isBackgroundModeActive } from '../../../../hooks/useBackgroundMode';
-import useHeavyAnimationCheck, { isHeavyAnimating } from '../../../../hooks/useHeavyAnimationCheck';
+import useHeavyAnimation from '../../../../hooks/useHeavyAnimation';
 import useLastCallback from '../../../../hooks/useLastCallback';
 import usePriorityPlaybackCheck, { isPriorityPlaybackActive } from '../../../../hooks/usePriorityPlaybackCheck';
+import useBackgroundMode, { isBackgroundModeActive } from '../../../../hooks/window/useBackgroundMode';
 
 export default function useVideoAutoPause(
-  playerRef: { current: HTMLVideoElement | null }, canPlay: boolean, isPriority?: boolean,
+  playerRef: ElementRef<HTMLVideoElement>, canPlay: boolean, isPriority?: boolean,
 ) {
   const canPlayRef = useRef();
   canPlayRef.current = canPlay;
@@ -25,9 +26,9 @@ export default function useVideoAutoPause(
     requestMeasure(unfreezePlaying);
   });
 
-  useBackgroundMode(pause, unfreezePlayingOnRaf, !canPlay);
-  useHeavyAnimationCheck(pause, unfreezePlaying, !canPlay);
-  usePriorityPlaybackCheck(pause, unfreezePlaying, !canPlay);
+  useBackgroundMode(pause, unfreezePlayingOnRaf, !canPlay || isPriority);
+  useHeavyAnimation(pause, unfreezePlaying, !canPlay || isPriority);
+  usePriorityPlaybackCheck(pause, unfreezePlaying, !canPlay || isPriority);
 
   const handlePlaying = useLastCallback(() => {
     if (!canPlayRef.current || (!isPriority && isFrozen())) {
@@ -48,7 +49,7 @@ export default function useVideoAutoPause(
   return { handlePlaying };
 }
 
-function usePlayPause(mediaRef: React.RefObject<HTMLMediaElement>) {
+function usePlayPause(mediaRef: ElementRef<HTMLMediaElement>) {
   const shouldPauseRef = useRef(false);
   const isLoadingPlayRef = useRef(false);
 
@@ -81,5 +82,5 @@ function usePlayPause(mediaRef: React.RefObject<HTMLMediaElement>) {
 }
 
 function isFrozen() {
-  return isHeavyAnimating() || isPriorityPlaybackActive() || isBackgroundModeActive();
+  return getIsHeavyAnimating() || isPriorityPlaybackActive() || isBackgroundModeActive();
 }

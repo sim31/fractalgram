@@ -1,5 +1,6 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import type React from '../../../lib/teact/teact';
+import {
   memo, useCallback, useEffect, useMemo,
   useState,
 } from '../../../lib/teact/teact';
@@ -9,17 +10,17 @@ import type {
   ApiAvailableReaction, ApiChat, ApiChatReactions, ApiReaction,
 } from '../../../api/types';
 
-import { isSameReaction } from '../../../global/helpers';
+import { isChatChannel, isSameReaction } from '../../../global/helpers';
 import { selectChat, selectChatFullInfo } from '../../../global/selectors';
 
 import useHistoryBack from '../../../hooks/useHistoryBack';
-import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 
-import ReactionStaticEmoji from '../../common/ReactionStaticEmoji';
+import ReactionStaticEmoji from '../../common/reactions/ReactionStaticEmoji';
 import Checkbox from '../../ui/Checkbox';
 import FloatingActionButton from '../../ui/FloatingActionButton';
 import RadioGroup from '../../ui/RadioGroup';
-import Spinner from '../../ui/Spinner';
+import RangeSlider from '../../ui/RangeSlider';
 
 type OwnProps = {
   chatId: string;
@@ -31,6 +32,9 @@ type StateProps = {
   chat?: ApiChat;
   availableReactions?: ApiAvailableReaction[];
   enabledReactions?: ApiChatReactions;
+  maxUniqueReactions: number;
+  reactionsLimit?: number;
+  isChannel?: boolean;
 };
 
 const ManageReactions: FC<OwnProps & StateProps> = ({
@@ -39,13 +43,18 @@ const ManageReactions: FC<OwnProps & StateProps> = ({
   chat,
   isActive,
   onClose,
+  maxUniqueReactions,
+  reactionsLimit,
+  isChannel,
 }) => {
   const { setChatEnabledReactions } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
   const [isTouched, setIsTouched] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [localEnabledReactions, setLocalEnabledReactions] = useState<ApiChatReactions | undefined>(enabledReactions);
+
+  const [localReactionsLimit, setLocalReactionsLimit] = useState(reactionsLimit);
 
   useHistoryBack({
     isActive,
@@ -70,33 +79,80 @@ const ManageReactions: FC<OwnProps & StateProps> = ({
     setChatEnabledReactions({
       chatId: chat.id,
       enabledReactions: localEnabledReactions,
+      reactionsLimit: localReactionsLimit,
     });
-  }, [chat, localEnabledReactions, setChatEnabledReactions]);
+  }, [chat, localEnabledReactions, setChatEnabledReactions, localReactionsLimit]);
 
   useEffect(() => {
     setIsLoading(false);
     setIsTouched(false);
     setLocalEnabledReactions(enabledReactions);
-  }, [enabledReactions]);
+    setLocalReactionsLimit(reactionsLimit);
+  }, [enabledReactions, reactionsLimit]);
 
   const availableActiveReactions = useMemo<ApiAvailableReaction[] | undefined>(
     () => availableReactions?.filter(({ isInactive }) => !isInactive),
     [availableReactions],
   );
 
+  useEffect(() => {
+    if (localReactionsLimit !== undefined && localReactionsLimit !== reactionsLimit) {
+      setIsTouched(true);
+      return;
+    }
+
+    if (localEnabledReactions?.type === 'some') {
+      const isReactionsDisabled = enabledReactions?.type !== 'all' && enabledReactions?.type !== 'some';
+
+      if (isReactionsDisabled && localEnabledReactions.allowed.length === 0) {
+        setIsTouched(false);
+        return;
+      }
+    }
+
+    if (localEnabledReactions?.type !== enabledReactions?.type) {
+      setIsTouched(true);
+      return;
+    }
+
+    if (localEnabledReactions?.type === 'some' && enabledReactions?.type === 'some') {
+      const localAllowedReactions = localEnabledReactions.allowed;
+      const enabledAllowedReactions = enabledReactions?.allowed;
+
+      if (localAllowedReactions.length !== enabledAllowedReactions.length
+        || localAllowedReactions.reverse().some(
+          (localReaction) => !enabledAllowedReactions.find(
+            (enabledReaction) => isSameReaction(localReaction, enabledReaction),
+          ),
+        )) {
+        setIsTouched(true);
+        return;
+      }
+    }
+
+    setIsTouched(false);
+  }, [
+    localReactionsLimit,
+    reactionsLimit,
+    localEnabledReactions,
+    enabledReactions,
+  ]);
+
   const handleReactionsOptionChange = useCallback((value: string) => {
     if (value === 'all') {
       setLocalEnabledReactions({ type: 'all' });
+      setLocalReactionsLimit(reactionsLimit);
     } else if (value === 'some') {
       setLocalEnabledReactions({
         type: 'some',
         allowed: enabledReactions?.type === 'some' ? enabledReactions.allowed : [],
       });
+      setLocalReactionsLimit(reactionsLimit);
     } else {
       setLocalEnabledReactions(undefined);
+      setLocalReactionsLimit(undefined);
     }
-    setIsTouched(true);
-  }, [enabledReactions]);
+  }, [enabledReactions, reactionsLimit]);
 
   const handleReactionChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (!chat || !availableActiveReactions) return;
@@ -116,12 +172,40 @@ const ManageReactions: FC<OwnProps & StateProps> = ({
         });
       }
     }
-    setIsTouched(true);
   }, [availableActiveReactions, chat, localEnabledReactions]);
+
+  const handleReactionsLimitChange = useCallback((value: number) => {
+    setLocalReactionsLimit(value);
+  }, []);
+
+  const renderReactionsMaxCountValue = useCallback((value: number) => {
+    return lang('PeerInfo.AllowedReactions.MaxCountValue', value);
+  }, [lang]);
+
+  const shouldShowReactionsLimit = isChannel
+    && (localEnabledReactions?.type === 'all' || localEnabledReactions?.type === 'some');
 
   return (
     <div className="Management">
-      <div className="custom-scroll">
+      <div className="panel-content custom-scroll">
+        {Boolean(localReactionsLimit && shouldShowReactionsLimit) && (
+          <div className="section">
+            <h3 className="section-heading">
+              {lang('MaximumReactionsHeader')}
+            </h3>
+            <RangeSlider
+              min={1}
+              max={maxUniqueReactions}
+              value={localReactionsLimit!}
+              onChange={handleReactionsLimitChange}
+              renderValue={renderReactionsMaxCountValue}
+              isCenteredLayout
+            />
+            <p className="section-info section-info_push">
+              {lang('ChannelReactions.MaxCount.Info')}
+            </p>
+          </div>
+        )}
         <div className="section">
           <h3 className="section-heading">
             {lang('AvailableReactions')}
@@ -132,16 +216,16 @@ const ManageReactions: FC<OwnProps & StateProps> = ({
             options={reactionsOptions}
             onChange={handleReactionsOptionChange}
           />
-          <p className="section-info mt-4">
+          <p className="section-info section-info_push">
             {localEnabledReactions?.type === 'all' && lang('EnableAllReactionsInfo')}
             {localEnabledReactions?.type === 'some' && lang('EnableSomeReactionsInfo')}
             {!localEnabledReactions && lang('DisableReactionsInfo')}
           </p>
         </div>
         {localEnabledReactions?.type === 'some' && (
-          <div className="section">
+          <div className="section section-with-fab">
             <h3 className="section-heading">
-              {lang('AvailableReactions')}
+              {lang('OnlyAllowThisReactions')}
             </h3>
             {availableActiveReactions?.map(({ reaction, title }) => (
               <div className="ListItem">
@@ -154,6 +238,7 @@ const ManageReactions: FC<OwnProps & StateProps> = ({
                       {title}
                     </div>
                   )}
+                  withIcon
                   onChange={handleReactionChange}
                 />
               </div>
@@ -167,25 +252,32 @@ const ManageReactions: FC<OwnProps & StateProps> = ({
         onClick={handleSaveReactions}
         ariaLabel={lang('Save')}
         disabled={isLoading}
-      >
-        {isLoading ? (
-          <Spinner color="white" />
-        ) : (
-          <i className="icon icon-check" />
-        )}
-      </FloatingActionButton>
+        iconName="check"
+        isLoading={isLoading}
+      />
     </div>
   );
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { chatId }): StateProps => {
+  (global, { chatId }): Complete<StateProps> => {
     const chat = selectChat(global, chatId)!;
+    const { maxUniqueReactions } = global.appConfig;
+
+    const chatFullInfo = selectChatFullInfo(global, chatId);
+    const reactionsLimit = chatFullInfo?.reactionsLimit || maxUniqueReactions;
+    const isChannel = isChatChannel(chat);
 
     return {
-      enabledReactions: selectChatFullInfo(global, chatId)?.enabledReactions,
-      availableReactions: global.availableReactions,
+      enabledReactions: chatFullInfo?.enabledReactions,
+      availableReactions: global.reactions.availableReactions,
       chat,
+      maxUniqueReactions,
+      reactionsLimit,
+      isChannel,
     };
+  },
+  (global, { chatId }) => {
+    return Boolean(selectChat(global, chatId));
   },
 )(ManageReactions));

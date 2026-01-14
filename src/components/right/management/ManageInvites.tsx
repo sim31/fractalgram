@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useMemo, useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
@@ -11,20 +11,21 @@ import { STICKER_SIZE_INVITES, TME_LINK_PREFIX } from '../../../config';
 import { getMainUsername, isChatChannel } from '../../../global/helpers';
 import { selectChat, selectTabState } from '../../../global/selectors';
 import { copyTextToClipboard } from '../../../util/clipboard';
-import { formatCountdown, MILLISECONDS_IN_DAY } from '../../../util/dateFormat';
+import { formatCountdown, MILLISECONDS_IN_DAY } from '../../../util/dates/dateFormat';
 import { getServerTime } from '../../../util/serverTime';
 import { LOCAL_TGS_URLS } from '../../common/helpers/animatedAssets';
 
+import useInterval from '../../../hooks/schedulers/useInterval';
 import useFlag from '../../../hooks/useFlag';
 import useForceUpdate from '../../../hooks/useForceUpdate';
 import useHistoryBack from '../../../hooks/useHistoryBack';
-import useInterval from '../../../hooks/useInterval';
 import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 
-import AnimatedIcon from '../../common/AnimatedIcon';
-import InviteLink from '../../common/InviteLink';
+import AnimatedIconWithPreview from '../../common/AnimatedIconWithPreview';
+import Icon from '../../common/icons/Icon';
+import LinkField from '../../common/LinkField';
 import NothingFound from '../../common/NothingFound';
-import Button from '../../ui/Button';
 import ConfirmDialog from '../../ui/ConfirmDialog';
 import ListItem, { type MenuItemContextAction } from '../../ui/ListItem';
 
@@ -72,6 +73,7 @@ const ManageInvites: FC<OwnProps & StateProps> = ({
   } = getActions();
 
   const lang = useLang();
+  const oldLang = useOldLang();
 
   const [isDeleteRevokeAllDialogOpen, openDeleteRevokeAllDialog, closeDeleteRevokeAllDialog] = useFlag();
   const [isRevokeDialogOpen, openRevokeDialog, closeRevokeDialog] = useFlag();
@@ -92,17 +94,15 @@ const ManageInvites: FC<OwnProps & StateProps> = ({
       ));
   }, [exportedInvites]);
   const forceUpdate = useForceUpdate();
-  useInterval(() => {
-    forceUpdate();
-  }, hasDetailedCountdown ? 1000 : undefined);
+  useInterval(forceUpdate, hasDetailedCountdown ? 1000 : undefined);
 
   const chatMainUsername = useMemo(() => chat && getMainUsername(chat), [chat]);
   const primaryInvite = exportedInvites?.find(({ isPermanent }) => isPermanent);
   const primaryInviteLink = chatMainUsername ? `${TME_LINK_PREFIX}${chatMainUsername}` : primaryInvite?.link;
   const temporalInvites = useMemo(() => {
-    const invites = chat?.usernames ? exportedInvites : exportedInvites?.filter(({ isPermanent }) => !isPermanent);
+    const invites = chat?.hasUsername ? exportedInvites : exportedInvites?.filter(({ isPermanent }) => !isPermanent);
     return invites?.sort(inviteComparator);
-  }, [chat?.usernames, exportedInvites]);
+  }, [chat?.hasUsername, exportedInvites]);
 
   const editInvite = (invite: ApiExportedInvite) => {
     setEditingExportedInvite({ chatId, invite });
@@ -175,9 +175,9 @@ const ManageInvites: FC<OwnProps & StateProps> = ({
   const copyLink = useCallback((link: string) => {
     copyTextToClipboard(link);
     showNotification({
-      message: lang('LinkCopied'),
+      message: oldLang('LinkCopied'),
     });
-  }, [lang, showNotification]);
+  }, [oldLang, showNotification]);
 
   const prepareUsageText = (invite: ApiExportedInvite) => {
     const {
@@ -185,34 +185,34 @@ const ManageInvites: FC<OwnProps & StateProps> = ({
     } = invite;
     let text = '';
     if (!isRevoked && usageLimit && usage < usageLimit) {
-      text = lang('CanJoin', usageLimit - usage);
+      text = oldLang('CanJoin', usageLimit - usage);
     } else if (usage) {
-      text = lang('PeopleJoined', usage);
+      text = oldLang('PeopleJoined', usage);
     } else {
-      text = lang('NoOneJoined');
+      text = oldLang('NoOneJoined');
     }
 
     if (isRevoked) {
-      text += ` ${BULLET} ${lang('Revoked')}`;
+      text += ` ${BULLET} ${oldLang('Revoked')}`;
       return text;
     }
 
     if (requested) {
-      text += ` ${BULLET} ${lang('JoinRequests', requested)}`;
+      text += ` ${BULLET} ${oldLang('JoinRequests', requested)}`;
     }
 
     if (usageLimit !== undefined && usage === usageLimit) {
-      text += ` ${BULLET} ${lang('LinkLimitReached')}`;
+      text += ` ${BULLET} ${oldLang('LinkLimitReached')}`;
     } else if (expireDate) {
-      const diff = (expireDate - getServerTime()) * 1000;
+      const diff = expireDate - getServerTime();
       text += ` ${BULLET} `;
       if (diff > 0) {
-        text += lang('InviteLink.ExpiresIn', formatCountdown(lang, diff));
+        text += oldLang('InviteLink.ExpiresIn', formatCountdown(lang, diff));
       } else {
-        text += lang('InviteLink.Expired');
+        text += oldLang('InviteLink.Expired');
       }
     } else if (isPermanent) {
-      text += ` ${BULLET} ${lang('Permanent')}`;
+      text += ` ${BULLET} ${oldLang('Permanent')}`;
     }
 
     return text;
@@ -240,14 +240,14 @@ const ManageInvites: FC<OwnProps & StateProps> = ({
   const prepareContextActions = (invite: ApiExportedInvite) => {
     const actions: MenuItemContextAction[] = [];
     actions.push({
-      title: lang('Copy'),
+      title: oldLang('Copy'),
       icon: 'copy',
       handler: () => copyLink(invite.link),
     });
 
     if (!invite.isPermanent && !invite.isRevoked) {
       actions.push({
-        title: lang('Edit'),
+        title: oldLang('Edit'),
         icon: 'edit',
         handler: () => editInvite(invite),
       });
@@ -255,14 +255,14 @@ const ManageInvites: FC<OwnProps & StateProps> = ({
 
     if (!invite.isRevoked) {
       actions.push({
-        title: lang('RevokeButton'),
+        title: oldLang('RevokeButton'),
         icon: 'delete',
         handler: () => askToRevoke(invite),
         destructive: true,
       });
     } else {
       actions.push({
-        title: lang('DeleteLink'),
+        title: oldLang('DeleteLink'),
         icon: 'delete',
         handler: () => askToDelete(invite),
         destructive: true,
@@ -273,33 +273,37 @@ const ManageInvites: FC<OwnProps & StateProps> = ({
 
   return (
     <div className="Management ManageInvites">
-      <div className="custom-scroll">
+      <div className="panel-content custom-scroll">
         <div className="section">
-          <AnimatedIcon
+          <AnimatedIconWithPreview
             tgsUrl={LOCAL_TGS_URLS.Invite}
             size={STICKER_SIZE_INVITES}
             className="section-icon"
           />
-          <p className="text-muted">{isChannel ? lang('PrimaryLinkHelpChannel') : lang('PrimaryLinkHelp')}</p>
+          <p className="section-help">{isChannel ? oldLang('PrimaryLinkHelpChannel') : oldLang('PrimaryLinkHelp')}</p>
         </div>
         {primaryInviteLink && (
-          <InviteLink
-            inviteLink={primaryInviteLink}
-            onRevoke={!chat?.usernames ? handlePrimaryRevoke : undefined}
-            title={chat?.usernames ? lang('PublicLink') : lang('lng_create_permanent_link_title')}
-          />
+          <div className="section">
+            <LinkField
+              className="settings-input"
+              link={primaryInviteLink}
+              withShare
+              onRevoke={!chat?.usernames ? handlePrimaryRevoke : undefined}
+              title={chat?.usernames ? oldLang('PublicLink') : oldLang('lng_create_permanent_link_title')}
+            />
+          </div>
         )}
         <div className="section" teactFastList>
-          <Button isText key="create" className="create-link" onClick={handleCreateNewClick}>
-            {lang('CreateNewLink')}
-          </Button>
+          <ListItem icon="add" withPrimaryColor key="create" className="create-item" onClick={handleCreateNewClick}>
+            {oldLang('CreateNewLink')}
+          </ListItem>
           {(!temporalInvites || !temporalInvites.length) && <NothingFound text="No links found" key="nothing" />}
           {temporalInvites?.map((invite) => (
             <ListItem
-              leftElement={<i className={`icon icon-link link-status-icon ${getInviteIconClass(invite)}`} />}
+              leftElement={<Icon name="link" className={`link-status-icon ${getInviteIconClass(invite)}`} />}
               secondaryIcon="more"
               multiline
-              // eslint-disable-next-line react/jsx-no-bind
+
               onClick={() => showInviteInfo(invite)}
               contextActions={prepareContextActions(invite)}
               key={invite.link}
@@ -310,25 +314,25 @@ const ManageInvites: FC<OwnProps & StateProps> = ({
               </span>
             </ListItem>
           ))}
-          <p className="text-muted hint" key="links-hint">{lang('ManageLinksInfoHelp')}</p>
+          <p className="section-help hint" key="links-hint">{oldLang('ManageLinksInfoHelp')}</p>
         </div>
         {revokedExportedInvites && Boolean(revokedExportedInvites.length) && (
           <div className="section" teactFastList>
-            <p className="text-muted" key="title">{lang('RevokedLinks')}</p>
+            <p className="section-help" key="title">{oldLang('RevokedLinks')}</p>
             <ListItem
               icon="delete"
               destructive
               key="delete"
               onClick={openDeleteRevokeAllDialog}
             >
-              <span className="title">{lang('DeleteAllRevokedLinks')}</span>
+              <span className="title">{oldLang('DeleteAllRevokedLinks')}</span>
             </ListItem>
             {revokedExportedInvites?.map((invite) => (
               <ListItem
-                leftElement={<i className={`icon icon-link link-status-icon ${getInviteIconClass(invite)}`} />}
+                leftElement={<Icon name="link" className={`link-status-icon ${getInviteIconClass(invite)}`} />}
                 secondaryIcon="more"
                 multiline
-                // eslint-disable-next-line react/jsx-no-bind
+
                 onClick={() => showInviteInfo(invite)}
                 contextActions={prepareContextActions(invite)}
                 key={invite.link}
@@ -345,28 +349,28 @@ const ManageInvites: FC<OwnProps & StateProps> = ({
       <ConfirmDialog
         isOpen={isDeleteRevokeAllDialogOpen}
         onClose={closeDeleteRevokeAllDialog}
-        title={lang('DeleteAllRevokedLinks')}
-        text={lang('DeleteAllRevokedLinkHelp')}
+        title={oldLang('DeleteAllRevokedLinks')}
+        text={oldLang('DeleteAllRevokedLinkHelp')}
         confirmIsDestructive
-        confirmLabel={lang('DeleteAll')}
+        confirmLabel={oldLang('DeleteAll')}
         confirmHandler={handleDeleteAllRevoked}
       />
       <ConfirmDialog
         isOpen={isRevokeDialogOpen}
         onClose={closeRevokeDialog}
-        title={lang('RevokeLink')}
-        text={lang('RevokeAlert')}
+        title={oldLang('RevokeLink')}
+        text={oldLang('RevokeAlert')}
         confirmIsDestructive
-        confirmLabel={lang('RevokeButton')}
+        confirmLabel={oldLang('RevokeButton')}
         confirmHandler={handleRevoke}
       />
       <ConfirmDialog
         isOpen={isDeleteDialogOpen}
         onClose={closeDeleteDialog}
-        title={lang('DeleteLink')}
-        text={lang('DeleteLinkHelp')}
+        title={oldLang('DeleteLink')}
+        text={oldLang('DeleteLinkHelp')}
         confirmIsDestructive
-        confirmLabel={lang('Delete')}
+        confirmLabel={oldLang('Delete')}
         confirmHandler={handleDelete}
       />
     </div>
@@ -374,8 +378,8 @@ const ManageInvites: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { chatId }): StateProps => {
-    const { invites, revokedInvites } = selectTabState(global).management.byChatId[chatId];
+  (global, { chatId }): Complete<StateProps> => {
+    const { invites, revokedInvites } = selectTabState(global).management.byChatId[chatId] || {};
     const chat = selectChat(global, chatId);
     const isChannel = chat && isChatChannel(chat);
 

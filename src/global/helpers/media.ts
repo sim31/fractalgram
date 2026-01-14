@@ -1,12 +1,9 @@
-import type { ApiPhoto, ApiStory } from '../../api/types';
+import type { ApiStory, ApiVideo } from '../../api/types';
 
-import { getVideoOrAudioBaseHash } from './messageMedia';
-
-export function getVideoAvatarMediaHash(photo: ApiPhoto) {
-  return `videoAvatar${photo.id}?size=u`;
-}
+import { getPhotoMediaHash, getVideoMediaHash } from './messageMedia';
 
 type StorySize = 'pictogram' | 'preview' | 'full' | 'download';
+const STORY_ALT_VIDEO_WIDTH = 480;
 
 export function getStoryMediaHash(
   story: ApiStory, size: StorySize, isAlt: true,
@@ -16,43 +13,28 @@ export function getStoryMediaHash(story: ApiStory, size: StorySize): string;
 export function getStoryMediaHash(
   story: ApiStory, size: StorySize = 'preview', isAlt?: boolean,
 ) {
-  const isVideo = Boolean(story.content.video);
+  const video = story.content.video;
+  const photo = story.content.photo;
 
-  if (isVideo) {
-    if (isAlt && !story.content.altVideo) return undefined;
-    const media = isAlt ? story.content.altVideo! : story.content.video!;
-    const id = media.id;
-    const base = `document${id}`;
-
-    if (size === 'download') {
-      return `${base}?download`;
-    }
-
-    if (size !== 'full') {
-      return `${base}?size=m`;
-    }
-
-    return getVideoOrAudioBaseHash(media, base);
+  if (video) {
+    if (isAlt && !video.altVideos) return undefined;
+    const media = isAlt ? getPreferredAlt(video.altVideos!) : video;
+    return getVideoMediaHash(media, size);
   }
 
-  const sizeParameter = getSizeParameter(size);
+  if (photo) {
+    return getPhotoMediaHash(photo, size);
+  }
 
-  return `photo${story.content.photo!.id}${sizeParameter}`;
+  return undefined;
 }
 
-function getSizeParameter(size: StorySize) {
-  switch (size) {
-    case 'download':
-      return '?size=z';
-    case 'pictogram':
-      return '?size=m';
-    case 'preview':
-      return '?size=x';
-    case 'full':
-      return '?size=w';
-    default:
-      return '';
-  }
+function getPreferredAlt(alts: ApiVideo[]) {
+  const alt = alts.reduce((prev, curr) => (
+    Math.abs((curr.width || 0) - STORY_ALT_VIDEO_WIDTH) < Math.abs((prev.width || 0) - STORY_ALT_VIDEO_WIDTH)
+      ? curr : prev
+  ));
+  return alt;
 }
 
 export function getStoryKey(chatId: string, storyId: number) {

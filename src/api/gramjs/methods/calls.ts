@@ -1,31 +1,22 @@
-import BigInt from 'big-integer';
 import { Api as GramJs } from '../../../lib/gramjs';
+import { generateRandomInt32 } from '../../../lib/gramjs/Helpers';
 
 import type { JoinGroupCallPayload } from '../../../lib/secret-sauce';
 import type {
-  ApiChat, ApiGroupCall, ApiPhoneCall,
-  ApiUser, OnApiUpdate,
+  ApiChat, ApiGroupCall, ApiPhoneCall, ApiUser,
 } from '../../types';
 
-import { GROUP_CALL_PARTICIPANTS_LIMIT } from '../../../config';
+import { GROUP_CALL_PARTICIPANTS_LIMIT } from '../../../limits';
 import {
   buildApiGroupCall,
   buildApiGroupCallParticipant, buildCallProtocol,
   buildPhoneCall,
 } from '../apiBuilders/calls';
-import { buildApiChatFromPreview } from '../apiBuilders/chats';
-import { buildApiUser } from '../apiBuilders/users';
 import {
-  buildInputGroupCall, buildInputPeer, buildInputPhoneCall, generateRandomInt,
+  buildInputGroupCall, buildInputPeer, buildInputPhoneCall, buildInputUser, DEFAULT_PRIMITIVES,
 } from '../gramjsBuilders';
-import { addEntitiesToLocalDb } from '../helpers';
+import { sendApiUpdate } from '../updates/apiUpdateEmitter';
 import { invokeRequest, invokeRequestBeacon } from './client';
-
-let onUpdate: OnApiUpdate;
-
-export function init(_onUpdate: OnApiUpdate) {
-  onUpdate = _onUpdate;
-}
 
 export async function getGroupCall({
   call,
@@ -34,22 +25,15 @@ export async function getGroupCall({
 }) {
   const result = await invokeRequest(new GramJs.phone.GetGroupCall({
     call: buildInputGroupCall(call),
+    limit: DEFAULT_PRIMITIVES.INT,
   }));
 
   if (!result) {
     return undefined;
   }
 
-  addEntitiesToLocalDb(result.users);
-  addEntitiesToLocalDb(result.chats);
-
-  const users = result.users.map(buildApiUser).filter(Boolean);
-  const chats = result.chats.map((c) => buildApiChatFromPreview(c)).filter(Boolean);
-
   return {
     groupCall: buildApiGroupCall(result.call),
-    users,
-    chats,
   };
 }
 
@@ -117,7 +101,8 @@ export async function exportGroupCallInvite({
 }
 
 export async function fetchGroupCallParticipants({
-  call, offset,
+  call,
+  offset = DEFAULT_PRIMITIVES.STRING,
 }: {
   call: ApiGroupCall; offset?: string;
 }) {
@@ -125,30 +110,20 @@ export async function fetchGroupCallParticipants({
     call: buildInputGroupCall(call),
     ids: [],
     sources: [],
-    offset: offset || '',
+    offset,
     limit: GROUP_CALL_PARTICIPANTS_LIMIT,
   }));
 
   if (!result) {
-    return undefined;
+    return;
   }
 
-  addEntitiesToLocalDb(result.users);
-  addEntitiesToLocalDb(result.chats);
-
-  const users = result.users.map(buildApiUser).filter(Boolean);
-  const chats = result.chats.map((c) => buildApiChatFromPreview(c)).filter(Boolean);
-
-  onUpdate({
+  sendApiUpdate({
     '@type': 'updateGroupCallParticipants',
     groupCallId: call.id,
     participants: result.participants.map(buildApiGroupCallParticipant),
     nextOffset: result.nextOffset,
   });
-
-  return {
-    users, chats,
-  };
 }
 
 export function leaveGroupCall({
@@ -158,6 +133,7 @@ export function leaveGroupCall({
 }) {
   const request = new GramJs.phone.LeaveGroupCall({
     call: buildInputGroupCall(call),
+    source: DEFAULT_PRIMITIVES.INT,
   });
 
   if (isPageUnload) {
@@ -206,7 +182,7 @@ export async function createGroupCall({
 }: {
   peer: ApiChat;
 }) {
-  const randomId = generateRandomInt();
+  const randomId = generateRandomInt32();
   const result = await invokeRequest(new GramJs.phone.CreateGroupCall({
     peer: buildInputPeer(peer.id, peer.accessHash),
     randomId,
@@ -266,7 +242,10 @@ export function leaveGroupCallPresentation({
 }
 
 export async function getDhConfig() {
-  const dhConfig = await invokeRequest(new GramJs.messages.GetDhConfig({}));
+  const dhConfig = await invokeRequest(new GramJs.messages.GetDhConfig({
+    version: DEFAULT_PRIMITIVES.INT,
+    randomLength: DEFAULT_PRIMITIVES.INT,
+  }));
 
   if (!dhConfig || dhConfig instanceof GramJs.messages.DhConfigNotModified) return undefined;
 
@@ -285,6 +264,8 @@ export function discardCall({
   const request = new GramJs.phone.DiscardCall({
     peer: buildInputPhoneCall(call),
     reason: isBusy ? new GramJs.PhoneCallDiscardReasonBusy() : new GramJs.PhoneCallDiscardReasonHangup(),
+    duration: DEFAULT_PRIMITIVES.INT,
+    connectionId: DEFAULT_PRIMITIVES.BIGINT,
   });
 
   if (isPageUnload) {
@@ -303,8 +284,8 @@ export async function requestCall({
   user: ApiUser; gAHash: number[]; isVideo?: boolean;
 }) {
   const result = await invokeRequest(new GramJs.phone.RequestCall({
-    randomId: generateRandomInt(),
-    userId: buildInputPeer(user.id, user.accessHash),
+    randomId: generateRandomInt32(),
+    userId: buildInputUser(user.id, user.accessHash),
     gAHash: Buffer.from(gAHash),
     ...(isVideo && { video: true }),
     protocol: buildCallProtocol(),
@@ -316,16 +297,12 @@ export async function requestCall({
 
   const call = buildPhoneCall(result.phoneCall);
 
-  onUpdate({
+  sendApiUpdate({
     '@type': 'updatePhoneCall',
     call,
   });
 
-  addEntitiesToLocalDb(result.users);
-
-  return {
-    users: result.users.map(buildApiUser).filter(Boolean),
-  };
+  return true;
 }
 
 export function setCallRating({
@@ -369,16 +346,12 @@ export async function acceptCall({
 
   call = buildPhoneCall(result.phoneCall);
 
-  onUpdate({
+  sendApiUpdate({
     '@type': 'updatePhoneCall',
     call,
   });
 
-  addEntitiesToLocalDb(result.users);
-
-  return {
-    users: result.users.map(buildApiUser).filter(Boolean),
-  };
+  return true;
 }
 
 export async function confirmCall({
@@ -399,16 +372,12 @@ export async function confirmCall({
 
   call = buildPhoneCall(result.phoneCall);
 
-  onUpdate({
+  sendApiUpdate({
     '@type': 'updatePhoneCall',
     call,
   });
 
-  addEntitiesToLocalDb(result.users);
-
-  return {
-    users: result.users.map(buildApiUser).filter(Boolean),
-  };
+  return true;
 }
 
 export function sendSignalingData({

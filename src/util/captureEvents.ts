@@ -1,7 +1,7 @@
+import { IS_IOS, IS_WINDOWS } from './browser/windowEnvironment';
 import { Lethargy } from './lethargy';
 import { clamp, round } from './math';
 import { debounce } from './schedulers';
-import { IS_IOS } from './windowEnvironment';
 import windowSize from './windowSize';
 
 export enum SwipeDirection {
@@ -11,19 +11,21 @@ export enum SwipeDirection {
   Right,
 }
 
+export interface MoveOffsets {
+  dragOffsetX: number;
+  dragOffsetY: number;
+}
+
 interface CaptureOptions {
   onCapture?: (e: MouseEvent | TouchEvent | WheelEvent) => void;
   onRelease?: (e: MouseEvent | TouchEvent | WheelEvent) => void;
   onDrag?: (
     e: MouseEvent | TouchEvent | WheelEvent,
     captureEvent: MouseEvent | TouchEvent | WheelEvent,
-    params: {
-      dragOffsetX: number;
-      dragOffsetY: number;
-    },
+    offsets: MoveOffsets,
     cancelDrag?: (x: boolean, y: boolean) => void,
   ) => void;
-  onSwipe?: (e: Event, direction: SwipeDirection) => boolean;
+  onSwipe?: (e: Event, direction: SwipeDirection, offsets: MoveOffsets) => boolean;
   onZoom?: (e: TouchEvent | WheelEvent, params: {
     // Absolute zoom level
     zoom?: number;
@@ -45,6 +47,7 @@ interface CaptureOptions {
   onClick?: (e: MouseEvent | TouchEvent) => void;
   onDoubleClick?: (e: MouseEvent | RealTouchEvent | WheelEvent, params: { centerX: number; centerY: number }) => void;
   excludedClosestSelector?: string;
+  includedClosestSelector?: string;
   selectorToPreventScroll?: string;
   withNativeDrag?: boolean;
   maxZoom?: number;
@@ -53,6 +56,8 @@ interface CaptureOptions {
   initialZoom?: number;
   isNotPassive?: boolean;
   withCursor?: boolean;
+  swipeThreshold?: number;
+  withWheelDrag?: boolean;
 }
 
 // https://stackoverflow.com/questions/11287877/how-can-i-get-e-offsetx-on-mobile-ipad
@@ -68,8 +73,11 @@ type TSwipeAxis =
   | undefined;
 
 export const IOS_SCREEN_EDGE_THRESHOLD = 20;
-const MOVED_THRESHOLD = 15;
-const SWIPE_THRESHOLD = 50;
+export const SWIPE_DIRECTION_THRESHOLD = 10;
+export const SWIPE_DIRECTION_TOLERANCE = 1.5;
+
+const MOVE_THRESHOLD = 15;
+const SWIPE_THRESHOLD_DEFAULT = 20;
 const RELEASE_WHEEL_ZOOM_DELAY = 150;
 const RELEASE_WHEEL_DRAG_DELAY = 150;
 
@@ -89,7 +97,7 @@ let lastClickTime = 0;
 const lethargy = new Lethargy({
   stability: 5,
   sensitivity: 25,
-  tolerance: 0.6,
+  tolerance: IS_WINDOWS ? 1 : 0.6, // Windows `scrollDelta` does not die down to 0
   delay: 150,
 });
 
@@ -117,30 +125,55 @@ export function captureEvents(element: HTMLElement, options: CaptureOptions) {
   const minZoom = options.minZoom ?? 1;
   const maxZoom = options.maxZoom ?? 4;
 
+  let isNearEdge = false;
+
   function onCapture(e: MouseEvent | RealTouchEvent) {
-    if (options.excludedClosestSelector && (
-      (e.target as HTMLElement).matches(options.excludedClosestSelector)
-      || (e.target as HTMLElement).closest(options.excludedClosestSelector)
-    )) {
+    const target = e.target as HTMLElement;
+    const {
+      excludedClosestSelector,
+      includedClosestSelector,
+      withNativeDrag,
+      withCursor,
+      onDrag,
+    } = options;
+
+    if (element !== target && !element.contains(target)) {
+      return;
+    }
+
+    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+      return;
+    }
+
+    if (
+      (excludedClosestSelector && (target.matches(excludedClosestSelector) || target.closest(excludedClosestSelector)))
+      || (
+        includedClosestSelector && !(target.matches(includedClosestSelector) || target.closest(includedClosestSelector))
+      )
+    ) {
       return;
     }
 
     captureEvent = e;
 
     if (e.type === 'mousedown') {
-      if (!options.withNativeDrag && options.onDrag) {
+      if (!withNativeDrag && onDrag) {
         e.preventDefault();
       }
 
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onRelease);
     } else if (e.type === 'touchstart') {
+      if (IS_IOS) {
+        const x = (e as RealTouchEvent).touches[0].pageX;
+        isNearEdge = x <= IOS_SCREEN_EDGE_THRESHOLD || x >= windowSize.get().width - IOS_SCREEN_EDGE_THRESHOLD;
+      }
+
       // We need to always listen on `touchstart` target:
       // https://stackoverflow.com/questions/33298828/touch-move-event-dont-fire-after-touch-start-target-is-removed
-      const target = e.target as HTMLElement;
       target.addEventListener('touchmove', onMove, { passive: true });
-      target.addEventListener('touchend', onRelease);
-      target.addEventListener('touchcancel', onRelease);
+      target.addEventListener('touchend', onRelease, { passive: true });
+      target.addEventListener('touchcancel', onRelease, { passive: true });
 
       if ('touches' in e) {
         if (e.pageX === undefined) {
@@ -158,13 +191,11 @@ export function captureEvents(element: HTMLElement, options: CaptureOptions) {
       }
     }
 
-    if (options.withCursor) {
+    if (withCursor) {
       document.body.classList.add('cursor-grabbing');
     }
 
-    if (options.onCapture) {
-      options.onCapture(e);
-    }
+    options.onCapture?.(e);
   }
 
   function onRelease(e?: MouseEvent | TouchEvent) {
@@ -194,8 +225,8 @@ export function captureEvents(element: HTMLElement, options: CaptureOptions) {
         } else if (e.type === 'mouseup') {
           if (options.onDoubleClick && Date.now() - lastClickTime < 300) {
             options.onDoubleClick(e, {
-              centerX: captureEvent!.pageX!,
-              centerY: captureEvent!.pageY!,
+              centerX: captureEvent.pageX!,
+              centerY: captureEvent.pageY!,
             });
           } else if (options.onClick && (!('button' in e) || e.button === 0)) {
             options.onClick(e);
@@ -225,6 +256,7 @@ export function captureEvents(element: HTMLElement, options: CaptureOptions) {
       y: newWindowSize.height / 2,
     };
     captureEvent = undefined;
+    isNearEdge = false;
   }
 
   function onMove(e: MouseEvent | RealTouchEvent) {
@@ -260,7 +292,7 @@ export function captureEvents(element: HTMLElement, options: CaptureOptions) {
       const dragOffsetX = e.pageX! - captureEvent.pageX!;
       const dragOffsetY = e.pageY! - captureEvent.pageY!;
 
-      if (Math.abs(dragOffsetX) >= MOVED_THRESHOLD || Math.abs(dragOffsetY) >= MOVED_THRESHOLD) {
+      if (Math.abs(dragOffsetX) >= MOVE_THRESHOLD || Math.abs(dragOffsetY) >= MOVE_THRESHOLD) {
         hasMoved = true;
       }
 
@@ -289,29 +321,18 @@ export function captureEvents(element: HTMLElement, options: CaptureOptions) {
   }
 
   function onSwipe(e: MouseEvent | RealTouchEvent, dragOffsetX: number, dragOffsetY: number) {
-    // Avoid conflicts with swipe-to-back gestures
-    if (IS_IOS) {
-      const x = (e as RealTouchEvent).touches[0].pageX;
-      if (x <= IOS_SCREEN_EDGE_THRESHOLD || x >= windowSize.get().width - IOS_SCREEN_EDGE_THRESHOLD) {
-        return false;
-      }
+    if (IS_IOS && isNearEdge) {
+      return false;
     }
 
     const xAbs = Math.abs(dragOffsetX);
     const yAbs = Math.abs(dragOffsetY);
-
-    if (dragOffsetX && dragOffsetY) {
-      const ratio = Math.max(xAbs, yAbs) / Math.min(xAbs, yAbs);
-      // Diagonal swipe
-      if (ratio < 2) {
-        return false;
-      }
-    }
+    const threshold = options.swipeThreshold ?? SWIPE_THRESHOLD_DEFAULT;
 
     let axis: TSwipeAxis | undefined;
-    if (xAbs >= SWIPE_THRESHOLD) {
+    if (xAbs > yAbs && xAbs >= threshold) {
       axis = 'x';
-    } else if (yAbs >= SWIPE_THRESHOLD) {
+    } else if (yAbs > xAbs && yAbs >= threshold) {
       axis = 'y';
     }
 
@@ -411,15 +432,18 @@ export function captureEvents(element: HTMLElement, options: CaptureOptions) {
     }
   }
 
-  element.addEventListener('wheel', onWheel);
+  if (options.withWheelDrag) {
+    element.addEventListener('wheel', onWheel);
+  }
+
   element.addEventListener('mousedown', onCapture);
-  element.addEventListener('touchstart', onCapture, { passive: !options.isNotPassive });
+  document.body.addEventListener('touchstart', onCapture, { passive: !options.isNotPassive });
 
   return () => {
     onRelease();
-    element.removeEventListener('wheel', onWheel);
-    element.removeEventListener('touchstart', onCapture);
+    document.body.removeEventListener('touchstart', onCapture);
     element.removeEventListener('mousedown', onCapture);
+    element.removeEventListener('wheel', onWheel);
   };
 }
 
@@ -428,19 +452,21 @@ function processSwipe(
   currentSwipeAxis: TSwipeAxis,
   dragOffsetX: number,
   dragOffsetY: number,
-  onSwipe: (e: Event, direction: SwipeDirection) => boolean,
+  onSwipe: (e: Event, direction: SwipeDirection, offsets: MoveOffsets) => boolean,
 ) {
+  const offsets = { dragOffsetX, dragOffsetY };
+
   if (currentSwipeAxis === 'x') {
     if (dragOffsetX < 0) {
-      return onSwipe(e, SwipeDirection.Left);
+      return onSwipe(e, SwipeDirection.Left, offsets);
     } else {
-      return onSwipe(e, SwipeDirection.Right);
+      return onSwipe(e, SwipeDirection.Right, offsets);
     }
   } else if (currentSwipeAxis === 'y') {
     if (dragOffsetY < 0) {
-      return onSwipe(e, SwipeDirection.Up);
+      return onSwipe(e, SwipeDirection.Up, offsets);
     } else {
-      return onSwipe(e, SwipeDirection.Down);
+      return onSwipe(e, SwipeDirection.Down, offsets);
     }
   }
 

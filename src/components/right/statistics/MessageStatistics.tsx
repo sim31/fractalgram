@@ -1,27 +1,32 @@
-import type { FC } from '../../../lib/teact/teact';
-import React, {
-  memo, useEffect, useRef,
-  useState,
+import {
+  memo, useEffect, useRef, useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { ApiMessagePublicForward, ApiMessageStatistics, StatisticsGraph } from '../../../api/types';
+import type {
+  ApiMessagePublicForward,
+  ApiPostStatistics,
+} from '../../../api/types';
+import { LoadMoreDirection } from '../../../types';
 
 import { selectChatFullInfo, selectTabState } from '../../../global/selectors';
 import buildClassName from '../../../util/buildClassName';
 import { callApi } from '../../../api/gramjs';
+import { isGraph } from './helpers/isGraph';
 
 import useForceUpdate from '../../../hooks/useForceUpdate';
-import useLang from '../../../hooks/useLang';
+import useLastCallback from '../../../hooks/useLastCallback';
+import useOldLang from '../../../hooks/useOldLang';
 
+import InfiniteScroll from '../../ui/InfiniteScroll';
 import Loading from '../../ui/Loading';
+import StatisticsMessagePublicForward from './StatisticsMessagePublicForward';
 import StatisticsOverview from './StatisticsOverview';
-import StatisticsPublicForward from './StatisticsPublicForward';
 
-import './Statistics.scss';
+import styles from './Statistics.module.scss';
 
-type ILovelyChart = { create: Function };
-let lovelyChartPromise: Promise<ILovelyChart>;
+type ILovelyChart = { create: (el: HTMLElement, params: AnyLiteral) => void };
+let lovelyChartPromise: Promise<ILovelyChart> | undefined;
 let LovelyChart: ILovelyChart;
 
 async function ensureLovelyChart() {
@@ -35,8 +40,9 @@ async function ensureLovelyChart() {
 
 const GRAPH_TITLES = {
   viewsGraph: 'Stats.MessageInteractionsTitle',
+  reactionsGraph: 'ReactionsByEmotionChartTitle',
 };
-const GRAPHS = Object.keys(GRAPH_TITLES) as (keyof ApiMessageStatistics)[];
+const GRAPHS = Object.keys(GRAPH_TITLES) as (keyof ApiPostStatistics)[];
 
 export type OwnProps = {
   chatId: string;
@@ -44,25 +50,25 @@ export type OwnProps = {
 };
 
 export type StateProps = {
-  statistics?: ApiMessageStatistics;
+  statistics?: ApiPostStatistics;
   messageId?: number;
   dcId?: number;
 };
 
-const Statistics: FC<OwnProps & StateProps> = ({
+function MessageStatistics({
   chatId,
   isActive,
   statistics,
   dcId,
   messageId,
-}) => {
-  const lang = useLang();
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
+}: OwnProps & StateProps) {
+  const lang = useOldLang();
+  const containerRef = useRef<HTMLDivElement>();
   const [isReady, setIsReady] = useState(false);
-  const loadedCharts = useRef<string[]>([]);
+  const loadedCharts = useRef<Set<string>>(new Set());
+  const errorCharts = useRef<Set<string>>(new Set());
 
-  const { loadMessageStatistics, loadStatisticsAsyncGraph } = getActions();
+  const { loadMessageStatistics, loadMessagePublicForwards, loadStatisticsAsyncGraph } = getActions();
   const forceUpdate = useForceUpdate();
 
   useEffect(() => {
@@ -73,7 +79,8 @@ const Statistics: FC<OwnProps & StateProps> = ({
 
   useEffect(() => {
     if (!isActive || messageId) {
-      loadedCharts.current = [];
+      loadedCharts.current.clear();
+      errorCharts.current.clear();
       setIsReady(false);
     }
   }, [isActive, messageId]);
@@ -85,11 +92,14 @@ const Statistics: FC<OwnProps & StateProps> = ({
     }
 
     GRAPHS.forEach((name) => {
-      const graph = statistics[name as keyof typeof statistics];
-      const isAsync = typeof graph === 'string';
+      const graph = statistics[name];
+      if (!isGraph(graph)) {
+        return;
+      }
+      const isAsync = graph.graphType === 'async';
 
       if (isAsync) {
-        loadStatisticsAsyncGraph({ name, chatId, token: graph });
+        loadStatisticsAsyncGraph({ name, chatId, token: graph.token });
       }
     });
   }, [chatId, statistics, loadStatisticsAsyncGraph]);
@@ -108,34 +118,39 @@ const Statistics: FC<OwnProps & StateProps> = ({
       }
 
       GRAPHS.forEach((name, index: number) => {
-        const graph = statistics[name as keyof typeof statistics];
-        const isAsync = typeof graph === 'string';
+        const graph = statistics[name];
+        if (!isGraph(graph)) {
+          return;
+        }
+        const isAsync = graph.graphType === 'async';
+        const isError = graph.graphType === 'error';
 
-        if (isAsync || loadedCharts.current.includes(name)) {
+        if (isAsync || loadedCharts.current.has(name)) {
           return;
         }
 
-        if (!graph) {
-          loadedCharts.current.push(name);
+        if (isError) {
+          loadedCharts.current.add(name);
+          errorCharts.current.add(name);
 
           return;
         }
 
-        const { zoomToken } = graph as StatisticsGraph;
+        const { zoomToken } = graph;
 
         LovelyChart.create(
-          containerRef.current!.children[index],
+          containerRef.current!.children[index] as HTMLElement,
           {
             title: lang((GRAPH_TITLES as Record<string, string>)[name]),
             ...zoomToken ? {
               onZoom: (x: number) => callApi('fetchStatisticsAsyncGraph', { token: zoomToken, x, dcId }),
               zoomOutLabel: lang('Graph.ZoomOut'),
             } : {},
-            ...graph as StatisticsGraph,
+            ...graph,
           },
         );
 
-        loadedCharts.current.push(name);
+        loadedCharts.current.add(name);
       });
 
       forceUpdate();
@@ -144,37 +159,56 @@ const Statistics: FC<OwnProps & StateProps> = ({
     isReady, statistics, lang, chatId, messageId, loadStatisticsAsyncGraph, dcId, forceUpdate,
   ]);
 
+  const handleLoadMore = useLastCallback(({ direction }: { direction: LoadMoreDirection }) => {
+    if (direction === LoadMoreDirection.Backwards && messageId) {
+      loadMessagePublicForwards({ chatId, messageId });
+    }
+  });
+
   if (!isReady || !statistics || !messageId) {
     return <Loading />;
   }
 
   return (
-    <div className={buildClassName('Statistics custom-scroll', isReady && 'ready')}>
-      <StatisticsOverview statistics={statistics} isMessage />
+    <div
+      key={`${chatId}-${messageId}`}
+      className={buildClassName(styles.root, 'custom-scroll', isReady && styles.ready)}
+    >
+      <StatisticsOverview statistics={statistics} type="message" title={lang('StatisticOverview')} />
 
-      {!loadedCharts.current.length && <Loading />}
+      {(!loadedCharts.current.size || !statistics.publicForwardsData) && <Loading />}
 
       <div ref={containerRef}>
-        {GRAPHS.map((graph) => (
-          <div className={buildClassName('Statistics__graph', !loadedCharts.current.includes(graph) && 'hidden')} />
-        ))}
+        {GRAPHS.map((graph) => {
+          const isGraphReady = loadedCharts.current.has(graph) && !errorCharts.current.has(graph);
+          return (
+            <div className={buildClassName(styles.graph, !isGraphReady && styles.hidden)} />
+          );
+        })}
       </div>
 
       {Boolean(statistics.publicForwards) && (
-        <div className="Statistics__public-forwards">
-          <h2 className="Statistics__public-forwards-title">{lang('Stats.Message.PublicShares')}</h2>
+        <div className={styles.publicForwards}>
+          <h2 className={styles.publicForwardsTitle}>{lang('Stats.Message.PublicShares')}</h2>
 
-          {statistics.publicForwardsData!.map((item: ApiMessagePublicForward) => (
-            <StatisticsPublicForward data={item} />
-          ))}
+          <InfiniteScroll
+            items={statistics.publicForwardsData}
+            itemSelector=".statistic-public-forward"
+            onLoadMore={handleLoadMore}
+            noFastList
+          >
+            {(statistics.publicForwardsData as ApiMessagePublicForward[]).map((item) => (
+              <StatisticsMessagePublicForward key={item.messageId} data={item} />
+            ))}
+          </InfiniteScroll>
         </div>
       )}
     </div>
   );
-};
+}
 
 export default memo(withGlobal<OwnProps>(
-  (global, { chatId }): StateProps => {
+  (global, { chatId }): Complete<StateProps> => {
     const dcId = selectChatFullInfo(global, chatId)?.statisticsDcId;
     const tabState = selectTabState(global);
     const statistics = tabState.statistics.currentMessage;
@@ -182,4 +216,4 @@ export default memo(withGlobal<OwnProps>(
 
     return { statistics, dcId, messageId };
   },
-)(Statistics));
+)(MessageStatistics));

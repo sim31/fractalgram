@@ -1,14 +1,16 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useEffect,
   useRef, useState,
 } from '../../lib/teact/teact';
 
+import { requestMeasure } from '../../lib/fasterdom/fasterdom';
+import { IS_TOUCH_ENV } from '../../util/browser/windowEnvironment';
+import focusNoScroll from '../../util/focusNoScroll';
 import { CardType, detectCardType } from '../common/helpers/detectCardType';
 import { formatCardNumber } from '../middle/helpers/inputFormatters';
 
-import useFocusAfterAnimation from '../../hooks/useFocusAfterAnimation';
-import useLang from '../../hooks/useLang';
+import useOldLang from '../../hooks/useOldLang';
 
 import InputText from '../ui/InputText';
 
@@ -18,20 +20,28 @@ import mastercardIconPath from '../../assets/mastercard.svg';
 import mirIconPath from '../../assets/mir.svg';
 import visaIconPath from '../../assets/visa.svg';
 
-const CARD_NUMBER_MAX_LENGTH = 23;
+const CARD_NUMBER_MAX_LENGTH = 19;
 
 export type OwnProps = {
   value: string;
   error?: string;
   onChange: (value: string) => void;
+  isActive?: boolean;
 };
 
-const CardInput : FC<OwnProps> = ({ value, error, onChange }) => {
-  const lang = useLang();
-  // eslint-disable-next-line no-null/no-null
-  const cardNumberRef = useRef<HTMLInputElement>(null);
+const CardInput: FC<OwnProps> = ({ value, error, onChange, isActive }) => {
+  const lang = useOldLang();
+  const cardNumberRef = useRef<HTMLInputElement>();
 
-  useFocusAfterAnimation(cardNumberRef);
+  useEffect(() => {
+    if (!isActive || IS_TOUCH_ENV) {
+      return;
+    }
+
+    requestMeasure(() => {
+      focusNoScroll(cardNumberRef.current);
+    });
+  }, [isActive]);
 
   const [cardType, setCardType] = useState<number>(CardType.Default);
   useEffect(() => {

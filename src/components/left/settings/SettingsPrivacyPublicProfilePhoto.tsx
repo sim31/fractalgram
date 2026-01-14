@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useEffect, useRef,
 } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
@@ -7,7 +7,7 @@ import { getActions } from '../../../global';
 import type { ApiPhoto } from '../../../api/types';
 
 import useFlag from '../../../hooks/useFlag';
-import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 
 import Avatar from '../../common/Avatar';
 import ConfirmDialog from '../../ui/ConfirmDialog';
@@ -31,12 +31,11 @@ const SettingsPrivacyPublicProfilePhoto: FC<OwnProps> = ({
     loadFullUser, uploadProfilePhoto, deleteProfilePhoto, showNotification,
   } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const [isDeleteFallbackPhotoModalOpen, openDeleteFallbackPhotoModal, closeDeleteFallbackPhotoModal] = useFlag(false);
 
-  // eslint-disable-next-line no-null/no-null
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>();
 
   useEffect(() => {
     if (!hasCurrentUserFullInfo) {
@@ -66,6 +65,7 @@ const SettingsPrivacyPublicProfilePhoto: FC<OwnProps> = ({
   return (
     <div className="settings-item">
       <ListItem
+        narrow
         icon="camera-add"
         onClick={handleOpenFileSelector}
       >
@@ -79,6 +79,7 @@ const SettingsPrivacyPublicProfilePhoto: FC<OwnProps> = ({
       </ListItem>
       {currentUserFallbackPhoto && (
         <ListItem
+          narrow
           leftElement={<Avatar photo={currentUserFallbackPhoto} size="mini" className={styles.fallbackPhoto} />}
           onClick={openDeleteFallbackPhotoModal}
           destructive

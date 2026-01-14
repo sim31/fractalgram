@@ -1,8 +1,9 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useEffect, useRef } from '../../../lib/teact/teact';
+import { memo, useEffect, useRef } from '../../../lib/teact/teact';
 import { withGlobal } from '../../../global';
 
 import type { ApiSticker } from '../../../api/types';
+import type { ThreadId } from '../../../types';
 
 import { STICKER_SIZE_PICKER } from '../../../config';
 import { selectIsChatWithSelf, selectIsCurrentUserPremium } from '../../../global/selectors';
@@ -10,9 +11,9 @@ import buildClassName from '../../../util/buildClassName';
 import captureEscKeyListener from '../../../util/captureEscKeyListener';
 
 import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
-import usePrevious from '../../../hooks/usePrevious';
+import usePreviousDeprecated from '../../../hooks/usePreviousDeprecated';
 import useSendMessageAction from '../../../hooks/useSendMessageAction';
-import useShowTransition from '../../../hooks/useShowTransition';
+import useShowTransitionDeprecated from '../../../hooks/useShowTransitionDeprecated';
 
 import StickerButton from '../../common/StickerButton';
 import Loading from '../../ui/Loading';
@@ -21,7 +22,7 @@ import './StickerTooltip.scss';
 
 export type OwnProps = {
   chatId: string;
-  threadId?: number;
+  threadId?: ThreadId;
   isOpen: boolean;
   onStickerSelect: (sticker: ApiSticker, isSilent?: boolean, shouldSchedule?: boolean) => void;
   onClose: NoneToVoidFunction;
@@ -45,10 +46,9 @@ const StickerTooltip: FC<OwnProps & StateProps> = ({
   isSavedMessages,
   isCurrentUserPremium,
 }) => {
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
-  const { shouldRender, transitionClassNames } = useShowTransition(isOpen, undefined, undefined, false);
-  const prevStickers = usePrevious(stickers, true);
+  const containerRef = useRef<HTMLDivElement>();
+  const { shouldRender, transitionClassNames } = useShowTransitionDeprecated(isOpen, undefined, undefined, false);
+  const prevStickers = usePreviousDeprecated(stickers, true);
   const displayedStickers = stickers || prevStickers;
   const sendMessageAction = useSendMessageAction(chatId, threadId);
 
@@ -96,7 +96,7 @@ const StickerTooltip: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { chatId }): StateProps => {
+  (global, { chatId }): Complete<StateProps> => {
     const { stickers } = global.stickers.forEmoji;
     const isSavedMessages = selectIsChatWithSelf(global, chatId);
     const isCurrentUserPremium = selectIsCurrentUserPremium(global);

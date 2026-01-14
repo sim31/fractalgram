@@ -1,17 +1,18 @@
+import type { ElementRef } from '../../lib/teact/teact';
 import { useEffect, useState } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
-import { IS_MOBILE } from '../../util/windowEnvironment';
-import useLang from '../useLang';
+import { IS_MOBILE } from '../../util/browser/windowEnvironment';
 import useLastCallback from '../useLastCallback';
+import useOldLang from '../useOldLang';
 
 const NOTIFICATION_DURATION = 8000;
 
 export default function useUnsupportedMedia(
-  ref: React.RefObject<HTMLVideoElement>, shouldDisableNotification?: boolean, isDisabled?: boolean,
+  ref: ElementRef<HTMLVideoElement>, shouldDisableNotification?: boolean, isDisabled?: boolean,
 ) {
   const { showNotification } = getActions();
-  const lang = useLang();
+  const lang = useOldLang();
   const [isUnsupported, setIsUnsupported] = useState(false);
 
   const handleUnsupported = useLastCallback(() => {

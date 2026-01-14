@@ -1,7 +1,9 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useMemo } from '../../../lib/teact/teact';
+import { memo, useMemo } from '../../../lib/teact/teact';
 
-import { formatDateToString } from '../../../util/dateFormat';
+import { formatDateToString } from '../../../util/dates/dateFormat';
+
+import Icon from '../../common/icons/Icon';
 
 import './DateSuggest.scss';
 
@@ -25,7 +27,7 @@ const DateSuggest: FC<OwnProps> = ({
             className="date-item"
             key={text}
           >
-            <i className="icon icon-calendar" />
+            <Icon name="calendar" />
             <span>{text}</span>
           </div>
         );

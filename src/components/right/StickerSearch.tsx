@@ -1,5 +1,4 @@
-import type { FC } from '../../lib/teact/teact';
-import React, {
+import {
   memo, useEffect, useRef,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
@@ -9,14 +8,14 @@ import { throttle } from '../../util/schedulers';
 
 import useHistoryBack from '../../hooks/useHistoryBack';
 import { useIntersectionObserver } from '../../hooks/useIntersectionObserver';
-import useLang from '../../hooks/useLang';
+import useOldLang from '../../hooks/useOldLang';
 
 import Loading from '../ui/Loading';
 import StickerSetResult from './StickerSetResult';
 
 import './StickerSearch.scss';
 
-type OwnProps = {
+export type OwnProps = {
   onClose: NoneToVoidFunction;
   isActive: boolean;
 };
@@ -32,20 +31,19 @@ const INTERSECTION_THROTTLE = 200;
 
 const runThrottled = throttle((cb) => cb(), 60000, true);
 
-const StickerSearch: FC<OwnProps & StateProps> = ({
+const StickerSearch = ({
   isActive,
   query,
   featuredIds,
   resultIds,
   isModalOpen,
   onClose,
-}) => {
+}: OwnProps & StateProps) => {
   const { loadFeaturedStickers } = getActions();
 
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>();
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const {
     observe: observeIntersection,
@@ -106,7 +104,7 @@ const StickerSearch: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const currentSearch = selectCurrentStickerSearch(global);
     const { query, resultIds } = currentSearch || {};
     const { featured } = global.stickers;

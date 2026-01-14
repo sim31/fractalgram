@@ -1,6 +1,6 @@
 .ArchivedChats {
-  height: 100%;
   overflow: hidden;
+  height: 100%;
   background: var(--color-background);
 
   .left-header {
@@ -18,16 +18,15 @@
   }
 
   .Button.rtl {
-    transition: var(--slide-transition) transform;
     position: absolute;
     z-index: 2;
+    transition: var(--slide-transition) transform;
 
     &.right-aligned {
-      transform: translateX(calc(clamp(
-      var(--left-column-min-width),
-      var(--left-column-width),
-      var(--left-column-max-width)
-      ) - 4.375rem));
+      transform:
+        translateX(
+          calc(clamp(var(--left-column-min-width), var(--left-column-width), var(--left-column-max-width)) - 4.375rem)
+        );
     }
 
     &.disable-transition {
@@ -40,8 +39,8 @@
   }
 
   .story-toggler-wrapper {
-    flex-grow: 1;
     position: relative;
+    flex-grow: 1;
   }
 
   .chat-list-wrapper {

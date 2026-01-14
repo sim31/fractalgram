@@ -1,5 +1,5 @@
 import type { FC } from '../../../../lib/teact/teact';
-import React, { memo, useCallback } from '../../../../lib/teact/teact';
+import { memo, useCallback } from '../../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../../global';
 
 import type { GlobalState } from '../../../../global/types';
@@ -7,7 +7,7 @@ import { SettingsScreens } from '../../../../types';
 
 import { decryptSession } from '../../../../util/passcode';
 
-import useLang from '../../../../hooks/useLang';
+import useOldLang from '../../../../hooks/useOldLang';
 
 import SettingsPasscodeForm from '../SettingsPasswordForm';
 import SettingsPasscodeCongratulations from './SettingsPasscodeCongratulations';
@@ -20,7 +20,6 @@ export type OwnProps = {
   shownScreen: SettingsScreens;
   isActive?: boolean;
   onSetPasscode: (passcode: string) => void;
-  onScreenSelect: (screen: SettingsScreens) => void;
   onReset: () => void;
 };
 
@@ -33,7 +32,6 @@ const SettingsPasscode: FC<OwnProps & StateProps> = ({
   error,
   isActive,
   isLoading,
-  onScreenSelect,
   onSetPasscode,
   onReset,
 }) => {
@@ -42,52 +40,53 @@ const SettingsPasscode: FC<OwnProps & StateProps> = ({
     clearPasscode,
     setPasscodeError,
     clearPasscodeError,
+    openSettingsScreen,
   } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const handleStartWizard = useCallback(() => {
     onSetPasscode('');
-    onScreenSelect(SettingsScreens.PasscodeNewPasscode);
-  }, [onScreenSelect, onSetPasscode]);
+    openSettingsScreen({ screen: SettingsScreens.PasscodeNewPasscode });
+  }, [onSetPasscode]);
 
   const handleNewPassword = useCallback((value: string) => {
     onSetPasscode(value);
-    onScreenSelect(SettingsScreens.PasscodeNewPasscodeConfirm);
-  }, [onScreenSelect, onSetPasscode]);
+    openSettingsScreen({ screen: SettingsScreens.PasscodeNewPasscodeConfirm });
+  }, [onSetPasscode]);
 
   const handleNewPasswordConfirm = useCallback(() => {
     setPasscode({ passcode });
     onSetPasscode('');
-    onScreenSelect(SettingsScreens.PasscodeCongratulations);
-  }, [onScreenSelect, onSetPasscode, passcode, setPasscode]);
+    openSettingsScreen({ screen: SettingsScreens.PasscodeCongratulations });
+  }, [onSetPasscode, passcode]);
 
   const handleChangePasswordCurrent = useCallback((currentPasscode: string) => {
     onSetPasscode('');
     decryptSession(currentPasscode).then(() => {
-      onScreenSelect(SettingsScreens.PasscodeChangePasscodeNew);
+      openSettingsScreen({ screen: SettingsScreens.PasscodeChangePasscodeNew });
     }, () => {
       setPasscodeError({
         error: lang('PasscodeController.Error.Current'),
       });
     });
-  }, [lang, onScreenSelect, onSetPasscode, setPasscodeError]);
+  }, [lang, onSetPasscode]);
 
   const handleChangePasswordNew = useCallback((value: string) => {
     onSetPasscode(value);
-    onScreenSelect(SettingsScreens.PasscodeChangePasscodeConfirm);
-  }, [onScreenSelect, onSetPasscode]);
+    openSettingsScreen({ screen: SettingsScreens.PasscodeChangePasscodeConfirm });
+  }, [onSetPasscode]);
 
   const handleTurnOff = useCallback((currentPasscode: string) => {
     decryptSession(currentPasscode).then(() => {
       clearPasscode();
-      onScreenSelect(SettingsScreens.Privacy);
+      openSettingsScreen({ screen: SettingsScreens.Privacy });
     }, () => {
       setPasscodeError({
         error: lang('PasscodeController.Error.Current'),
       });
     });
-  }, [clearPasscode, lang, onScreenSelect, setPasscodeError]);
+  }, [lang]);
 
   switch (currentScreen) {
     case SettingsScreens.PasscodeDisabled:
@@ -145,7 +144,6 @@ const SettingsPasscode: FC<OwnProps & StateProps> = ({
     case SettingsScreens.PasscodeEnabled:
       return (
         <SettingsPasscodeEnabled
-          onScreenSelect={onScreenSelect}
           isActive={isActive || [
             SettingsScreens.PasscodeChangePasscodeCurrent,
             SettingsScreens.PasscodeChangePasscodeNew,
@@ -162,7 +160,7 @@ const SettingsPasscode: FC<OwnProps & StateProps> = ({
         <SettingsPasscodeForm
           shouldDisablePasswordManager
           error={error}
-          clearError={clearPasscodeError}
+          onClearError={clearPasscodeError}
           placeholder={lang('PasscodeController.Current.Placeholder')}
           onSubmit={handleChangePasswordCurrent}
           isActive={isActive || [
@@ -208,7 +206,7 @@ const SettingsPasscode: FC<OwnProps & StateProps> = ({
         <SettingsPasscodeForm
           shouldDisablePasswordManager
           error={error ? lang(error) : undefined}
-          clearError={clearPasscodeError}
+          onClearError={clearPasscodeError}
           placeholder={lang('PasscodeController.Current.Placeholder')}
           onSubmit={handleTurnOff}
           isActive={isActive}
@@ -222,5 +220,5 @@ const SettingsPasscode: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => ({ ...global.passcode }),
+  (global): Complete<StateProps> => ({ ...global.passcode } as Complete<StateProps>),
 )(SettingsPasscode));

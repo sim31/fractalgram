@@ -1,9 +1,7 @@
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
-import { buildCollectionByKey } from '../../../util/iteratees';
-import { translate } from '../../../util/langProvider';
+import { oldTranslate } from '../../../util/oldLangProvider';
 import { callApi } from '../../../api/gramjs';
 import { addActionHandler, getGlobal, setGlobal } from '../../index';
-import { addUsers } from '../../reducers';
 import { selectChat } from '../../selectors';
 
 addActionHandler('reportPeer', async (global, actions, payload): Promise<void> => {
@@ -30,7 +28,7 @@ addActionHandler('reportPeer', async (global, actions, payload): Promise<void> =
 
   actions.showNotification({
     message: result
-      ? translate('ReportPeer.AlertSuccess')
+      ? oldTranslate('ReportPeer.AlertSuccess')
       : 'An error occurred while submitting your report. Please, try again later.',
     tabId,
   });
@@ -62,7 +60,7 @@ addActionHandler('reportProfilePhoto', async (global, actions, payload): Promise
 
   actions.showNotification({
     message: result
-      ? translate('ReportPeer.AlertSuccess')
+      ? oldTranslate('ReportPeer.AlertSuccess')
       : 'An error occurred while submitting your report. Please, try again later.',
     tabId,
   });
@@ -87,7 +85,7 @@ addActionHandler('loadAuthorizations', async (global): Promise<void> => {
 });
 
 addActionHandler('terminateAuthorization', async (global, actions, payload): Promise<void> => {
-  const { hash } = payload!;
+  const { hash } = payload;
 
   const result = await callApi('terminateAuthorization', hash);
   if (!result) {
@@ -193,10 +191,8 @@ addActionHandler('loadWebAuthorizations', async (global): Promise<void> => {
   if (!result) {
     return;
   }
-  const { users, webAuthorizations } = result;
+  const { webAuthorizations } = result;
   global = getGlobal();
-
-  global = addUsers(global, buildCollectionByKey(users, 'id'));
 
   global = {
     ...global,
@@ -209,7 +205,7 @@ addActionHandler('loadWebAuthorizations', async (global): Promise<void> => {
 });
 
 addActionHandler('terminateWebAuthorization', async (global, actions, payload): Promise<void> => {
-  const { hash } = payload!;
+  const { hash } = payload;
 
   const result = await callApi('terminateWebAuthorization', hash);
   if (!result) {
@@ -246,4 +242,38 @@ addActionHandler('terminateAllWebAuthorizations', async (global): Promise<void> 
     },
   };
   setGlobal(global);
+});
+
+addActionHandler('loadAccountDaysTtl', async (global, actions, payload): Promise<void> => {
+  const result = await callApi('fetchAccountTTL');
+  if (!result) return;
+
+  global = getGlobal();
+  global = {
+    ...global,
+    settings: {
+      ...global.settings,
+      accountDaysTtl: result.days,
+    },
+  };
+  setGlobal(global);
+});
+
+addActionHandler('setAccountTTL', async (global, actions, payload): Promise<void> => {
+  const { days, tabId = getCurrentTabId() } = payload || {};
+  if (!days) return;
+
+  const result = await callApi('setAccountTTL', { days });
+  if (!result) return;
+
+  global = getGlobal();
+  global = {
+    ...global,
+    settings: {
+      ...global.settings,
+      accountDaysTtl: days,
+    },
+  };
+  setGlobal(global);
+  actions.closeDeleteAccountModal({ tabId });
 });

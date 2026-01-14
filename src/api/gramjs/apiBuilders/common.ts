@@ -1,16 +1,19 @@
 import { Api as GramJs } from '../../../lib/gramjs';
+import type { Entity } from '../../../lib/gramjs/types';
 import { strippedPhotoToJpg } from '../../../lib/gramjs/Utils';
 
-import type { ApiPrivacySettings, PrivacyVisibility } from '../../../types';
 import type {
   ApiFormattedText,
   ApiMessageEntity,
   ApiMessageEntityDefault,
   ApiPhoto,
   ApiPhotoSize,
+  ApiPrivacySettings,
   ApiThumbnail,
   ApiUsername,
   ApiVideoSize,
+  BotsPrivacyType,
+  PrivacyVisibility,
 } from '../../types';
 import {
   ApiMessageEntityTypes,
@@ -65,7 +68,7 @@ export function buildApiThumbnailFromCached(photoSize: GramJs.PhotoCachedSize): 
 
 export function buildApiThumbnailFromPath(
   photoSize: GramJs.PhotoPathSize,
-  sizeAttribute: GramJs.DocumentAttributeImageSize | GramJs.DocumentAttributeVideo,
+  sizeAttribute: GramJs.DocumentAttributeImageSize | GramJs.DocumentAttributeVideo | GramJs.PhotoSize,
 ): ApiThumbnail | undefined {
   const { w, h } = sizeAttribute;
   const dataUri = `data:image/svg+xml;utf8,${pathBytesToSvg(photoSize.bytes, w, h)}`;
@@ -85,12 +88,20 @@ export function buildApiPhoto(photo: GramJs.Photo, isSpoiler?: boolean): ApiPhot
     .map(buildApiPhotoSize);
 
   return {
+    mediaType: 'photo',
     id: String(photo.id),
     thumbnail: buildApiThumbnailFromStripped(photo.sizes),
     sizes,
     isSpoiler,
+    date: photo.date,
     ...(photo.videoSizes && { videoSizes: compact(photo.videoSizes.map(buildApiVideoSize)), isVideo: true }),
   };
+}
+
+export function buildApiPhotoPreviewSizes(sizes: GramJs.TypePhotoSize[]): ApiPhotoSize[] {
+  return sizes.filter((s): s is GramJs.PhotoSize => (
+    s instanceof GramJs.PhotoSize || s instanceof GramJs.PhotoSizeProgressive
+  )).map(buildApiPhotoSize);
 }
 
 export function buildApiVideoSize(videoSize: GramJs.TypeVideoSize): ApiVideoSize | undefined {
@@ -115,12 +126,12 @@ export function buildApiPhotoSize(photoSize: GramJs.PhotoSize): ApiPhotoSize {
   return {
     width: w,
     height: h,
-    type: type as ('m' | 'x' | 'y'),
+    type: type as ('s' | 'm' | 'x' | 'y' | 'w'),
   };
 }
 
-export function buildApiUsernames(mtpPeer: GramJs.User | GramJs.Channel | GramJs.UpdateUserName) {
-  if (!mtpPeer.usernames && !('username' in mtpPeer && mtpPeer.username)) {
+export function buildApiUsernames(mtpPeer: Entity | GramJs.UpdateUserName) {
+  if (!('usernames' in mtpPeer && mtpPeer.usernames) && !('username' in mtpPeer && mtpPeer.username)) {
     return undefined;
   }
 
@@ -154,6 +165,8 @@ export function buildPrivacyRules(rules: GramJs.TypePrivacyRule[]): ApiPrivacySe
   let allowChatIds: string[] | undefined;
   let blockUserIds: string[] | undefined;
   let blockChatIds: string[] | undefined;
+  let shouldAllowPremium: true | undefined;
+  let botsPrivacy: BotsPrivacyType = 'none';
 
   const localChats = localDb.chats;
 
@@ -187,6 +200,12 @@ export function buildPrivacyRules(rules: GramJs.TypePrivacyRule[]): ApiPrivacySe
         if (localChats[dialogId]) return dialogId;
         return channelId;
       });
+    } else if (rule instanceof GramJs.PrivacyValueAllowPremium) {
+      shouldAllowPremium = true;
+    } else if (rule instanceof GramJs.PrivacyValueAllowBots) {
+      botsPrivacy = 'allow';
+    } else if (rule instanceof GramJs.PrivacyValueDisallowBots) {
+      botsPrivacy = 'disallow';
     }
   });
 
@@ -203,6 +222,8 @@ export function buildPrivacyRules(rules: GramJs.TypePrivacyRule[]): ApiPrivacySe
     allowChatIds: allowChatIds || [],
     blockUserIds: blockUserIds || [],
     blockChatIds: blockChatIds || [],
+    shouldAllowPremium,
+    botsPrivacy,
   };
 }
 
@@ -253,6 +274,15 @@ export function buildApiMessageEntity(entity: GramJs.TypeMessageEntity): ApiMess
       offset,
       length,
       documentId: entity.documentId.toString(),
+    };
+  }
+
+  if (entity instanceof GramJs.MessageEntityBlockquote) {
+    return {
+      type: ApiMessageEntityTypes.Blockquote,
+      canCollapse: entity.collapsed,
+      offset,
+      length,
     };
   }
 

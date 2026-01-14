@@ -1,15 +1,16 @@
 import type {
-  ChangeEvent, FormEvent, RefObject,
+  ChangeEvent, FormEvent,
 } from 'react';
-import type { FC } from '../../lib/teact/teact';
-import React, { memo } from '../../lib/teact/teact';
+import type { ElementRef } from '../../lib/teact/teact';
+import { memo } from '../../lib/teact/teact';
 
+import { IS_TAURI } from '../../util/browser/globalEnvironment';
 import buildClassName from '../../util/buildClassName';
 
 import useLang from '../../hooks/useLang';
 
 type OwnProps = {
-  ref?: RefObject<HTMLInputElement>;
+  ref?: ElementRef<HTMLInputElement>;
   id?: string;
   className?: string;
   value?: string;
@@ -30,9 +31,10 @@ type OwnProps = {
   onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
   onBlur?: (e: React.FocusEvent<HTMLInputElement>) => void;
   onPaste?: (e: React.ClipboardEvent<HTMLInputElement>) => void;
+  onClick?: (e: React.MouseEvent<HTMLInputElement>) => void;
 };
 
-const InputText: FC<OwnProps> = ({
+const InputText = ({
   ref,
   id,
   className,
@@ -54,7 +56,8 @@ const InputText: FC<OwnProps> = ({
   onKeyDown,
   onBlur,
   onPaste,
-}) => {
+  onClick,
+}: OwnProps) => {
   const lang = useLang();
   const labelText = error || success || label;
   const fullClassName = buildClassName(
@@ -80,6 +83,7 @@ const InputText: FC<OwnProps> = ({
         placeholder={placeholder}
         maxLength={maxLength}
         autoComplete={autoComplete}
+        spellCheck={IS_TAURI ? false : undefined}
         inputMode={inputMode}
         disabled={disabled}
         readOnly={readOnly}
@@ -91,6 +95,7 @@ const InputText: FC<OwnProps> = ({
         onPaste={onPaste}
         aria-label={labelText}
         teactExperimentControlled={teactExperimentControlled}
+        onClick={onClick}
       />
       {labelText && (
         <label htmlFor={id}>{labelText}</label>

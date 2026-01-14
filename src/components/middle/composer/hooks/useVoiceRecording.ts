@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from '../../../../lib/teact/teact';
 
 import { requestMutation } from '../../../../lib/fasterdom/fasterdom';
+import { IS_SAFARI, IS_VOICE_RECORDING_SUPPORTED } from '../../../../util/browser/windowEnvironment';
 import captureEscKeyListener from '../../../../util/captureEscKeyListener';
 import * as voiceRecording from '../../../../util/voiceRecording';
-import { IS_SAFARI, IS_VOICE_RECORDING_SUPPORTED } from '../../../../util/windowEnvironment';
 
 import useLastCallback from '../../../../hooks/useLastCallback';
 
@@ -12,11 +12,11 @@ type ActiveVoiceRecording =
   | undefined;
 
 const useVoiceRecording = () => {
-  // eslint-disable-next-line no-null/no-null
-  const recordButtonRef = useRef<HTMLButtonElement>(null);
+  const recordButtonRef = useRef<HTMLButtonElement>();
   const [activeVoiceRecording, setActiveVoiceRecording] = useState<ActiveVoiceRecording>();
   const startRecordTimeRef = useRef<number>();
   const [currentRecordTime, setCurrentRecordTime] = useState<number | undefined>();
+  const [isViewOnceEnabled, setIsViewOnceEnabled] = useState(false);
 
   useEffect(() => {
     // Preloading worker fixes silent first record on iOS
@@ -55,12 +55,12 @@ const useVoiceRecording = () => {
 
     requestMutation(() => {
       if (recordButtonRef.current) {
-        recordButtonRef.current!.style.boxShadow = 'none';
+        recordButtonRef.current.style.boxShadow = 'none';
       }
     });
 
     try {
-      return activeVoiceRecording!.pause();
+      return activeVoiceRecording.pause();
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(err);
@@ -84,7 +84,7 @@ const useVoiceRecording = () => {
     });
 
     try {
-      return activeVoiceRecording!.stop();
+      return activeVoiceRecording.stop();
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(err);
@@ -96,6 +96,10 @@ const useVoiceRecording = () => {
     return activeVoiceRecording ? captureEscKeyListener(stopRecordingVoice) : undefined;
   }, [activeVoiceRecording, stopRecordingVoice]);
 
+  const toogleViewOnceEnabled = useLastCallback(() => {
+    setIsViewOnceEnabled(!isViewOnceEnabled);
+  });
+
   return {
     startRecordingVoice,
     pauseRecordingVoice,
@@ -104,6 +108,9 @@ const useVoiceRecording = () => {
     currentRecordTime,
     recordButtonRef,
     startRecordTimeRef,
+    isViewOnceEnabled,
+    setIsViewOnceEnabled,
+    toogleViewOnceEnabled,
   };
 };
 

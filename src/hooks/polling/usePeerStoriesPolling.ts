@@ -3,8 +3,9 @@ import { getActions, getGlobal } from '../../global';
 
 import type { ApiChat, ApiUser } from '../../api/types';
 
-import { isChatChannel, isUserBot, isUserId } from '../../global/helpers';
-import { selectPeer, selectUserStatus } from '../../global/selectors';
+import { isChatChannel, isUserBot } from '../../global/helpers';
+import { selectIsChatRestricted, selectPeer, selectUserStatus } from '../../global/selectors';
+import { isUserId } from '../../util/entities/ids';
 import { throttle } from '../../util/schedulers';
 
 const POLLING_INTERVAL = 60 * 60 * 1000;
@@ -16,7 +17,7 @@ const REQUEST_THROTTLE = 500;
 const loadFromQueue = throttle(() => {
   const queue = Array.from(PEER_ID_QUEUE);
   const queueToLoad = queue.slice(0, LIMIT_PER_REQUEST);
-  const otherQueue = queue.slice(LIMIT_PER_REQUEST + 1);
+  const otherQueue = queue.slice(LIMIT_PER_REQUEST);
 
   getActions().loadStoriesMaxIds({
     peerIds: queueToLoad,
@@ -53,7 +54,8 @@ export default function usePeerStoriesPolling(ids?: string[]) {
         return !user.isContact && !user.isSelf && !isUserBot(user) && !peer.isSupport && isStatusAvailable;
       } else {
         const chat = peer as ApiChat;
-        return isChatChannel(chat);
+        const isRestricted = selectIsChatRestricted(global, chat.id);
+        return isChatChannel(chat) && !isRestricted;
       }
     }).map((user) => user.id);
   }, [peers]);

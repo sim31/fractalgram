@@ -2,20 +2,14 @@
   --custom-emoji-border-radius: 0.25rem;
 
   position: relative;
+  z-index: 1;
+
   display: flex;
   align-items: center;
   justify-content: center;
 
   width: var(--custom-emoji-size);
   height: var(--custom-emoji-size);
-
-  z-index: 1;
-}
-
-.effect {
-  position: fixed;
-  top: -2.25rem;
-  left: -2.25rem;
 }
 
 .animated-icon, .effect {
@@ -37,7 +31,7 @@
   contain: layout;
 }
 
-.withEffectOnly, .animated-icon {
+.withEffectOnly, .animated-icon, .effect {
   position: absolute;
   top: 50%;
   left: 50%;

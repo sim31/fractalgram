@@ -1,22 +1,22 @@
-import type { ActionReturnType } from '../../types';
+import type { ProfileTabType } from '../../../types';
+import type { ActionReturnType, GlobalState } from '../../types';
 import { MAIN_THREAD_ID } from '../../../api/types';
 
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
 import { createMessageHashUrl } from '../../../util/routing';
-import { IS_ELECTRON } from '../../../util/windowEnvironment';
-import { addActionHandler, setGlobal } from '../../index';
+import { addActionHandler, execAfterActions, getGlobal, setGlobal } from '../../index';
 import {
+  closeMiddleSearch,
   exitMessageSelectMode, replaceTabThreadParam, updateCurrentMessageList, updateRequestedChatTranslation,
 } from '../../reducers';
 import { updateTabState } from '../../reducers/tabs';
 import {
   selectChat, selectCurrentMessageList, selectTabState,
 } from '../../selectors';
-import { closeLocalTextSearch } from './localSearch';
 
-addActionHandler('openChat', (global, actions, payload): ActionReturnType => {
+addActionHandler('processOpenChatOrThread', (global, actions, payload): ActionReturnType => {
   const {
-    id,
+    chatId,
     threadId = MAIN_THREAD_ID,
     type = 'thread',
     shouldReplaceHistory = false,
@@ -36,45 +36,61 @@ addActionHandler('openChat', (global, actions, payload): ActionReturnType => {
       },
     }, tabId);
   }
+  actions.hideEffectInComposer({ tabId });
+
+  actions.closeStoryViewer({ tabId });
+  actions.closeStarsBalanceModal({ tabId });
+  actions.closeStarsTransactionModal({ tabId });
+  actions.closeGiftInfoModal({ tabId });
+  actions.closeGiftAuctionModal({ tabId });
 
   if (!currentMessageList || (
-    currentMessageList.chatId !== id
+    currentMessageList.chatId !== chatId
     || currentMessageList.threadId !== threadId
     || currentMessageList.type !== type
   )) {
-    if (id) {
-      global = replaceTabThreadParam(global, id, threadId, 'replyStack', [], tabId);
+    if (chatId) {
+      global = replaceTabThreadParam(global, chatId, threadId, 'replyStack', [], tabId);
 
       global = updateTabState(global, {
         activeReactions: {},
+        shouldPreventComposerAnimation: true,
       }, tabId);
+
+      global = closeMiddleSearch(global, chatId, threadId, tabId);
     }
 
     global = exitMessageSelectMode(global, tabId);
-    global = closeLocalTextSearch(global, tabId);
 
     global = updateTabState(global, {
       isStatisticsShown: false,
+      monetizationStatistics: undefined,
+      boostStatistics: undefined,
       contentToBeScheduled: undefined,
-      ...(id !== selectTabState(global, tabId).forwardMessages.toChatId && {
+      ...(chatId !== selectTabState(global, tabId).forwardMessages.toChatId && {
         forwardMessages: {},
+        isShareMessageModalShown: false,
       }),
+      // Reset chat info state for new chat
+      chatInfo: {
+        isOpen: tabState.chatInfo.isOpen,
+      },
     }, tabId);
   }
 
-  if (id) {
-    const chat = selectChat(global, id);
+  if (chatId) {
+    const chat = selectChat(global, chatId);
 
     if (chat?.isForum && !noForumTopicPanel) {
-      actions.openForumPanel({ chatId: id!, tabId });
-    } else if (id !== selectTabState(global, tabId).forumPanelChatId) {
+      actions.openForumPanel({ chatId, tabId });
+    } else if (chatId !== selectTabState(global, tabId).forumPanelChatId) {
       actions.closeForumPanel({ tabId });
     }
   }
 
   actions.updatePageTitle({ tabId });
 
-  return updateCurrentMessageList(global, id, threadId, type, shouldReplaceHistory, shouldReplaceLast, tabId);
+  return updateCurrentMessageList(global, chatId, threadId, type, shouldReplaceHistory, shouldReplaceLast, tabId);
 });
 
 addActionHandler('openChatInNewTab', (global, actions, payload): ActionReturnType => {
@@ -82,11 +98,7 @@ addActionHandler('openChatInNewTab', (global, actions, payload): ActionReturnTyp
 
   const hashUrl = createMessageHashUrl(chatId, 'thread', threadId);
 
-  if (IS_ELECTRON) {
-    window.electron!.openNewWindow(hashUrl);
-  } else {
-    window.open(hashUrl, '_blank');
-  }
+  window.open(hashUrl, '_blank');
 });
 
 addActionHandler('openPreviousChat', (global, actions, payload): ActionReturnType => {
@@ -96,26 +108,76 @@ addActionHandler('openPreviousChat', (global, actions, payload): ActionReturnTyp
 });
 
 addActionHandler('openChatWithInfo', (global, actions, payload): ActionReturnType => {
-  const { profileTab, tabId = getCurrentTabId() } = payload;
+  const { profileTab, forceScrollProfileTab, isOwnProfile, tabId = getCurrentTabId(), ...rest } = payload;
 
-  global = updateTabState(global, {
-    ...selectTabState(global, tabId),
-    isChatInfoShown: true,
-    nextProfileTab: profileTab,
-  }, tabId);
-  global = { ...global, lastIsChatInfoShown: true };
-  setGlobal(global);
+  const currentMessageList = selectCurrentMessageList(global, tabId);
+  const isSameMessageList = currentMessageList?.chatId === rest.id
+    && currentMessageList?.threadId === MAIN_THREAD_ID
+    && currentMessageList?.type === (rest.type || 'thread');
 
-  actions.openChat({ ...payload, tabId });
+  processChatInfoState({ global, isSameMessageList, profileTab, forceScrollProfileTab, isOwnProfile, tabId });
+
+  actions.openChat({ ...rest, tabId });
 });
+
+addActionHandler('openThreadWithInfo', (global, actions, payload): ActionReturnType => {
+  const { profileTab, forceScrollProfileTab, isOwnProfile, tabId = getCurrentTabId(), ...rest } = payload;
+
+  const currentMessageList = selectCurrentMessageList(global, tabId);
+  const isSameMessageList = currentMessageList?.chatId === rest.chatId
+    && currentMessageList?.threadId === rest.threadId
+    && currentMessageList?.type === (rest.type || 'thread');
+
+  processChatInfoState({ global, isSameMessageList, profileTab, forceScrollProfileTab, isOwnProfile, tabId });
+
+  actions.openThread({ ...rest, tabId });
+});
+
+function processChatInfoState<T extends GlobalState>({
+  global,
+  isSameMessageList,
+  profileTab,
+  forceScrollProfileTab,
+  isOwnProfile,
+  tabId,
+}: {
+  global: T;
+  isSameMessageList: boolean;
+  profileTab?: ProfileTabType;
+  forceScrollProfileTab?: boolean;
+  isOwnProfile?: boolean;
+  tabId: number;
+}) {
+  const currentChatInfo = selectTabState(global, tabId).chatInfo;
+
+  const newProfileTab = profileTab ?? (isSameMessageList ? currentChatInfo.profileTab : undefined);
+  const newForceScrollProfileTab = forceScrollProfileTab
+    ?? (isSameMessageList ? currentChatInfo.forceScrollProfileTab : undefined);
+  const newIsOwnProfile = isOwnProfile ?? (isSameMessageList ? currentChatInfo.isOwnProfile : undefined);
+
+  execAfterActions(() => {
+    global = getGlobal();
+    global = updateTabState(global, {
+      ...selectTabState(global, tabId),
+      chatInfo: {
+        isOpen: true,
+        profileTab: newProfileTab,
+        forceScrollProfileTab: newForceScrollProfileTab,
+        isOwnProfile: newIsOwnProfile,
+      },
+    }, tabId);
+    global = { ...global, lastIsChatInfoShown: true };
+    setGlobal(global);
+  });
+}
 
 addActionHandler('openChatWithDraft', (global, actions, payload): ActionReturnType => {
   const {
-    chatId, text, threadId, files, filter, tabId = getCurrentTabId(),
+    chatId, text, threadId = MAIN_THREAD_ID, files, filter, tabId = getCurrentTabId(),
   } = payload;
 
   if (chatId) {
-    actions.openChat({ id: chatId, threadId, tabId });
+    actions.openThread({ chatId, threadId, tabId });
   }
 
   return updateTabState(global, {
@@ -179,4 +241,11 @@ addActionHandler('closeChatlistModal', (global, actions, payload): ActionReturnT
 addActionHandler('requestChatTranslation', (global, actions, payload): ActionReturnType => {
   const { chatId, toLanguageCode, tabId = getCurrentTabId() } = payload;
   return updateRequestedChatTranslation(global, chatId, toLanguageCode, tabId);
+});
+
+addActionHandler('closeChatInviteModal', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+  return updateTabState(global, {
+    chatInviteModal: undefined,
+  }, tabId);
 });

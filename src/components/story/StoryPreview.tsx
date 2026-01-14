@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo } from '../../lib/teact/teact';
+import { memo, useEffect, useMemo } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type {
@@ -6,12 +6,13 @@ import type {
 } from '../../api/types';
 import type { StoryViewerOrigin } from '../../types';
 
-import { getSenderTitle, getStoryMediaHash } from '../../global/helpers';
+import { getStoryMediaHash } from '../../global/helpers';
+import { getPeerTitle } from '../../global/helpers/peers';
 import { selectTabState } from '../../global/selectors';
 import renderText from '../common/helpers/renderText';
 
-import useLang from '../../hooks/useLang';
 import useMedia from '../../hooks/useMedia';
+import useOldLang from '../../hooks/useOldLang';
 
 import Avatar from '../common/Avatar';
 import MediaAreaOverlay from './mediaArea/MediaAreaOverlay';
@@ -26,13 +27,14 @@ interface OwnProps {
 interface StateProps {
   lastViewedId?: number;
   origin?: StoryViewerOrigin;
+  storyIdsForViewer?: number[];
 }
 
 function StoryPreview({
-  peer, peerStories, lastViewedId, origin,
+  peer, peerStories, lastViewedId, storyIdsForViewer, origin,
 }: OwnProps & StateProps) {
   const { openStoryViewer, loadPeerSkippedStories } = getActions();
-  const lang = useLang();
+  const lang = useOldLang();
 
   const story = useMemo<ApiTypeStory | undefined>(() => {
     if (!peerStories) {
@@ -43,11 +45,13 @@ function StoryPreview({
       orderedIds, lastReadId, byId,
     } = peerStories;
     const hasUnreadStories = orderedIds[orderedIds.length - 1] !== lastReadId;
-    const previewIndexId = lastViewedId ?? (hasUnreadStories ? (lastReadId ?? -1) : -1);
-    const resultId = byId[previewIndexId]?.id || orderedIds[0];
+    const previewIndexId = lastViewedId && storyIdsForViewer?.includes(lastViewedId)
+      ? lastViewedId ?? (hasUnreadStories ? (lastReadId ?? -1) : -1)
+      : -1;
+    const resultId = byId[previewIndexId]?.id || storyIdsForViewer?.[0] || orderedIds[0];
 
     return byId[resultId];
-  }, [lastViewedId, peerStories]);
+  }, [lastViewedId, peerStories, storyIdsForViewer]);
 
   const isLoaded = story && 'content' in story;
 
@@ -77,27 +81,31 @@ function StoryPreview({
       {isLoaded && <MediaAreaOverlay story={story} />}
 
       <div className={styles.content}>
-        <Avatar
-          peer={peer}
-          withStory
-          storyViewerMode="disabled"
-        />
-        <div className={styles.name}>{renderText(getSenderTitle(lang, peer) || '')}</div>
+        <div className={styles.contentInner}>
+          <Avatar
+            peer={peer}
+            withStory
+            storyViewerMode="disabled"
+          />
+          <div className={styles.name}>{renderText(getPeerTitle(lang, peer) || '')}</div>
+        </div>
       </div>
     </div>
   );
 }
 
-export default memo(withGlobal<OwnProps>((global, { peer }): StateProps => {
+export default memo(withGlobal<OwnProps>((global, { peer }): Complete<StateProps> => {
   const {
     storyViewer: {
-      lastViewedByPeerIds,
+      lastViewedByPeerId: lastViewedByPeerIds,
       origin,
+      storyList,
     },
   } = selectTabState(global);
 
   return {
     lastViewedId: peer?.id ? lastViewedByPeerIds?.[peer.id] : undefined,
     origin,
+    storyIdsForViewer: peer?.id ? storyList?.storyIdsByPeerId[peer.id] : undefined,
   };
 })(StoryPreview));

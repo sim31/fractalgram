@@ -1,5 +1,5 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
 import { getActions } from '../../global';
@@ -11,7 +11,8 @@ import { copyTextToClipboard } from '../../util/clipboard';
 import { isBetween } from '../../util/math';
 
 import useLang from '../../hooks/useLang';
-import usePrevious from '../../hooks/usePrevious';
+import useOldLang from '../../hooks/useOldLang';
+import usePreviousDeprecated from '../../hooks/usePreviousDeprecated';
 
 import ConfirmDialog from '../ui/ConfirmDialog';
 import Draggable from '../ui/Draggable';
@@ -31,7 +32,7 @@ type OwnProps = {
   onEditUsername: (username: string) => void;
 };
 
-const USERNAME_HEIGHT_PX = 60;
+const USERNAME_HEIGHT_PX = 56;
 
 const ManageUsernames: FC<OwnProps> = ({
   chatId,
@@ -45,11 +46,12 @@ const ManageUsernames: FC<OwnProps> = ({
     sortUsernames,
     sortChatUsernames,
   } = getActions();
+  const oldLang = useOldLang();
   const lang = useLang();
   const [usernameForConfirm, setUsernameForConfirm] = useState<ApiUsername | undefined>();
 
   const usernameList = useMemo(() => usernames.map(({ username }) => username), [usernames]);
-  const prevUsernameList = usePrevious(usernameList);
+  const prevUsernameList = usePreviousDeprecated(usernameList);
 
   const [state, setState] = useState<SortState>({
     orderedUsernames: usernameList,
@@ -71,9 +73,9 @@ const ManageUsernames: FC<OwnProps> = ({
   const handleCopyUsername = useCallback((value: string) => {
     copyTextToClipboard(`@${value}`);
     showNotification({
-      message: lang('UsernameCopied'),
+      message: oldLang('UsernameCopied'),
     });
-  }, [lang, showNotification]);
+  }, [oldLang, showNotification]);
 
   const handleUsernameClick = useCallback((data: ApiUsername) => {
     if (data.isEditable) {
@@ -147,7 +149,7 @@ const ManageUsernames: FC<OwnProps> = ({
     <>
       <div className={styles.container}>
         <h4 className={styles.header} dir={lang.isRtl ? 'rtl' : undefined}>
-          {lang('lng_usernames_subtitle')}
+          {oldLang('lng_usernames_subtitle')}
         </h4>
         <div className={styles.sortableContainer} style={`height: ${(usernames.length) * USERNAME_HEIGHT_PX}px`}>
           {usernames.map((usernameData, i) => {
@@ -165,12 +167,12 @@ const ManageUsernames: FC<OwnProps> = ({
                 onDrag={handleDrag}
                 onDragEnd={handleDragEnd}
                 style={`top: ${isDragged ? draggedTop : top}px;`}
-                knobStyle={`${lang.isRtl ? 'left' : 'right'}: 3rem;`}
+                knobStyle="inset-inline-end: 3rem;"
                 isDisabled={!usernameData.isActive}
               >
                 <ListItem
                   key={usernameData.username}
-                  className={buildClassName('drag-item mb-2 no-icon', styles.item)}
+                  className={buildClassName('drag-item no-icon', styles.item)}
                   narrow
                   secondaryIcon="more"
                   icon={usernameData.isActive ? 'link' : 'link-broken'}
@@ -180,32 +182,35 @@ const ManageUsernames: FC<OwnProps> = ({
                       handler: () => {
                         handleCopyUsername(usernameData.username);
                       },
-                      title: lang('Copy'),
+                      title: oldLang('Copy'),
                       icon: 'copy',
                     },
                   ]}
-                  // eslint-disable-next-line react/jsx-no-bind
+
                   onClick={() => {
                     handleUsernameClick(usernameData);
                   }}
                 >
-                  <span className="title">@{usernameData.username}</span>
-                  <span className="subtitle">{lang(subtitle)}</span>
+                  <span className="title">
+                    @
+                    {usernameData.username}
+                  </span>
+                  <span className="subtitle">{oldLang(subtitle)}</span>
                 </ListItem>
               </Draggable>
             );
           })}
         </div>
         <p className={styles.description} dir={lang.isRtl ? 'rtl' : undefined}>
-          {lang('lng_usernames_description')}
+          {oldLang('lng_usernames_description')}
         </p>
       </div>
       <ConfirmDialog
         isOpen={Boolean(usernameForConfirm)}
         onClose={closeConfirmUsernameDialog}
-        title={lang(usernameForConfirm?.isActive ? 'Username.DeactivateAlertTitle' : 'Username.ActivateAlertTitle')}
-        text={lang(usernameForConfirm?.isActive ? 'Username.DeactivateAlertText' : 'Username.ActivateAlertText')}
-        confirmLabel={lang(usernameForConfirm?.isActive
+        title={oldLang(usernameForConfirm?.isActive ? 'Username.DeactivateAlertTitle' : 'Username.ActivateAlertTitle')}
+        text={oldLang(usernameForConfirm?.isActive ? 'Username.DeactivateAlertText' : 'Username.ActivateAlertText')}
+        confirmLabel={oldLang(usernameForConfirm?.isActive
           ? 'Username.DeactivateAlertHide'
           : 'Username.ActivateAlertShow')}
         confirmHandler={handleUsernameToggle}

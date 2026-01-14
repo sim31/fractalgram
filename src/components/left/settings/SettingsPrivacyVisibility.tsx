@@ -1,26 +1,31 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback, useMemo } from '../../../lib/teact/teact';
+import { memo, useCallback, useMemo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { ApiPhoto } from '../../../api/types';
-import type { ApiPrivacySettings } from '../../../types';
+import type { ApiPhoto, ApiPrivacySettings, BotsPrivacyType } from '../../../api/types';
 import { SettingsScreens } from '../../../types';
 
-import { selectUserFullInfo } from '../../../global/selectors';
+import { selectIsCurrentUserPremium, selectUserFullInfo } from '../../../global/selectors';
 import { getPrivacyKey } from './helpers/privacy';
 
 import useHistoryBack from '../../../hooks/useHistoryBack';
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
+import useOldLang from '../../../hooks/useOldLang';
 
+import Icon from '../../common/icons/Icon';
 import ListItem from '../../ui/ListItem';
 import RadioGroup from '../../ui/RadioGroup';
+import Switcher from '../../ui/Switcher';
+import PremiumStatusItem from './PremiumStatusItem';
+import PrivacyLockedOption from './PrivacyLockedOption';
+import SettingsAcceptedGift from './SettingsAcceptedGift';
+import SettingsPrivacyLastSeen from './SettingsPrivacyLastSeen';
 import SettingsPrivacyPublicProfilePhoto from './SettingsPrivacyPublicProfilePhoto';
 
 type OwnProps = {
   screen: SettingsScreens;
   isActive?: boolean;
-  onScreenSelect: (screen: SettingsScreens) => void;
   onReset: () => void;
 };
 
@@ -30,6 +35,9 @@ type StateProps = {
   currentUserFallbackPhoto?: ApiPhoto;
   primaryPrivacy?: ApiPrivacySettings;
   secondaryPrivacy?: ApiPrivacySettings;
+  isPremiumRequired?: boolean;
+  shouldDisplayGiftsButton?: boolean;
+  isCurrentUserPremium?: boolean;
 };
 
 const SettingsPrivacyVisibility: FC<OwnProps & StateProps> = ({
@@ -40,12 +48,36 @@ const SettingsPrivacyVisibility: FC<OwnProps & StateProps> = ({
   currentUserId,
   hasCurrentUserFullInfo,
   currentUserFallbackPhoto,
-  onScreenSelect,
+  isPremiumRequired,
   onReset,
+  shouldDisplayGiftsButton,
+  isCurrentUserPremium,
 }) => {
+  const { updateGlobalPrivacySettings, showNotification } = getActions();
+
+  const lang = useLang();
+
   useHistoryBack({
     isActive,
     onBack: onReset,
+  });
+
+  const handleShowGiftIconInChats = useLastCallback(() => {
+    if (!isCurrentUserPremium) {
+      showNotification({
+        message: lang('PrivacySubscribeToTelegramPremium'),
+        action: {
+          action: 'openPremiumModal',
+          payload: {},
+        },
+        actionText: { key: 'Open' },
+        icon: 'star',
+      });
+      return;
+    }
+    updateGlobalPrivacySettings({
+      shouldDisplayGiftsButton: !shouldDisplayGiftsButton,
+    });
   });
 
   const secondaryScreen = useMemo(() => {
@@ -62,10 +94,31 @@ const SettingsPrivacyVisibility: FC<OwnProps & StateProps> = ({
 
   return (
     <div className="settings-content custom-scroll">
+      {screen === SettingsScreens.PrivacyGifts && (
+        <div className="settings-item">
+          <ListItem onClick={handleShowGiftIconInChats}>
+            <span>{lang('PrivacyDisplayGiftsButton')}</span>
+            <Switcher
+              id="gift"
+              disabled={!isCurrentUserPremium}
+              label={shouldDisplayGiftsButton ? lang('HideGiftsButton') : lang('DisplayGiftsButton')}
+              checked={shouldDisplayGiftsButton}
+            />
+          </ListItem>
+          <p className="settings-item-description-larger" dir={lang.isRtl ? 'rtl' : undefined}>
+            {lang('PrivacyDisplayGiftIconInChats', {
+              icon: <Icon name="gift" className="gift-icon" />,
+              gift: lang('PrivacyDisplayGift'),
+            }, {
+              withNodes: true,
+            })}
+          </p>
+        </div>
+      )}
       <PrivacySubsection
         screen={screen}
         privacy={primaryPrivacy}
-        onScreenSelect={onScreenSelect}
+        isPremiumRequired={isPremiumRequired}
       />
       {screen === SettingsScreens.PrivacyProfilePhoto && primaryPrivacy?.visibility !== 'everybody' && (
         <SettingsPrivacyPublicProfilePhoto
@@ -74,11 +127,16 @@ const SettingsPrivacyVisibility: FC<OwnProps & StateProps> = ({
           currentUserFallbackPhoto={currentUserFallbackPhoto}
         />
       )}
-      {secondaryScreen && (
+      {screen === SettingsScreens.PrivacyLastSeen && (
+        <SettingsPrivacyLastSeen visibility={primaryPrivacy?.visibility} />
+      )}
+      {screen === SettingsScreens.PrivacyGifts && (
+        <SettingsAcceptedGift />
+      )}
+      {Boolean(secondaryScreen) && (
         <PrivacySubsection
           screen={secondaryScreen}
           privacy={secondaryPrivacy}
-          onScreenSelect={onScreenSelect}
         />
       )}
     </div>
@@ -88,26 +146,44 @@ const SettingsPrivacyVisibility: FC<OwnProps & StateProps> = ({
 function PrivacySubsection({
   screen,
   privacy,
-  onScreenSelect,
+  isPremiumRequired,
 }: {
   screen: SettingsScreens;
   privacy?: ApiPrivacySettings;
-  onScreenSelect: (screen: SettingsScreens) => void;
+  isPremiumRequired?: boolean;
 }) {
-  const { setPrivacyVisibility } = getActions();
+  const { setPrivacyVisibility, openSettingsScreen } = getActions();
+  const oldLang = useOldLang();
   const lang = useLang();
 
   const visibilityOptions = useMemo(() => {
     const hasNobody = screen !== SettingsScreens.PrivacyAddByPhone;
     const options = [
-      { value: 'everybody', label: lang('P2PEverybody') },
-      { value: 'contacts', label: lang('P2PContacts') },
+      { value: 'everybody', label: oldLang('P2PEverybody') },
+      {
+        value: 'contacts',
+        label: isPremiumRequired ? (
+          <PrivacyLockedOption label={oldLang('P2PContacts')} />
+        ) : (
+          oldLang('P2PContacts')
+        ),
+        hidden: isPremiumRequired,
+      },
     ];
+
     if (hasNobody) {
-      options.push({ value: 'nobody', label: lang('P2PNobody') });
+      options.push({
+        value: 'nobody',
+        label: isPremiumRequired ? (
+          <PrivacyLockedOption label={oldLang('P2PNobody')} />
+        ) : (
+          oldLang('P2PNobody')
+        ),
+        hidden: isPremiumRequired,
+      });
     }
     return options;
-  }, [lang, screen]);
+  }, [oldLang, screen, isPremiumRequired]);
 
   const primaryExceptionLists = useMemo(() => {
     if (screen === SettingsScreens.PrivacyAddByPhone) {
@@ -127,59 +203,81 @@ function PrivacySubsection({
 
   const descriptionText = useMemo(() => {
     switch (screen) {
+      case SettingsScreens.PrivacyGifts:
+        return lang('PrivacyGiftsInfo');
       case SettingsScreens.PrivacyLastSeen:
-        return lang('CustomHelp');
+        return oldLang('CustomHelp');
       case SettingsScreens.PrivacyAddByPhone: {
-        return privacy?.visibility === 'everybody' ? lang('PrivacyPhoneInfo') : lang('PrivacyPhoneInfo3');
+        return privacy?.visibility === 'everybody' ? oldLang('PrivacyPhoneInfo') : oldLang('PrivacyPhoneInfo3');
       }
+      case SettingsScreens.PrivacyVoiceMessages:
+        return oldLang('PrivacyVoiceMessagesInfo');
       default:
         return undefined;
     }
-  }, [lang, screen, privacy]);
+  }, [oldLang, lang, screen, privacy]);
 
   const headerText = useMemo(() => {
     switch (screen) {
       case SettingsScreens.PrivacyPhoneNumber:
-        return lang('PrivacyPhoneTitle');
+        return oldLang('PrivacyPhoneTitle');
       case SettingsScreens.PrivacyAddByPhone:
-        return lang('PrivacyPhoneTitle2');
+        return oldLang('PrivacyPhoneTitle2');
       case SettingsScreens.PrivacyLastSeen:
-        return lang('LastSeenTitle');
+        return oldLang('LastSeenTitle');
       case SettingsScreens.PrivacyProfilePhoto:
-        return lang('PrivacyProfilePhotoTitle');
+        return oldLang('PrivacyProfilePhotoTitle');
       case SettingsScreens.PrivacyBio:
-        return lang('PrivacyBioTitle');
+        return oldLang('PrivacyBioTitle');
+      case SettingsScreens.PrivacyBirthday:
+        return oldLang('PrivacyBirthdayTitle');
+      case SettingsScreens.PrivacyGifts:
+        return lang('PrivacyGiftsTitle');
       case SettingsScreens.PrivacyForwarding:
-        return lang('PrivacyForwardsTitle');
+        return oldLang('PrivacyForwardsTitle');
       case SettingsScreens.PrivacyVoiceMessages:
-        return lang('PrivacyVoiceMessagesTitle');
+        return oldLang('PrivacyVoiceMessagesTitle');
       case SettingsScreens.PrivacyGroupChats:
-        return lang('WhoCanAddMe');
+        return oldLang('WhoCanAddMe');
       case SettingsScreens.PrivacyPhoneCall:
-        return lang('WhoCanCallMe');
+        return oldLang('WhoCanCallMe');
       case SettingsScreens.PrivacyPhoneP2P:
-        return lang('PrivacyP2P');
+        return oldLang('PrivacyP2P');
       default:
         return undefined;
     }
-  }, [lang, screen]);
+  }, [oldLang, lang, screen]);
 
-  const prepareSubtitle = useLastCallback((userIds?: string[], chatIds?: string[]) => {
-    const userIdsCount = userIds?.length || 0;
-    const chatIdsCount = chatIds?.length || 0;
+  const prepareSubtitle = useLastCallback(
+    (userIds?: string[], chatIds?: string[], shouldAllowPremium?: boolean, botsPrivacy?: BotsPrivacyType) => {
+      const userIdsCount = userIds?.length || 0;
+      const chatIdsCount = chatIds?.length || 0;
+      const isAllowBots = botsPrivacy === 'allow';
+      const hasPeers = userIdsCount || chatIdsCount;
 
-    if (!userIdsCount && !chatIdsCount) {
-      return lang('EditAdminAddUsers');
-    }
+      if (!hasPeers && !isAllowBots) {
+        return shouldAllowPremium ? oldLang('PrivacyPremium') : oldLang('EditAdminAddUsers');
+      } else if (shouldAllowPremium) {
+        return oldLang('ContactsAndPremium');
+      }
 
-    const userCountString = userIdsCount > 0 ? lang('Users', userIdsCount) : undefined;
-    const chatCountString = chatIdsCount > 0 ? lang('Chats', chatIdsCount) : undefined;
+      const userCountString = userIdsCount > 0 ? oldLang('Users', userIdsCount) : undefined;
+      const chatCountString = chatIdsCount > 0 ? oldLang('Chats', chatIdsCount) : undefined;
 
-    return [userCountString, chatCountString].filter(Boolean).join(', ');
-  });
+      const botPrivacyString = isAllowBots ? lang('PrivacyValueBots') : '';
+      const peersString = lang.conjunction([userCountString, chatCountString].filter(Boolean));
+
+      return [botPrivacyString, peersString].filter(Boolean).join(' ');
+    },
+  );
 
   const allowedString = useMemo(() => {
-    return prepareSubtitle(privacy?.allowUserIds, privacy?.allowChatIds);
+    return prepareSubtitle(
+      privacy?.allowUserIds,
+      privacy?.allowChatIds,
+      privacy?.shouldAllowPremium,
+      privacy?.botsPrivacy,
+    );
   }, [privacy]);
 
   const blockString = useMemo(() => {
@@ -203,6 +301,10 @@ function PrivacySubsection({
         return SettingsScreens.PrivacyProfilePhotoAllowedContacts;
       case SettingsScreens.PrivacyBio:
         return SettingsScreens.PrivacyBioAllowedContacts;
+      case SettingsScreens.PrivacyBirthday:
+        return SettingsScreens.PrivacyBirthdayAllowedContacts;
+      case SettingsScreens.PrivacyGifts:
+        return SettingsScreens.PrivacyGiftsAllowedContacts;
       case SettingsScreens.PrivacyForwarding:
         return SettingsScreens.PrivacyForwardingAllowedContacts;
       case SettingsScreens.PrivacyPhoneCall:
@@ -226,6 +328,10 @@ function PrivacySubsection({
         return SettingsScreens.PrivacyProfilePhotoDeniedContacts;
       case SettingsScreens.PrivacyBio:
         return SettingsScreens.PrivacyBioDeniedContacts;
+      case SettingsScreens.PrivacyBirthday:
+        return SettingsScreens.PrivacyBirthdayDeniedContacts;
+      case SettingsScreens.PrivacyGifts:
+        return SettingsScreens.PrivacyGiftsDeniedContacts;
       case SettingsScreens.PrivacyForwarding:
         return SettingsScreens.PrivacyForwardingDeniedContacts;
       case SettingsScreens.PrivacyPhoneCall:
@@ -253,22 +359,22 @@ function PrivacySubsection({
           <p className="settings-item-description-larger" dir={lang.isRtl ? 'rtl' : undefined}>{descriptionText}</p>
         )}
       </div>
-      {(primaryExceptionLists.shouldShowAllowed || primaryExceptionLists.shouldShowDenied) && (
+      {!isPremiumRequired && (primaryExceptionLists.shouldShowAllowed || primaryExceptionLists.shouldShowDenied) && (
         <div className="settings-item">
-          <h4 className="settings-item-header mb-4" dir={lang.isRtl ? 'rtl' : undefined}>
-            {lang('PrivacyExceptions')}
+          <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>
+            {oldLang('PrivacyExceptions')}
           </h4>
           {primaryExceptionLists.shouldShowAllowed && (
             <ListItem
               narrow
               icon="add-user"
-              // eslint-disable-next-line react/jsx-no-bind
+
               onClick={() => {
-                onScreenSelect(allowedContactsScreen);
+                openSettingsScreen({ screen: allowedContactsScreen });
               }}
             >
-              <div className="multiline-menu-item full-size">
-                <span className="title">{lang('AlwaysAllow')}</span>
+              <div className="multiline-item full-size">
+                <span className="title">{oldLang('AlwaysAllow')}</span>
                 <span className="subtitle">{allowedString}</span>
               </div>
             </ListItem>
@@ -277,31 +383,37 @@ function PrivacySubsection({
             <ListItem
               narrow
               icon="delete-user"
-              // eslint-disable-next-line react/jsx-no-bind
+
               onClick={() => {
-                onScreenSelect(deniedContactsScreen);
+                openSettingsScreen({ screen: deniedContactsScreen });
               }}
             >
-              <div className="multiline-menu-item full-size">
-                <span className="title">{lang('NeverAllow')}</span>
+              <div className="multiline-item full-size">
+                <span className="title">{oldLang('NeverAllow')}</span>
                 <span className="subtitle">{blockString}</span>
               </div>
             </ListItem>
           )}
         </div>
       )}
+      {isPremiumRequired && <PremiumStatusItem />}
     </>
   );
 }
 
 export default memo(withGlobal<OwnProps>(
-  (global, { screen }): StateProps => {
+  (global, { screen }): Complete<StateProps> => {
     let primaryPrivacy: ApiPrivacySettings | undefined;
     let secondaryPrivacy: ApiPrivacySettings | undefined;
 
     const {
       currentUserId,
-      settings: { privacy },
+      settings: {
+        privacy,
+        byKey: {
+          shouldDisplayGiftsButton,
+        },
+      },
     } = global;
 
     const currentUserFullInfo = selectUserFullInfo(global, currentUserId!);
@@ -322,6 +434,14 @@ export default memo(withGlobal<OwnProps>(
 
       case SettingsScreens.PrivacyBio:
         primaryPrivacy = privacy.bio;
+        break;
+
+      case SettingsScreens.PrivacyBirthday:
+        primaryPrivacy = privacy.birthday;
+        break;
+
+      case SettingsScreens.PrivacyGifts:
+        primaryPrivacy = privacy.gifts;
         break;
 
       case SettingsScreens.PrivacyPhoneP2P:
@@ -348,7 +468,7 @@ export default memo(withGlobal<OwnProps>(
         currentUserId: currentUserId!,
         hasCurrentUserFullInfo: Boolean(currentUserFullInfo),
         currentUserFallbackPhoto: currentUserFullInfo?.fallbackPhoto,
-      };
+      } as Complete<StateProps>;
     }
 
     return {
@@ -357,6 +477,9 @@ export default memo(withGlobal<OwnProps>(
       currentUserId: currentUserId!,
       hasCurrentUserFullInfo: Boolean(currentUserFullInfo),
       currentUserFallbackPhoto: currentUserFullInfo?.fallbackPhoto,
+      isPremiumRequired: screen === SettingsScreens.PrivacyVoiceMessages && !selectIsCurrentUserPremium(global),
+      shouldDisplayGiftsButton,
+      isCurrentUserPremium: selectIsCurrentUserPremium(global),
     };
   },
 )(SettingsPrivacyVisibility));

@@ -1,5 +1,5 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useEffect, useMemo, useRef,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
@@ -10,7 +10,7 @@ import type { ObserveFn } from '../../hooks/useIntersectionObserver';
 import { STICKER_SIZE_SEARCH } from '../../config';
 import { selectIsCurrentUserPremium, selectShouldLoopStickers, selectStickerSet } from '../../global/selectors';
 
-import useLang from '../../hooks/useLang';
+import useOldLang from '../../hooks/useOldLang';
 
 import StickerButton from '../common/StickerButton';
 import Button from '../ui/Button';
@@ -37,10 +37,9 @@ const StickerSetResult: FC<OwnProps & StateProps> = ({
 }) => {
   const { loadStickers, toggleStickerSet, openStickerSet } = getActions();
 
-  // eslint-disable-next-line no-null/no-null
-  const sharedCanvasRef = useRef<HTMLCanvasElement>(null);
+  const sharedCanvasRef = useRef<HTMLCanvasElement>();
 
-  const lang = useLang();
+  const lang = useOldLang();
   const isAdded = set && !set.isArchived && Boolean(set.installedDate);
   const areStickersLoaded = Boolean(set?.stickers);
 
@@ -122,7 +121,7 @@ const StickerSetResult: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { stickerSetId }): StateProps => {
+  (global, { stickerSetId }): Complete<StateProps> => {
     return {
       set: selectStickerSet(global, stickerSetId),
       shouldPlay: selectShouldLoopStickers(global),

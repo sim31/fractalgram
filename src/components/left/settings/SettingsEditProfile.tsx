@@ -1,26 +1,26 @@
-import type { ChangeEvent } from 'react';
-import type { FC } from '../../../lib/teact/teact';
-import React, {
-  memo, useCallback, useEffect, useMemo,
-  useState,
+import {
+  memo, useEffect, useMemo, useState,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { ApiUsername } from '../../../api/types';
+import type { ApiBirthday, ApiUsername } from '../../../api/types';
 import { ApiMediaFormat } from '../../../api/types';
-import { ProfileEditProgress } from '../../../types';
+import { ProfileEditProgress, SettingsScreens } from '../../../types';
 
 import { PURCHASE_USERNAME, TME_LINK_PREFIX, USERNAME_PURCHASE_ERROR } from '../../../config';
 import { getChatAvatarHash } from '../../../global/helpers';
 import { selectTabState, selectUser, selectUserFullInfo } from '../../../global/selectors';
 import { selectCurrentLimit } from '../../../global/selectors/limits';
+import { formatDateToString } from '../../../util/dates/dateFormat';
 import { throttle } from '../../../util/schedulers';
 import renderText from '../../common/helpers/renderText';
 
 import useHistoryBack from '../../../hooks/useHistoryBack';
 import useLang from '../../../hooks/useLang';
+import useLastCallback from '../../../hooks/useLastCallback';
 import useMedia from '../../../hooks/useMedia';
-import usePrevious from '../../../hooks/usePrevious';
+import useOldLang from '../../../hooks/useOldLang';
+import usePreviousDeprecated from '../../../hooks/usePreviousDeprecated';
 
 import ManageUsernames from '../../common/ManageUsernames';
 import SafeLink from '../../common/SafeLink';
@@ -28,7 +28,8 @@ import UsernameInput from '../../common/UsernameInput';
 import AvatarEditable from '../../ui/AvatarEditable';
 import FloatingActionButton from '../../ui/FloatingActionButton';
 import InputText from '../../ui/InputText';
-import Spinner from '../../ui/Spinner';
+import Link from '../../ui/Link';
+import ListItem from '../../ui/ListItem';
 import TextArea from '../../ui/TextArea';
 
 type OwnProps = {
@@ -40,6 +41,7 @@ type StateProps = {
   currentAvatarHash?: string;
   currentFirstName?: string;
   currentLastName?: string;
+  currentBirthday?: ApiBirthday;
   currentBio?: string;
   progress?: ProfileEditProgress;
   checkedUsername?: string;
@@ -53,11 +55,12 @@ const runThrottled = throttle((cb) => cb(), 60000, true);
 
 const ERROR_FIRST_NAME_MISSING = 'Please provide your first name';
 
-const SettingsEditProfile: FC<OwnProps & StateProps> = ({
+const SettingsEditProfile = ({
   isActive,
   currentAvatarHash,
   currentFirstName,
   currentLastName,
+  currentBirthday,
   currentBio,
   progress,
   checkedUsername,
@@ -66,12 +69,15 @@ const SettingsEditProfile: FC<OwnProps & StateProps> = ({
   maxBioLength,
   usernames,
   onReset,
-}) => {
+}: OwnProps & StateProps) => {
   const {
     loadCurrentUser,
     updateProfile,
+    openSettingsScreen,
+    openBirthdaySetupModal,
   } = getActions();
 
+  const oldLang = useOldLang();
   const lang = useLang();
 
   const firstEditableUsername = useMemo(() => usernames?.find(({ isEditable }) => isEditable), [usernames]);
@@ -91,7 +97,7 @@ const SettingsEditProfile: FC<OwnProps & StateProps> = ({
   const isLoading = progress === ProfileEditProgress.InProgress;
   const isUsernameError = editableUsername === false;
 
-  const previousIsUsernameAvailable = usePrevious(isUsernameAvailable);
+  const previousIsUsernameAvailable = usePreviousDeprecated(isUsernameAvailable);
   const renderingIsUsernameAvailable = isUsernameAvailable ?? previousIsUsernameAvailable;
   const shouldRenderUsernamesManage = usernames && usernames.length > 1;
 
@@ -138,31 +144,51 @@ const SettingsEditProfile: FC<OwnProps & StateProps> = ({
     }
   }, [progress]);
 
-  const handlePhotoChange = useCallback((newPhoto: File) => {
-    setPhoto(newPhoto);
-  }, []);
+  const formattedBirthday = useMemo(() => {
+    if (!currentBirthday) return undefined;
 
-  const handleFirstNameChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    const date = new Date(
+      currentBirthday.year || 2024, // Use leap year as fallback
+      currentBirthday.month - 1,
+      currentBirthday.day,
+    );
+
+    return formatDateToString(date, lang.code, true, 'long');
+  }, [currentBirthday, lang]);
+
+  const handlePhotoChange = useLastCallback((newPhoto: File) => {
+    setPhoto(newPhoto);
+  });
+
+  const handleFirstNameChange = useLastCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setFirstName(e.target.value);
     setIsProfileFieldsTouched(true);
-  }, []);
+  });
 
-  const handleLastNameChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+  const handleLastNameChange = useLastCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setLastName(e.target.value);
     setIsProfileFieldsTouched(true);
-  }, []);
+  });
 
-  const handleBioChange = useCallback((e: ChangeEvent<HTMLTextAreaElement>) => {
+  const handleBioChange = useLastCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setBio(e.target.value);
     setIsProfileFieldsTouched(true);
-  }, []);
+  });
 
-  const handleUsernameChange = useCallback((value: string | false) => {
+  const handleUsernameChange = useLastCallback((value: string | false) => {
     setEditableUsername(value);
     setIsUsernameTouched(currentUsername !== value);
-  }, [currentUsername]);
+  });
 
-  const handleProfileSave = useCallback(() => {
+  const handleBirthdayPrivacyClick = useLastCallback(() => {
+    openSettingsScreen({ screen: SettingsScreens.PrivacyBirthday });
+  });
+
+  const handleBirthdayClick = useLastCallback(() => {
+    openBirthdaySetupModal({ currentBirthday });
+  });
+
+  const handleProfileSave = useLastCallback(() => {
     const trimmedFirstName = firstName.trim();
     const trimmedLastName = lastName.trim();
     const trimmedBio = bio.trim();
@@ -185,19 +211,14 @@ const SettingsEditProfile: FC<OwnProps & StateProps> = ({
         username: editableUsername,
       }),
     });
-  }, [
-    photo,
-    firstName, lastName, bio, isProfileFieldsTouched,
-    editableUsername, isUsernameTouched,
-    updateProfile,
-  ]);
+  });
 
   function renderPurchaseLink() {
     const purchaseInfoLink = `${TME_LINK_PREFIX}${PURCHASE_USERNAME}`;
 
     return (
-      <p className="settings-item-description" dir={lang.isRtl ? 'rtl' : undefined}>
-        {(lang('lng_username_purchase_available') as string)
+      <p className="settings-item-description" dir={oldLang.isRtl ? 'rtl' : undefined}>
+        {(oldLang('lng_username_purchase_available'))
           .replace('{link}', '%PURCHASE_LINK%')
           .split('%')
           .map((s) => {
@@ -210,59 +231,85 @@ const SettingsEditProfile: FC<OwnProps & StateProps> = ({
   return (
     <div className="settings-fab-wrapper">
       <div className="settings-content no-border custom-scroll">
-        <div className="settings-edit-profile settings-item">
-          <AvatarEditable
-            currentAvatarBlobUrl={currentAvatarBlobUrl}
-            onChange={handlePhotoChange}
-            title="Edit your profile photo"
-            disabled={isLoading}
-          />
-          <InputText
-            value={firstName}
-            onChange={handleFirstNameChange}
-            label={lang('FirstName')}
-            disabled={isLoading}
-            error={error === ERROR_FIRST_NAME_MISSING ? error : undefined}
-          />
-          <InputText
-            value={lastName}
-            onChange={handleLastNameChange}
-            label={lang('LastName')}
-            disabled={isLoading}
-          />
-          <TextArea
-            value={bio}
-            onChange={handleBioChange}
-            label={lang('UserBio')}
-            disabled={isLoading}
-            maxLength={maxBioLength}
-            maxLengthIndicator={maxBioLength ? (maxBioLength - bio.length).toString() : undefined}
-          />
+        <div className="settings-item">
+          <div className="settings-input">
+            <AvatarEditable
+              currentAvatarBlobUrl={currentAvatarBlobUrl}
+              onChange={handlePhotoChange}
+              title={lang('AriaSettingsEditProfilePhoto')}
+              disabled={isLoading}
+            />
+            <InputText
+              value={firstName}
+              onChange={handleFirstNameChange}
+              label={oldLang('FirstName')}
+              disabled={isLoading}
+              error={error === ERROR_FIRST_NAME_MISSING ? error : undefined}
+            />
+            <InputText
+              value={lastName}
+              onChange={handleLastNameChange}
+              label={oldLang('LastName')}
+              disabled={isLoading}
+            />
+            <TextArea
+              value={bio}
+              onChange={handleBioChange}
+              label={oldLang('UserBio')}
+              disabled={isLoading}
+              maxLength={maxBioLength}
+              maxLengthIndicator={maxBioLength ? (maxBioLength - bio.length).toString() : undefined}
+            />
+          </div>
 
-          <p className="settings-item-description" dir={lang.isRtl ? 'rtl' : undefined}>
-            {renderText(lang('lng_settings_about_bio'), ['br', 'simple_markdown'])}
+          <p className="settings-item-description" dir={oldLang.isRtl ? 'rtl' : undefined}>
+            {renderText(oldLang('lng_settings_about_bio'), ['br', 'simple_markdown'])}
           </p>
         </div>
 
         <div className="settings-item">
-          <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>{lang('Username')}</h4>
+          <ListItem
+            icon="gift"
+            narrow
+            rightElement={formattedBirthday ?
+              <span className="settings-birthday-date">{formattedBirthday}</span>
+              : undefined}
+            onClick={handleBirthdayClick}
+          >
+            <span className="flex-grow">{lang('SettingsBirthday')}</span>
+          </ListItem>
+          <p className="settings-item-description" dir={oldLang.isRtl ? 'rtl' : undefined}>
+            {lang('BirthdayPrivacySuggestion', {
+              link: <Link isPrimary onClick={handleBirthdayPrivacyClick}>{lang('BirthdayPrivacySuggestionLink')}</Link>,
+            }, { withNodes: true })}
+          </p>
+        </div>
 
-          <UsernameInput
-            currentUsername={currentUsername}
-            isLoading={isLoading}
-            isUsernameAvailable={isUsernameAvailable}
-            checkedUsername={checkedUsername}
-            onChange={handleUsernameChange}
-          />
+        <div className="settings-item">
+          <h4 className="settings-item-header" dir={oldLang.isRtl ? 'rtl' : undefined}>{oldLang('Username')}</h4>
+
+          <div className="settings-input">
+            <UsernameInput
+              currentUsername={currentUsername}
+              isLoading={isLoading}
+              isUsernameAvailable={isUsernameAvailable}
+              checkedUsername={checkedUsername}
+              onChange={handleUsernameChange}
+            />
+          </div>
 
           {editUsernameError === USERNAME_PURCHASE_ERROR && renderPurchaseLink()}
-          <p className="settings-item-description" dir={lang.isRtl ? 'rtl' : undefined}>
-            {renderText(lang('UsernameHelp'), ['br', 'simple_markdown'])}
+          <p className="settings-item-description" dir={oldLang.isRtl ? 'rtl' : undefined}>
+            {renderText(oldLang('UsernameHelp'), ['br', 'simple_markdown'])}
           </p>
           {editableUsername && (
-            <p className="settings-item-description" dir={lang.isRtl ? 'rtl' : undefined}>
-              {lang('lng_username_link')}<br />
-              <span className="username-link">{TME_LINK_PREFIX}{editableUsername}</span>
+            <p className="settings-item-description" dir={oldLang.isRtl ? 'rtl' : undefined}>
+              {oldLang('lng_username_link')}
+              <br />
+              <span className="username-link">
+                {TME_LINK_PREFIX}
+                {editableUsername}
+              </span>
             </p>
           )}
         </div>
@@ -279,20 +326,16 @@ const SettingsEditProfile: FC<OwnProps & StateProps> = ({
         isShown={isSaveButtonShown}
         onClick={handleProfileSave}
         disabled={isLoading}
-        ariaLabel={lang('Save')}
-      >
-        {isLoading ? (
-          <Spinner color="white" />
-        ) : (
-          <i className="icon icon-check" />
-        )}
-      </FloatingActionButton>
+        ariaLabel={oldLang('Save')}
+        iconName="check"
+        isLoading={isLoading}
+      />
     </div>
   );
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
     const { currentUserId } = global;
     const {
       progress, isUsernameAvailable, checkedUsername, error: editUsernameError,
@@ -301,28 +344,19 @@ export default memo(withGlobal<OwnProps>(
 
     const maxBioLength = selectCurrentLimit(global, 'aboutLength');
 
-    if (!currentUser) {
-      return {
-        progress,
-        checkedUsername,
-        isUsernameAvailable,
-        editUsernameError,
-        maxBioLength,
-      };
-    }
-
     const {
       firstName: currentFirstName,
       lastName: currentLastName,
       usernames,
-    } = currentUser;
+    } = currentUser || {};
     const currentUserFullInfo = currentUserId ? selectUserFullInfo(global, currentUserId) : undefined;
-    const currentAvatarHash = getChatAvatarHash(currentUser);
+    const currentAvatarHash = currentUser && getChatAvatarHash(currentUser);
 
     return {
       currentAvatarHash,
       currentFirstName,
       currentLastName,
+      currentBirthday: currentUserFullInfo?.birthday,
       currentBio: currentUserFullInfo?.bio,
       progress,
       isUsernameAvailable,

@@ -1,29 +1,32 @@
-import type { FC } from '../lib/teact/teact';
-import React, { useEffect, useLayoutEffect } from '../lib/teact/teact';
-import { getActions, withGlobal } from '../global';
+import { useEffect, useLayoutEffect } from '../lib/teact/teact';
+import { withGlobal } from '../global';
 
 import type { GlobalState } from '../global/types';
 import type { ThemeKey } from '../types';
 import type { UiLoaderPage } from './common/UiLoader';
 
-import {
-  DARK_THEME_BG_COLOR, INACTIVE_MARKER, LIGHT_THEME_BG_COLOR, PAGE_TITLE,
-} from '../config';
-import { selectTabState, selectTheme } from '../global/selectors';
-import { addActiveTabChangeListener } from '../util/activeTabMonitor';
+import { DARK_THEME_BG_COLOR, INACTIVE_MARKER, LIGHT_THEME_BG_COLOR, PAGE_TITLE, PAGE_TITLE_TAURI } from '../config';
+import { forceMutation } from '../lib/fasterdom/stricterdom.ts';
+import { selectActionMessageBg, selectTabState, selectTheme } from '../global/selectors';
+import { IS_TAURI } from '../util/browser/globalEnvironment';
+import { IS_INSTALL_PROMPT_SUPPORTED, PLATFORM_ENV } from '../util/browser/windowEnvironment';
 import buildClassName from '../util/buildClassName';
 import { setupBeforeInstallPrompt } from '../util/installPrompt';
-import { parseInitialLocationHash } from '../util/routing';
-import { hasStoredSession } from '../util/sessions';
-import { IS_INSTALL_PROMPT_SUPPORTED, IS_MULTITAB_SUPPORTED, PLATFORM_ENV } from '../util/windowEnvironment';
+import { ACCOUNT_SLOT, getAccountsInfo, getAccountSlotUrl } from '../util/multiaccount';
+import { hasEncryptedSession } from '../util/passcode';
+import { getInitialLocationHash, parseInitialLocationHash } from '../util/routing';
+import { checkSessionLocked, hasStoredSession } from '../util/sessions';
 import { updateSizes } from '../util/windowSize';
 
+import useTauriDrag from '../hooks/tauri/useTauriDrag';
 import useAppLayout from '../hooks/useAppLayout';
-import useFlag from '../hooks/useFlag';
 import usePrevious from '../hooks/usePrevious';
+import { useSignalEffect } from '../hooks/useSignalEffect';
+import { getIsInBackground } from '../hooks/window/useBackgroundMode';
 
 // import Test from './test/TestSvg';
 import Auth from './auth/Auth';
+import Notifications from './common/Notifications';
 import UiLoader from './common/UiLoader';
 import AppInactive from './main/AppInactive';
 import LockScreen from './main/LockScreen.async';
@@ -33,12 +36,14 @@ import Transition from './ui/Transition';
 import styles from './App.module.scss';
 
 type StateProps = {
-  authState: GlobalState['authState'];
+  authState: GlobalState['auth']['state'];
   isScreenLocked?: boolean;
   hasPasscode?: boolean;
-  isInactiveAuth?: boolean;
+  inactiveReason?: 'auth' | 'otherClient';
   hasWebAuthTokenFailed?: boolean;
+  isTestServer?: boolean;
   theme: ThemeKey;
+  actionMessageBg?: string;
 };
 
 enum AppScreens {
@@ -49,19 +54,19 @@ enum AppScreens {
 }
 
 const TRANSITION_RENDER_COUNT = Object.keys(AppScreens).length / 2;
-const INACTIVE_PAGE_TITLE = `${PAGE_TITLE} ${INACTIVE_MARKER}`;
+const ACTIVE_PAGE_TITLE = IS_TAURI ? PAGE_TITLE_TAURI : PAGE_TITLE;
+const INACTIVE_PAGE_TITLE = `${ACTIVE_PAGE_TITLE} ${INACTIVE_MARKER}`;
 
-const App: FC<StateProps> = ({
+const App = ({
   authState,
   isScreenLocked,
   hasPasscode,
-  isInactiveAuth,
+  inactiveReason,
   hasWebAuthTokenFailed,
+  isTestServer,
   theme,
-}) => {
-  const { disconnect } = getActions();
-
-  const [isInactive, markInactive, unmarkInactive] = useFlag(false);
+  actionMessageBg,
+}: StateProps) => {
   const { isMobile } = useAppLayout();
   const isMobileOs = PLATFORM_ENV === 'iOS' || PLATFORM_ENV === 'Android';
 
@@ -69,6 +74,34 @@ const App: FC<StateProps> = ({
     if (IS_INSTALL_PROMPT_SUPPORTED) {
       setupBeforeInstallPrompt();
     }
+  }, []);
+
+  useEffect(() => {
+    const hash = getInitialLocationHash();
+    // If there is no stored session on first slot, navigate to any other slot with stored session
+    if (!hasStoredSession() && !ACCOUNT_SLOT && !hash) {
+      const accounts = getAccountsInfo();
+      Object.keys(accounts)
+        .map(Number)
+        .sort((a, b) => b - a)
+        .forEach((key) => {
+          const slot = Number(key);
+          const account = accounts[slot];
+          if (account) {
+            const url = getAccountSlotUrl(slot);
+            window.location.href = `${url}#${hash || 'login'}`;
+          }
+        });
+    }
+
+    // TODO[Passcode]: Remove when multiacc passcode is implemented
+    const checkMultiaccPasscode = async () => {
+      if (checkSessionLocked() && ACCOUNT_SLOT && await hasEncryptedSession()) {
+        const url = getAccountSlotUrl(1);
+        window.location.href = url;
+      }
+    };
+    checkMultiaccPasscode();
   }, []);
 
   // Prevent drop on elements that do not accept it
@@ -99,10 +132,10 @@ const App: FC<StateProps> = ({
 
   // return <Test />;
 
-  let activeKey: number;
+  let activeKey: AppScreens;
   let page: UiLoaderPage | undefined;
 
-  if (isInactive) {
+  if (inactiveReason) {
     activeKey = AppScreens.inactive;
   } else if (isScreenLocked) {
     page = 'lock';
@@ -136,7 +169,7 @@ const App: FC<StateProps> = ({
         activeKey = AppScreens.main;
         break;
     }
-  } else if (hasStoredSession(true)) {
+  } else if (hasStoredSession()) {
     page = 'main';
     activeKey = AppScreens.main;
   } else if (hasPasscode) {
@@ -160,29 +193,15 @@ const App: FC<StateProps> = ({
   }, []);
 
   useEffect(() => {
-    if (IS_MULTITAB_SUPPORTED) return;
-
-    addActiveTabChangeListener(() => {
-      disconnect();
+    if (inactiveReason) {
       document.title = INACTIVE_PAGE_TITLE;
-
-      markInactive();
-    });
-  }, [activeKey, disconnect, markInactive]);
-
-  useEffect(() => {
-    if (isInactiveAuth) {
-      document.title = INACTIVE_PAGE_TITLE;
-      markInactive();
     } else {
-      document.title = PAGE_TITLE;
-      unmarkInactive();
+      document.title = ACTIVE_PAGE_TITLE;
     }
-  }, [isInactiveAuth, markInactive, unmarkInactive]);
+  }, [inactiveReason]);
 
   const prevActiveKey = usePrevious(activeKey);
 
-  // eslint-disable-next-line consistent-return
   function renderContent() {
     switch (activeKey) {
       case AppScreens.auth:
@@ -192,9 +211,11 @@ const App: FC<StateProps> = ({
       case AppScreens.lock:
         return <LockScreen isLocked={isScreenLocked} />;
       case AppScreens.inactive:
-        return <AppInactive />;
+        return <AppInactive inactiveReason={inactiveReason!} />;
     }
   }
+
+  useTauriDrag();
 
   useLayoutEffect(() => {
     document.body.classList.add(styles.bg);
@@ -206,6 +227,20 @@ const App: FC<StateProps> = ({
       theme === 'dark' ? DARK_THEME_BG_COLOR : LIGHT_THEME_BG_COLOR,
     );
   }, [theme]);
+
+  useLayoutEffect(() => {
+    if (actionMessageBg) {
+      document.body.style.setProperty('--action-message-bg', actionMessageBg);
+    }
+  }, [actionMessageBg]);
+
+  const getIsInBackgroundLocal = getIsInBackground;
+  useSignalEffect(() => {
+    // Mutation forced to avoid RAF throttling in background
+    forceMutation(() => {
+      document.body.classList.toggle('in-background', getIsInBackgroundLocal());
+    }, document.body);
+  }, [getIsInBackgroundLocal]);
 
   return (
     <UiLoader page={page} isMobile={isMobile}>
@@ -221,19 +256,24 @@ const App: FC<StateProps> = ({
       >
         {renderContent}
       </Transition>
+      {activeKey === AppScreens.auth && isTestServer && <div className="test-server-badge">Test server</div>}
+      <Notifications />
     </UiLoader>
   );
 };
 
 export default withGlobal(
-  (global): StateProps => {
+  (global): Complete<StateProps> => {
+    const { state: authState, hasWebAuthTokenFailed, hasWebAuthTokenPasswordRequired } = global.auth;
     return {
-      authState: global.authState,
+      authState,
       isScreenLocked: global.passcode?.isScreenLocked,
       hasPasscode: global.passcode?.hasPasscode,
-      isInactiveAuth: selectTabState(global).isInactive,
-      hasWebAuthTokenFailed: global.hasWebAuthTokenFailed || global.hasWebAuthTokenPasswordRequired,
+      inactiveReason: selectTabState(global).inactiveReason,
+      hasWebAuthTokenFailed: hasWebAuthTokenFailed || hasWebAuthTokenPasswordRequired,
       theme: selectTheme(global),
+      isTestServer: global.config?.isTestServer,
+      actionMessageBg: selectActionMessageBg(global),
     };
   },
 )(App);

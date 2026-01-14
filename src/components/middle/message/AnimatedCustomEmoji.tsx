@@ -1,15 +1,16 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo } from '../../../lib/teact/teact';
+import { memo } from '../../../lib/teact/teact';
 import { withGlobal } from '../../../global';
 
 import type { ApiSticker } from '../../../api/types';
-import type { ActiveEmojiInteraction } from '../../../global/types';
 import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
+import type { ActiveEmojiInteraction } from '../../../types';
 
 import {
   selectAnimatedEmojiEffect,
   selectAnimatedEmojiSound,
   selectCanPlayAnimatedEmojis,
+  selectCustomEmoji,
 } from '../../../global/selectors';
 import buildClassName from '../../../util/buildClassName';
 import { LIKE_STICKER_ID } from '../../common/helpers/mediaDimensions';
@@ -78,7 +79,7 @@ const AnimatedCustomEmoji: FC<OwnProps & StateProps> = ({
 };
 
 export default memo(withGlobal<OwnProps>((global, { customEmojiId, withEffects }) => {
-  const sticker = global.customEmojis.byId[customEmojiId];
+  const sticker = selectCustomEmoji(global, customEmojiId);
 
   return {
     sticker,

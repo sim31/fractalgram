@@ -3,7 +3,7 @@ import type { ApiAttachment } from '../../../../api/types';
 import {
   GIF_MIME_TYPE,
   SUPPORTED_AUDIO_CONTENT_TYPES,
-  SUPPORTED_IMAGE_CONTENT_TYPES,
+  SUPPORTED_PHOTO_CONTENT_TYPES,
   SUPPORTED_VIDEO_CONTENT_TYPES,
 } from '../../../../config';
 import { parseAudioMetadata } from '../../../../util/audio';
@@ -14,7 +14,8 @@ import {
 } from '../../../../util/files';
 import { scaleImage } from '../../../../util/imageResize';
 
-const MAX_QUICK_IMG_SIZE = 1280; // px
+const MAX_STANDARD_QUALITY_IMG_SIZE = 1280; // px
+const MAX_HIGH_QUALITY_IMG_SIZE = 2560;
 const MAX_THUMB_IMG_SIZE = 40; // px
 const MAX_ASPECT_RATIO = 20;
 const FILE_EXT_REGEX = /\.[^/.]+$/;
@@ -28,22 +29,25 @@ export default async function buildAttachment(
   let audio;
   let previewBlobUrl;
   let shouldSendAsFile;
+  const shouldSendInHighQuality = options?.shouldSendInHighQuality;
 
-  if (SUPPORTED_IMAGE_CONTENT_TYPES.has(mimeType)) {
+  if (SUPPORTED_PHOTO_CONTENT_TYPES.has(mimeType)) {
     const img = await preloadImage(blobUrl);
     const { width, height } = img;
     shouldSendAsFile = !validateAspectRatio(width, height);
 
-    const shouldShrink = Math.max(width, height) > MAX_QUICK_IMG_SIZE;
+    const maxQuickImgSize = shouldSendInHighQuality ? MAX_HIGH_QUALITY_IMG_SIZE : MAX_STANDARD_QUALITY_IMG_SIZE;
+    const shouldShrink = Math.max(width, height) > maxQuickImgSize;
     const isGif = mimeType === GIF_MIME_TYPE;
 
     if (!shouldSendAsFile) {
       if (!options?.compressedBlobUrl && !isGif && (shouldShrink || mimeType !== 'image/jpeg')) {
         const resizedUrl = await scaleImage(
-          blobUrl, shouldShrink ? MAX_QUICK_IMG_SIZE / Math.max(width, height) : 1, 'image/jpeg',
+          blobUrl, shouldShrink ? maxQuickImgSize / Math.max(width, height) : 1, 'image/jpeg',
         );
         URL.revokeObjectURL(blobUrl);
         return buildAttachment(filename, blob, {
+          ...options,
           compressedBlobUrl: resizedUrl,
         });
       }
@@ -68,7 +72,7 @@ export default async function buildAttachment(
       const { videoWidth: width, videoHeight: height, duration } = await preloadVideo(blobUrl);
       shouldSendAsFile = !validateAspectRatio(width, height);
       if (!shouldSendAsFile) {
-        quick = { width: width!, height: height!, duration: duration! };
+        quick = { width, height, duration };
       }
     } catch (err) {
       shouldSendAsFile = true;
@@ -88,6 +92,7 @@ export default async function buildAttachment(
   }
 
   return {
+    blob,
     blobUrl,
     filename,
     mimeType,
@@ -117,7 +122,7 @@ export function prepareAttachmentsToSend(
 
     return {
       ...attach,
-      shouldSendAsFile: !attach.voice ? true : undefined,
+      shouldSendAsFile: !(attach.voice || attach.audio) || undefined,
       shouldSendAsSpoiler: undefined,
     };
   });

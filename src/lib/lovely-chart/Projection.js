@@ -1,4 +1,4 @@
-import { proxyMerge } from './utils';
+import { proxyMerge } from './utils.js';
 
 export function createProjection(params) {
   const {
@@ -22,7 +22,7 @@ export function createProjection(params) {
   if (end === 1) {
     effectiveWidth -= xPadding;
   }
-  const xFactor = effectiveWidth / ((end - begin) * totalXWidth);
+  const xFactor = effectiveWidth / ((end !== begin ? end - begin : 1) * totalXWidth);
   let xOffsetPx = (begin * totalXWidth) * xFactor;
   if (begin === 0) {
     xOffsetPx -= xPadding;

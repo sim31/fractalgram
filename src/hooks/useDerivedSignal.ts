@@ -1,6 +1,7 @@
+import { useSignal } from '../lib/teact/teact';
+
 import type { Signal } from '../util/signals';
 
-import useSignal from './useSignal';
 import { useSignalEffect } from './useSignalEffect';
 import { useStateRef } from './useStateRef';
 import useSyncEffect from './useSyncEffect';
@@ -34,7 +35,6 @@ function useDerivedSignal<T>(resolverOrDependency: Resolver<T> | T, dependencies
   // eslint-disable-next-line react-hooks-static-deps/exhaustive-deps
   useSyncEffect(runCurrentResolver, dependencies);
 
-  // eslint-disable-next-line react-hooks-static-deps/exhaustive-deps
   useSignalEffect(runCurrentResolver, dependencies);
 
   return getValue as Signal<T>;

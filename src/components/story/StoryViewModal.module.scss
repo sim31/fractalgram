@@ -1,12 +1,8 @@
 .views-list {
   display: flex;
   flex-direction: column;
+  height: min(35rem, 80vh);
   padding-bottom: 0 !important;
-
-  height: 35rem;
-  @supports (height: min(80vh, 35rem)) {
-    height: min(80vh, 35rem);
-  }
 }
 
 .views-list-loading {
@@ -19,15 +15,17 @@
 }
 
 .centeredInfo {
-  width: 100%;
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+
+  width: 100%;
 }
 
 .view-reaction {
   --custom-emoji-size: 1.5rem;
+
   margin-inline-start: 0.25rem;
 }
 
@@ -37,10 +35,10 @@
 }
 
 .content {
-  min-height: 17rem;
-  overflow-y: scroll;
   position: relative;
+  overflow-y: scroll;
   flex-grow: 1;
+  min-height: 17rem;
 }
 
 .top-button {
@@ -71,9 +69,9 @@
 }
 
 .icon-sort {
+  margin-inline-end: 0.25rem;
   font-size: 1.25rem;
   color: #FFFFFF;
-  margin-inline-end: 0.25rem;
 }
 
 .icon-down {
@@ -86,8 +84,8 @@
 }
 
 .bottom-info {
-  font-size: 0.875rem;
   margin: 0.25rem 0 0.5rem;
+  font-size: 0.875rem;
 }
 
 .scrolled {
@@ -95,10 +93,11 @@
 }
 
 .footer {
+  padding-block: 0.25rem;
   border-top: 0.0625rem solid var(--color-borders);
 }
 
-.close {
+.closeButton {
   margin-block: 0.25rem;
 }
 
@@ -116,6 +115,10 @@
 
 .menuBubble {
   max-width: min(25rem, 80vw);
+}
+
+.with-colored-status :global(.status-icon) {
+  color: var(--color-text-green);
 }
 
 @keyframes fadeIn {

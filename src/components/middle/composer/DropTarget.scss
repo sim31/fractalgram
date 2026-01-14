@@ -1,24 +1,31 @@
 .DropTarget {
-  border-radius: var(--border-radius-default);
-  background: var(--color-background);
-  padding: 1.25rem;
+  position: relative;
+
+  display: flex;
   flex: 1 1 auto;
+
   width: 100%;
   max-width: 43.75rem;
-  margin-left: auto;
   margin-right: auto;
   margin-bottom: 0.3125rem;
-  display: flex;
+  margin-left: auto;
+  padding: 1.25rem;
+  border-radius: var(--border-radius-default);
+
   color: #a4acb3;
+
+  background: var(--color-background);
   box-shadow: 0 1px 2px var(--color-default-shadow);
 
-  @media (max-height: 350px) {
-    padding: 0.75rem;
-  }
+  &.hovered {
+    .target-content {
+      color: var(--color-primary);
+    }
 
-  &.hovered .target-content {
-    color: var(--color-primary);
-    background-image: var(--drag-target-border-hovered);
+    .target-outline {
+      stroke: var(--color-primary);
+      animation-play-state: running;
+    }
   }
 
   & + & {
@@ -29,40 +36,68 @@
     margin-bottom: 0;
   }
 
+  .target-outline-container {
+    pointer-events: none;
+    overflow: visible;
+    width: 100%;
+    height: 100%;
+  }
+
+  .target-outline {
+    fill: none;
+    stroke: var(--color-placeholders);
+    stroke-dasharray: 11, 8;
+    stroke-dashoffset: 0;
+    stroke-linecap: round;
+    stroke-width: 2;
+
+    transition: 0.2s stroke;
+    animation: outline 0.5s linear infinite;
+    animation-play-state: paused;
+  }
+
   .target-content {
     pointer-events: none;
-    background-image: var(--drag-target-border);
-    border-radius: 0.5rem;
-    flex: 1 1 100%;
+
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+
     display: flex;
+    flex: 1 1 100%;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    transition: 0.2s color, 0.2s background-image;
+
+    border-radius: 0.5rem;
+
+    transition: 0.2s color;
   }
 
   .icon {
+    margin-bottom: 2.25rem;
     font-size: 6.25rem;
     line-height: 4.6875rem;
-    margin-bottom: 2.25rem;
 
     @media (max-height: 520px) {
+      margin-bottom: 1rem;
       font-size: 4.25rem;
       line-height: 3.5rem;
-      margin-bottom: 1rem;
     }
 
     @media (max-height: 450px) {
+      margin-top: 0.25rem;
+      margin-bottom: 0.5rem;
       font-size: 2rem;
       line-height: 1rem;
-      margin-bottom: 0.5rem;
-      margin-top: 0.25rem;
     }
   }
 
   .title {
     font-size: 1.3125rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
+    text-align: center;
     letter-spacing: -0.18px;
 
     @media (max-height: 450px) {
@@ -72,10 +107,24 @@
 
   .description {
     font-size: 1rem;
+    text-align: center;
     letter-spacing: 0.3px;
 
     @media (max-height: 450px) {
       font-size: 0.875rem;
+    }
+  }
+
+  @media (max-height: 350px) {
+    padding: 0.75rem;
+  }
+
+  @keyframes outline {
+    from {
+      stroke-dashoffset: 0;
+    }
+    to {
+      stroke-dashoffset: -19;
     }
   }
 }

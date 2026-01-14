@@ -1,77 +1,98 @@
-.code-block {
-  white-space: pre-wrap;
-  background-color: var(--color-code-bg);
-  margin: 0;
-  padding: 0.5rem;
-  margin-block: 0.25rem;
-  border-radius: 4px;
+.CodeBlock {
   position: relative;
+
   overflow: hidden;
 
-  &:hover {
-    .code-overlay {
-      opacity: 1;
+  margin: 0;
+  margin-block: 0.25rem;
+  padding-block: 0.1875rem;
+  border-radius: 0.25rem;
+
+  color: var(--color-text);
+
+  background-color: var(--color-code-bg);
+
+  .code-title {
+    overflow: hidden;
+
+    margin-bottom: 0.5rem;
+
+    font-size: calc(var(--message-text-size, 1rem) - 0.125rem);
+    font-weight: var(--font-weight-medium);
+    color: var(--accent-color);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .code-block {
+    overflow: hidden;
+    margin: 0;
+    white-space: pre-wrap;
+
+    &:hover {
+      .code-overlay {
+        opacity: 1;
+      }
     }
-  }
 
-  &.no-word-wrap {
-    white-space: pre;
-    padding-bottom: 0.25rem;
-  }
+    &.no-word-wrap {
+      padding-bottom: 0.25rem;
+      white-space: pre;
+    }
 
-  html.theme-light & {
-    --color-type: #0053d4;
-    --color-keyword: #388e22;
-    --color-class: #3e6c20;
-    --color-string: #9a1111;
-    --color-template: #9A5334;
-    --color-selector: #9A5334;
-    --color-function: #a753b7;
-    --color-comment: #616161;
-    --color-section: #9a1111;
-    --color-variable: #BD63C5;
-    --color-attribute: #276b8f;
-    --color-link: #276b8f;
-    --color-tag: #000000;
-  }
+    html.theme-light & {
+      --color-type: #0053d4;
+      --color-keyword: #388e22;
+      --color-class: #3e6c20;
+      --color-string: #9a1111;
+      --color-template: #9a5334;
+      --color-selector: #9a5334;
+      --color-function: #a753b7;
+      --color-comment: #616161;
+      --color-section: #9a1111;
+      --color-variable: #bd63c5;
+      --color-attribute: #276b8f;
+      --color-link: #276b8f;
+      --color-tag: #000000;
+    }
 
-  html.theme-dark :not(.own) & {
-    --color-type: #56b6c2;
-    --color-keyword: #c678dd;
-    --color-class: #e06c75;
-    --color-string: #98c379;
-    --color-template: #d19a66;
-    --color-selector: #e06c75;
-    --color-function: #61aeee;
-    --color-comment: #5c6370;
-    --color-section: #e06c75;
-    --color-variable: #d19a66;
-    --color-attribute: #d19a66;
-    --color-link: #d19a66;
-    --color-tag: #e06c75;
-  }
+    html.theme-dark :not(.own) & {
+      --color-type: #56b6c2;
+      --color-keyword: #c678dd;
+      --color-class: #e06c75;
+      --color-string: #98c379;
+      --color-template: #d19a66;
+      --color-selector: #e06c75;
+      --color-function: #61aeee;
+      --color-comment: #5c6370;
+      --color-section: #e06c75;
+      --color-variable: #d19a66;
+      --color-attribute: #d19a66;
+      --color-link: #d19a66;
+      --color-tag: #e06c75;
+    }
 
-  html.theme-dark .own & {
-    --color-type: #9EFFFF;
-    --color-keyword: #ffe900;
-    --color-class: #b2f5ff;
-    --color-string: #fedcad;
-    --color-template: #ffe900;
-    --color-selector: #b2f5ff;
-    --color-function: #87ff91;
-    --color-comment: #cbcbcb;
-    --color-section: #b2f5ff;
-    --color-variable: #ffe900;
-    --color-attribute: #ffe900;
-    --color-link: #ffe900;
-    --color-tag: #b2f5ff;
-  }
+    html.theme-dark .own & {
+      --color-type: #9effff;
+      --color-keyword: #ffe900;
+      --color-class: #b2f5ff;
+      --color-string: #fedcad;
+      --color-template: #ffe900;
+      --color-selector: #b2f5ff;
+      --color-function: #87ff91;
+      --color-comment: #cbcbcb;
+      --color-section: #b2f5ff;
+      --color-variable: #ffe900;
+      --color-attribute: #ffe900;
+      --color-link: #ffe900;
+      --color-tag: #b2f5ff;
+    }
 
-
-  .hljs {
-    display: block;
-    overflow-x: auto;
-    color: var(--color-text);
+    .hljs {
+      overflow-x: auto;
+      display: block;
+      color: var(--color-text);
+    }
   }
 }
 
@@ -81,6 +102,7 @@
 .hljs-name {
   color: var(--color-keyword);
 }
+
 .hljs-link {
   color: var(--color-link);
   text-decoration: underline;
@@ -116,13 +138,14 @@
 
 .hljs-comment,
 .hljs-quote {
-  color: var(--color-comment);
   font-style: italic;
+  color: var(--color-comment);
 }
 
 .hljs-meta,
 .hljs-meta .hljs-keyword,
-.hljs-tag, .hljs-doctag {
+.hljs-tag,
+.hljs-doctag {
   color: var(--color-tag);
 }
 

@@ -1,9 +1,9 @@
 import type { FC } from '../../lib/teact/teact';
-import React, { memo } from '../../lib/teact/teact';
+import { memo } from '../../lib/teact/teact';
 
 import type { ConnectionStatus } from '../../hooks/useConnectionStatus';
 
-import useLang from '../../hooks/useLang';
+import useOldLang from '../../hooks/useOldLang';
 
 import Button from '../ui/Button';
 import Spinner from '../ui/Spinner';
@@ -22,7 +22,7 @@ const ConnectionStatusOverlay: FC<OwnProps> = ({
   connectionStatusText,
   onClick,
 }) => {
-  const lang = useLang();
+  const lang = useOldLang();
 
   return (
     <div id="ConnectionStatusOverlay" dir={lang.isRtl ? 'rtl' : undefined} onClick={onClick}>
@@ -36,9 +36,8 @@ const ConnectionStatusOverlay: FC<OwnProps> = ({
         round
         size="tiny"
         color="translucent-black"
-      >
-        <span className="icon icon-close" />
-      </Button>
+        iconName="close"
+      />
     </div>
   );
 };

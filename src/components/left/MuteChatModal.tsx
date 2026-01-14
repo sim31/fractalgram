@@ -1,12 +1,12 @@
 import type { FC } from '../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useMemo, useState,
 } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
-import { MAX_INT_32 } from '../../config';
+import { MUTE_INDEFINITE_TIMESTAMP } from '../../config';
 
-import useLang from '../../hooks/useLang';
+import useOldLang from '../../hooks/useOldLang';
 
 import Button from '../ui/Button';
 import Modal from '../ui/Modal';
@@ -39,7 +39,7 @@ const MuteChatModal: FC<OwnProps> = ({
   const [muteUntilOption, setMuteUntilOption] = useState(MuteDuration.Forever);
   const { updateChatMutedState, updateTopicMutedState } = getActions();
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const muteForOptions = useMemo(() => [
     { label: lang('MuteFor.Hours', 1), value: MuteDuration.OneHour },
@@ -51,16 +51,16 @@ const MuteChatModal: FC<OwnProps> = ({
   ], [lang]);
 
   const handleSubmit = useCallback(() => {
-    let muteUntil: number;
+    let mutedUntil: number;
     if (muteUntilOption === MuteDuration.Forever) {
-      muteUntil = MAX_INT_32;
+      mutedUntil = MUTE_INDEFINITE_TIMESTAMP;
     } else {
-      muteUntil = Math.floor(Date.now() / 1000) + Number(muteUntilOption);
+      mutedUntil = Math.floor(Date.now() / 1000) + Number(muteUntilOption);
     }
     if (topicId) {
-      updateTopicMutedState({ chatId, topicId, muteUntil });
+      updateTopicMutedState({ chatId, topicId, mutedUntil });
     } else {
-      updateChatMutedState({ chatId, muteUntil });
+      updateChatMutedState({ chatId, mutedUntil });
     }
     onClose();
   }, [chatId, muteUntilOption, onClose, topicId]);
@@ -75,6 +75,7 @@ const MuteChatModal: FC<OwnProps> = ({
       title={lang('Notifications')}
     >
       <RadioGroup
+        className="dialog-checkbox-group"
         name="muteFor"
         options={muteForOptions}
         selected={muteUntilOption}

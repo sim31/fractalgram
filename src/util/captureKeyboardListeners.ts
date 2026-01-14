@@ -62,6 +62,11 @@ function hasActiveHandlers() {
   return Object.values(handlers).some((keyHandlers) => Boolean(keyHandlers.length));
 }
 
+export function hasActiveHandler(key: string) {
+  const handlerName = keyToHandlerName[key];
+  return handlerName ? Boolean(handlers[handlerName].length) : false;
+}
+
 function handleKeyDown(e: KeyboardEvent) {
   const handlerName = keyToHandlerName[e.key];
   if (!handlerName) {
@@ -74,7 +79,7 @@ function handleKeyDown(e: KeyboardEvent) {
   }
 
   for (let i = length - 1; i >= 0; i--) {
-    const handler = handlers[handlerName][i]!;
+    const handler = handlers[handlerName][i];
     if (handler(e) !== false) {
       e.stopPropagation();
       break;

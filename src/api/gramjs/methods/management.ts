@@ -1,24 +1,14 @@
 import { Api as GramJs } from '../../../lib/gramjs';
 
 import type {
-  ApiChat, ApiError, ApiUser, ApiUsername, OnApiUpdate,
+  ApiChat, ApiError, ApiPeer, ApiUser, ApiUsername,
 } from '../../types';
 
-import { USERNAME_PURCHASE_ERROR } from '../../../config';
-import { buildCollectionByKey } from '../../../util/iteratees';
+import { ACCEPTABLE_USERNAME_ERRORS } from '../../../config';
 import { buildApiExportedInvite, buildChatInviteImporter } from '../apiBuilders/chats';
-import { buildApiUser } from '../apiBuilders/users';
-import { buildInputEntity, buildInputPeer } from '../gramjsBuilders';
-import { addEntitiesToLocalDb } from '../helpers';
+import { buildInputChannel, buildInputPeer, buildInputUser } from '../gramjsBuilders';
+import { sendApiUpdate } from '../updates/apiUpdateEmitter';
 import { invokeRequest } from './client';
-
-let onUpdate: OnApiUpdate;
-
-export const ACCEPTABLE_USERNAME_ERRORS = new Set([USERNAME_PURCHASE_ERROR, 'USERNAME_INVALID']);
-
-export function init(_onUpdate: OnApiUpdate) {
-  onUpdate = _onUpdate;
-}
 
 export async function checkChatUsername({ username }: { username: string }) {
   try {
@@ -48,7 +38,7 @@ export async function setChatUsername(
   { chat, username }: { chat: ApiChat; username: string },
 ) {
   const result = await invokeRequest(new GramJs.channels.UpdateUsername({
-    channel: buildInputEntity(chat.id, chat.accessHash) as GramJs.InputChannel,
+    channel: buildInputChannel(chat.id, chat.accessHash),
     username,
   }));
 
@@ -59,7 +49,7 @@ export async function setChatUsername(
   }
 
   if (result) {
-    onUpdate({
+    sendApiUpdate({
       '@type': 'updateChat',
       id: chat.id,
       chat: { usernames: usernames.length ? usernames : undefined },
@@ -71,7 +61,7 @@ export async function setChatUsername(
 
 export async function deactivateAllUsernames({ chat }: { chat: ApiChat }) {
   const result = await invokeRequest(new GramJs.channels.DeactivateAllUsernames({
-    channel: buildInputEntity(chat.id, chat.accessHash) as GramJs.InputChannel,
+    channel: buildInputChannel(chat.id, chat.accessHash),
   }));
 
   if (result) {
@@ -82,7 +72,7 @@ export async function deactivateAllUsernames({ chat }: { chat: ApiChat }) {
         .filter((u) => u.username)
       : undefined;
 
-    onUpdate({
+    sendApiUpdate({
       '@type': 'updateChat',
       id: chat.id,
       chat: { usernames },
@@ -105,7 +95,7 @@ export async function updatePrivateLink({
 
   if (!(result instanceof GramJs.ChatInviteExported)) return undefined;
 
-  onUpdate({
+  sendApiUpdate({
     '@type': 'updateChatFullInfo',
     id: chat.id,
     fullInfo: {
@@ -121,7 +111,7 @@ export async function fetchExportedChatInvites({
 }: { peer: ApiChat; admin: ApiUser; limit?: number; isRevoked?: boolean }) {
   const exportedInvites = await invokeRequest(new GramJs.messages.GetExportedChatInvites({
     peer: buildInputPeer(peer.id, peer.accessHash),
-    adminId: buildInputEntity(admin.id, admin.accessHash) as GramJs.InputUser,
+    adminId: buildInputUser(admin.id, admin.accessHash),
     limit,
     revoked: isRevoked || undefined,
   }), {
@@ -129,7 +119,6 @@ export async function fetchExportedChatInvites({
   });
 
   if (!exportedInvites) return undefined;
-  addEntitiesToLocalDb(exportedInvites.users);
 
   const invites = (exportedInvites.invites
     .filter((invite): invite is GramJs.ChatInviteExported => invite instanceof GramJs.ChatInviteExported))
@@ -137,7 +126,6 @@ export async function fetchExportedChatInvites({
 
   return {
     invites,
-    users: exportedInvites.users.map(buildApiUser).filter(Boolean),
   };
 }
 
@@ -164,13 +152,11 @@ export async function editExportedChatInvite({
 
   if (!invite) return undefined;
 
-  addEntitiesToLocalDb(invite.users);
   if (invite instanceof GramJs.messages.ExportedChatInvite && invite.invite instanceof GramJs.ChatInviteExported) {
     const replaceInvite = buildApiExportedInvite(invite.invite);
     return {
       oldInvite: replaceInvite,
       newInvite: replaceInvite,
-      users: invite.users.map(buildApiUser).filter(Boolean),
     };
   }
 
@@ -182,7 +168,6 @@ export async function editExportedChatInvite({
     return {
       oldInvite,
       newInvite,
-      users: invite.users.map(buildApiUser).filter(Boolean),
     };
   }
   return undefined;
@@ -229,7 +214,7 @@ export async function deleteRevokedExportedChatInvites({
 }) {
   const result = await invokeRequest(new GramJs.messages.DeleteRevokedExportedChatInvites({
     peer: buildInputPeer(peer.id, peer.accessHash),
-    adminId: buildInputEntity(admin.id, admin.accessHash) as GramJs.InputUser,
+    adminId: buildInputUser(admin.id, admin.accessHash),
   }));
 
   return result;
@@ -244,8 +229,7 @@ export async function fetchChatInviteImporters({
     peer: buildInputPeer(peer.id, peer.accessHash),
     link,
     offsetDate,
-    offsetUser: offsetUser
-      ? buildInputEntity(offsetUser.id, offsetUser.accessHash) as GramJs.InputUser : new GramJs.InputUserEmpty(),
+    offsetUser: offsetUser ? buildInputUser(offsetUser.id, offsetUser.accessHash) : new GramJs.InputUserEmpty(),
     limit,
     requested: isRequested || undefined,
   }), {
@@ -253,11 +237,9 @@ export async function fetchChatInviteImporters({
   });
 
   if (!result) return undefined;
-  const users = result.users.map((user) => buildApiUser(user)).filter(Boolean);
-  addEntitiesToLocalDb(result.users);
+
   return {
     importers: result.importers.map((importer) => buildChatInviteImporter(importer)),
-    users: buildCollectionByKey(users, 'id'),
   };
 }
 
@@ -272,7 +254,7 @@ export function hideChatJoinRequest({
 }) {
   return invokeRequest(new GramJs.messages.HideChatJoinRequest({
     peer: buildInputPeer(peer.id, peer.accessHash),
-    userId: buildInputEntity(user.id, user.accessHash) as GramJs.InputUser,
+    userId: buildInputUser(user.id, user.accessHash),
     approved: isApproved || undefined,
   }), {
     shouldReturnTrue: true,
@@ -297,8 +279,8 @@ export function hideAllChatJoinRequests({
   });
 }
 
-export function hideChatReportPanel(chat: ApiChat) {
-  const { id, accessHash } = chat;
+export function hidePeerSettingsBar(peer: ApiPeer) {
+  const { id, accessHash } = peer;
 
   return invokeRequest(new GramJs.messages.HidePeerSettingsBar({
     peer: buildInputPeer(id, accessHash),

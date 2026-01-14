@@ -1,5 +1,6 @@
 .NewChatButton {
   position: absolute;
+  z-index: var(--z-chat-float-button);
   right: 1rem;
   bottom: 1rem;
   transform: translateY(5rem);
@@ -14,7 +15,6 @@
   body.no-page-transitions & {
     transform: none !important;
     opacity: 0;
-
     transition: opacity 0.15s;
 
     &.revealed {
@@ -24,12 +24,6 @@
 
   &.revealed {
     transform: translateY(0);
-
-    @media (max-width: 600px) {
-      // Force rendering in the composite layer to fix the z-index rendering issue
-      transform: translate3d(0, 0, 0.625rem);
-      transform-style: preserve-3d;
-    }
   }
 
   > .Button {

@@ -1,11 +1,11 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback } from '../../../lib/teact/teact';
+import { memo, useCallback } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiSession } from '../../../api/types';
 
 import buildClassName from '../../../util/buildClassName';
-import { formatDateTimeToString } from '../../../util/dateFormat';
+import { formatDateTimeToString } from '../../../util/dates/dateFormat';
 import getSessionIcon from './helpers/getSessionIcon';
 
 import useCurrentOrPrev from '../../../hooks/useCurrentOrPrev';
@@ -62,16 +62,21 @@ const SettingsActiveSession: FC<OwnProps & StateProps> = ({
   function renderHeader() {
     return (
       <div className="modal-header-condensed" dir={lang.isRtl ? 'rtl' : undefined}>
-        <Button round color="translucent" size="smaller" ariaLabel={lang('Close')} onClick={onClose}>
-          <i className="icon icon-close" />
-        </Button>
-        <div className="modal-title">{lang('SessionPreview.Title')}</div>
+        <Button
+          round
+          color="translucent"
+          size="tiny"
+          ariaLabel={lang('Close')}
+          onClick={onClose}
+          iconName="close"
+        />
+        <div className="modal-title">{lang('SessionPreviewTitle')}</div>
         <Button
           color="danger"
           onClick={handleTerminateSessionClick}
           className={buildClassName('modal-action-button', styles.headerButton)}
         >
-          {lang('SessionPreview.TerminateSession')}
+          {lang('SessionPreviewTerminateSession')}
         </Button>
       </div>
     );
@@ -90,30 +95,39 @@ const SettingsActiveSession: FC<OwnProps & StateProps> = ({
       )}
       />
       <h3 className={styles.title} dir="auto">{renderingSession?.deviceModel}</h3>
-      <div className={styles.date} aria-label={lang('PrivacySettings.LastSeen')}>
+      <div className={styles.date} aria-label={lang('PrivacySettingsLastSeen')}>
         {formatDateTimeToString(renderingSession.dateActive * 1000, lang.code)}
       </div>
 
       <dl className={styles.box}>
-        <dt>{lang('SessionPreview.App')}</dt>
+        <dt>{lang('SessionPreviewApp')}</dt>
         <dd>
-          {renderingSession?.appName} {renderingSession?.appVersion},{' '}
-          {renderingSession?.platform} {renderingSession?.systemVersion}
+          {renderingSession?.appName}
+          {' '}
+          {renderingSession?.appVersion}
+          ,
+          {' '}
+          {renderingSession?.platform}
+          {' '}
+          {renderingSession?.systemVersion}
         </dd>
+        {renderingSession?.ip && (
+          <>
+            <dt>{lang('SessionPreviewIp')}</dt>
+            <dd>{renderingSession.ip}</dd>
+          </>
+        )}
 
-        <dt>{lang('SessionPreview.Ip')}</dt>
-        <dd>{renderingSession?.ip}</dd>
-
-        <dt>{lang('SessionPreview.Location')}</dt>
+        <dt>{lang('SessionPreviewLocation')}</dt>
         <dd>{renderingSession && getLocation(renderingSession)}</dd>
       </dl>
 
-      <p className={styles.note}>{lang('SessionPreview.IpDesc')}</p>
+      <p className={styles.note}>{lang('SessionPreviewIpDesc')}</p>
 
-      <h4 className={styles.actionHeader}>{lang('AuthSessions.View.AcceptTitle')}</h4>
+      <h4 className={styles.actionHeader}>{lang('AuthSessionsViewAcceptTitle')}</h4>
 
       <ListItem onClick={handleSecretChatsStateChange}>
-        <span className={styles.actionName}>{lang('SessionPreview.Accept.Secret')}</span>
+        <span className={styles.actionName}>{lang('SessionPreviewAcceptSecret')}</span>
         <Switcher
           id="accept_secrets"
           label="On"
@@ -121,7 +135,7 @@ const SettingsActiveSession: FC<OwnProps & StateProps> = ({
         />
       </ListItem>
       <ListItem onClick={handleCallsStateChange}>
-        <span className={styles.actionName}>{lang('SessionPreview.Accept.Calls')}</span>
+        <span className={styles.actionName}>{lang('SessionPreviewAcceptCalls')}</span>
         <Switcher
           id="accept_calls"
           label="On"

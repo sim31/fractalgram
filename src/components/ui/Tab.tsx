@@ -1,19 +1,19 @@
-import type { FC } from '../../lib/teact/teact';
-import React, { useEffect, useLayoutEffect, useRef } from '../../lib/teact/teact';
+import type { TeactNode } from '../../lib/teact/teact';
+import { useEffect, useLayoutEffect, useRef } from '../../lib/teact/teact';
 
 import type { MenuItemContextAction } from './ListItem';
 
 import { requestForcedReflow, requestMutation } from '../../lib/fasterdom/fasterdom';
+import { MouseButton } from '../../util/browser/windowEnvironment';
 import buildClassName from '../../util/buildClassName';
 import forceReflow from '../../util/forceReflow';
-import { MouseButton } from '../../util/windowEnvironment';
 import renderText from '../common/helpers/renderText';
 
 import useContextMenuHandlers from '../../hooks/useContextMenuHandlers';
 import { useFastClick } from '../../hooks/useFastClick';
 import useLastCallback from '../../hooks/useLastCallback';
-import useMenuPosition from '../../hooks/useMenuPosition';
 
+import Icon from '../common/icons/Icon';
 import Menu from './Menu';
 import MenuItem from './MenuItem';
 import MenuSeparator from './MenuSeparator';
@@ -22,7 +22,7 @@ import './Tab.scss';
 
 type OwnProps = {
   className?: string;
-  title: string;
+  title: TeactNode;
   isActive?: boolean;
   isBlocked?: boolean;
   badgeCount?: number;
@@ -32,6 +32,7 @@ type OwnProps = {
   clickArg?: number;
   contextActions?: MenuItemContextAction[];
   contextRootElementSelector?: string;
+  icon?: TeactNode;
 };
 
 const classNames = {
@@ -39,7 +40,7 @@ const classNames = {
   badgeActive: 'Tab__badge--active',
 };
 
-const Tab: FC<OwnProps> = ({
+const Tab = ({
   className,
   title,
   isActive,
@@ -47,18 +48,18 @@ const Tab: FC<OwnProps> = ({
   badgeCount,
   isBadgeActive,
   previousActiveTab,
-  onClick,
-  clickArg,
   contextActions,
   contextRootElementSelector,
-}) => {
-  // eslint-disable-next-line no-null/no-null
-  const tabRef = useRef<HTMLDivElement>(null);
+  icon,
+  clickArg,
+  onClick,
+}: OwnProps) => {
+  const tabRef = useRef<HTMLDivElement>();
 
   useLayoutEffect(() => {
     // Set initial active state
     if (isActive && previousActiveTab === undefined && tabRef.current) {
-      tabRef.current!.classList.add(classNames.active);
+      tabRef.current.classList.add(classNames.active);
     }
   }, [isActive, previousActiveTab]);
 
@@ -106,7 +107,7 @@ const Tab: FC<OwnProps> = ({
   }, [isActive, previousActiveTab]);
 
   const {
-    contextMenuPosition, handleContextMenu, handleBeforeContextMenu, handleContextMenuClose,
+    contextMenuAnchor, handleContextMenu, handleBeforeContextMenu, handleContextMenuClose,
     handleContextMenuHide, isContextMenuOpen,
   } = useContextMenuHandlers(tabRef, !contextActions);
 
@@ -131,16 +132,6 @@ const Tab: FC<OwnProps> = ({
   );
   const getLayout = useLastCallback(() => ({ withPortal: true }));
 
-  const {
-    positionX, positionY, transformOriginX, transformOriginY, style: menuStyle,
-  } = useMenuPosition(
-    contextMenuPosition,
-    getTriggerElement,
-    getRootElement,
-    getMenuElement,
-    getLayout,
-  );
-
   return (
     <div
       className={buildClassName('Tab', onClick && 'Tab--interactive', className)}
@@ -149,23 +140,24 @@ const Tab: FC<OwnProps> = ({
       onContextMenu={handleContextMenu}
       ref={tabRef}
     >
+      {icon}
       <span className="Tab_inner">
-        {renderText(title)}
+        {typeof title === 'string' ? renderText(title) : title}
         {Boolean(badgeCount) && (
           <span className={buildClassName('badge', isBadgeActive && classNames.badgeActive)}>{badgeCount}</span>
         )}
-        {isBlocked && <i className="icon icon-lock-badge blocked" />}
+        {isBlocked && <Icon name="lock-badge" className="blocked" />}
         <i className="platform" />
       </span>
 
-      {contextActions && contextMenuPosition !== undefined && (
+      {contextActions && contextMenuAnchor !== undefined && (
         <Menu
           isOpen={isContextMenuOpen}
-          transformOriginX={transformOriginX}
-          transformOriginY={transformOriginY}
-          positionX={positionX}
-          positionY={positionY}
-          style={menuStyle}
+          anchor={contextMenuAnchor}
+          getTriggerElement={getTriggerElement}
+          getRootElement={getRootElement}
+          getMenuElement={getMenuElement}
+          getLayout={getLayout}
           className="Tab-context-menu"
           autoClose
           onClose={handleContextMenuClose}

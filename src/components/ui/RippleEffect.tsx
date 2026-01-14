@@ -1,5 +1,4 @@
-import type { FC } from '../../lib/teact/teact';
-import React, { memo, useMemo, useState } from '../../lib/teact/teact';
+import { memo, useMemo, useState } from '../../lib/teact/teact';
 
 import { debounce } from '../../util/schedulers';
 
@@ -15,7 +14,7 @@ interface Ripple {
 
 const ANIMATION_DURATION_MS = 700;
 
-const RippleEffect: FC = () => {
+const RippleEffect = () => {
   const [ripples, setRipples] = useState<Ripple[]>([]);
 
   const cleanUpDebounced = useMemo(() => {
@@ -48,7 +47,8 @@ const RippleEffect: FC = () => {
   return (
     <div className="ripple-container" onMouseDown={handleMouseDown}>
       {ripples.map(({ x, y, size }) => (
-        <span
+        <div
+          className="ripple-wave"
           style={`left: ${x}px; top: ${y}px; width: ${size}px; height: ${size}px;`}
         />
       ))}

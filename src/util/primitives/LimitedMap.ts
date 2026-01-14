@@ -31,6 +31,10 @@ export default class LimitedMap<K, V> {
     return this;
   }
 
+  public has(key: K): boolean {
+    return this.map.has(key);
+  }
+
   public delete(key: K): boolean {
     const result = this.map.delete(key);
     if (result) {
@@ -44,7 +48,7 @@ export default class LimitedMap<K, V> {
     this.insertionQueue.clear();
   }
 
-  public forEach(callbackfn: (value: V, key: K, map: Map<K, V>) => void, thisArg?: any): void {
+  public forEach(callbackfn: (value: V, key: K, map: Map<K, V>) => void, thisArg?: unknown): void {
     this.map.forEach(callbackfn, thisArg);
   }
 

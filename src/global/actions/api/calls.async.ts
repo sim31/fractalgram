@@ -10,10 +10,8 @@ import {
   toggleStream,
 } from '../../../lib/secret-sauce';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
-import { buildCollectionByKey } from '../../../util/iteratees';
 import { callApi } from '../../../api/gramjs';
 import { addActionHandler, getGlobal, setGlobal } from '../../index';
-import { addUsers } from '../../reducers';
 import {
   removeGroupCall,
   updateActiveGroupCall,
@@ -117,7 +115,7 @@ addActionHandler('requestToSpeak', (global, actions, payload): ActionReturnType 
 });
 
 addActionHandler('setGroupCallParticipantVolume', (global, actions, payload): ActionReturnType => {
-  const { participantId, volume } = payload!;
+  const { participantId, volume } = payload;
 
   const groupCall = selectActiveGroupCall(global);
   const user = selectUser(global, participantId);
@@ -238,7 +236,7 @@ addActionHandler('connectToActiveGroupCall', async (global, actions, payload): P
     global = getGlobal();
     const chat = selectChat(global, groupCall.chatId);
     if (!chat) return;
-    await loadFullChat(global, actions, chat, tabId);
+    await loadFullChat(global, actions, chat);
   }
 });
 
@@ -257,17 +255,13 @@ addActionHandler('connectToActivePhoneCall', async (global, actions): Promise<vo
 
   await callApi('createPhoneCallState', [true]);
 
-  const gAHash = await callApi('requestPhoneCall', [dhConfig])!;
+  const gAHash = await callApi('requestPhoneCall', [dhConfig]);
 
   const result = await callApi('requestCall', { user, gAHash, isVideo: phoneCall.isVideo });
 
   if (!result) {
     if ('hangUp' in actions) actions.hangUp({ tabId: getCurrentTabId() });
-    return;
   }
-  global = getGlobal();
-  global = addUsers(global, buildCollectionByKey(result.users, 'id'));
-  setGlobal(global);
 });
 
 addActionHandler('acceptCall', async (global): Promise<void> => {
@@ -280,14 +274,8 @@ addActionHandler('acceptCall', async (global): Promise<void> => {
 
   await callApi('createPhoneCallState', [false]);
 
-  const gB = await callApi('acceptPhoneCall', [dhConfig])!;
-  const result = await callApi('acceptCall', { call: phoneCall, gB });
-  if (!result) {
-    return;
-  }
-  global = getGlobal();
-  global = addUsers(global, buildCollectionByKey(result.users, 'id'));
-  setGlobal(global);
+  const gB = await callApi('acceptPhoneCall', [dhConfig]);
+  await callApi('acceptCall', { call: phoneCall, gB });
 });
 
 addActionHandler('sendSignalingData', (global, actions, payload): ActionReturnType => {

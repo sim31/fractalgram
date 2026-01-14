@@ -1,15 +1,14 @@
 import { getActions, getGlobal } from '../global';
 
 import type { ApiMessage } from '../api/types';
-import type { MessageKey } from '../global/helpers';
+import type { MessageKey } from './keys/messageKey';
 import { AudioOrigin, GlobalSearchContent } from '../types';
 
-import { requestNextMutation } from '../lib/fasterdom/fasterdom';
-import { getMessageKey, parseMessageKey } from '../global/helpers';
 import { selectCurrentMessageList, selectTabState } from '../global/selectors';
+import { IS_SAFARI } from './browser/windowEnvironment';
+import { getMessageServerKey, parseMessageKey } from './keys/messageKey';
 import { isSafariPatchInProgress, patchSafariProgressiveAudio } from './patchSafariProgressiveAudio';
 import safePlay from './safePlay';
-import { IS_SAFARI } from './windowEnvironment';
 
 type Handler = (eventName: string, e: Event) => void;
 export type TrackId = `${MessageKey}-${number}`;
@@ -17,13 +16,14 @@ export type TrackId = `${MessageKey}-${number}`;
 export interface Track {
   audio: HTMLAudioElement;
   proxy: HTMLAudioElement;
-  type: 'voice' | 'audio';
+  type: 'voice' | 'audio' | 'oneTimeVoice';
   handlers: Handler[];
   onForcePlay?: NoneToVoidFunction;
   onTrackChange?: NoneToVoidFunction;
 }
 
 const tracks = new Map<TrackId, Track>();
+
 let voiceQueue: TrackId[] = [];
 let musicQueue: TrackId[] = [];
 
@@ -178,14 +178,15 @@ export function register(
 
     stop() {
       if (currentTrackId === trackId) {
-        // Hack, reset `src` to remove default media session notification
         const prevSrc = audio.src;
         audio.pause();
-        // `onPause` not called otherwise, but required to sync UI
-        requestNextMutation(() => {
+
+        // `onPause` is required to reset UI state
+        audio.addEventListener('pause', () => {
+          // Hack, reset `src` to remove default media session notification
           audio.src = '';
           audio.src = prevSrc;
-        });
+        }, { once: true });
       }
     },
 
@@ -331,8 +332,12 @@ function findNextInQueue(currentId: TrackId, origin = AudioOrigin.Inline, isReve
   return chatAudio[index + direction];
 }
 
-export function makeTrackId(message: ApiMessage): TrackId {
-  return `${getMessageKey(message)}-${message.date}`;
+export function makeTrackId(message: ApiMessage): TrackId | undefined {
+  const key = getMessageServerKey(message);
+  if (!key) {
+    return undefined;
+  }
+  return `${key}-${message.date}`;
 }
 
 function splitTrackId(trackId: TrackId) {

@@ -5,6 +5,7 @@
     &:focus {
       @content;
     }
+
     @media (hover: hover) {
       &:hover {
         @content;
@@ -24,28 +25,37 @@
 }
 
 .Button {
-  outline: none !important;
+  --premium-gradient: linear-gradient(88.39deg, #6C93FF -2.56%, #976FFF 51.27%, #DF69D1 107.39%);
+
+  cursor: var(--custom-cursor, pointer);
+
+  position: relative;
+
+  overflow: hidden;
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
+
   width: 100%;
-  height: 3.5rem;
+  height: 3rem;
+  padding: 0.625rem;
   border: 0;
-  border-radius: var(--border-radius-default);
+  border-radius: var(--border-radius-button);
+
+  font-weight: var(--font-weight-medium);
+  line-height: 1.2;
+  color: white;
+  text-decoration: none !important;
+  text-transform: uppercase;
+
   background-color: transparent;
   background-size: cover;
-  padding: 0.625rem;
-  color: white;
-  line-height: 1.2;
-  cursor: var(--custom-cursor, pointer);
-  text-transform: uppercase;
-  flex-shrink: 0;
-  position: relative;
-  overflow: hidden;
-  transition: background-color 0.15s, color 0.15s;
-  text-decoration: none !important;
+  outline: none !important;
 
-  --premium-gradient: linear-gradient(88.39deg, #6C93FF -2.56%, #976FFF 51.27%, #DF69D1 107.39%);
+  transition: background-color 0.2s, color 0.2s, opacity 0.2s;
+
+  white-space-collapse: preserve;
 
   // @optimization
   &:active,
@@ -54,30 +64,34 @@
     transition: none !important;
   }
 
+  &.no-upper-case {
+    text-transform: none;
+  }
+
+  &.inline {
+    display: inline;
+  }
+
   &.disabled {
-    opacity: 0.5 !important;
     cursor: var(--custom-cursor, default);
+
+    &:not(.non-interactive) {
+      opacity: 0.5 !important;
+    }
+
     &:not(.click-allowed) {
       pointer-events: none;
     }
   }
 
-  &.round {
-    width: 3.5rem;
-    border-radius: 50%;
-
-    .icon {
-      font-size: 1.5rem;
-    }
-  }
-
   &.primary {
-    background-color: var(--color-primary);
-    color: var(--color-white);
     --ripple-color: rgba(0, 0, 0, 0.08);
 
+    color: var(--color-white);
+    background-color: var(--color-primary);
+
     @include active-styles() {
-      background-color: var(--color-primary-shade);
+      background-color: rgba(var(--color-primary-shade-rgb), 0.9);
     }
 
     @include no-ripple-styles() {
@@ -86,13 +100,14 @@
   }
 
   &.secondary {
-    background-color: var(--color-background);
-    color: rgba(var(--color-text-secondary-rgb), 0.75);
     --ripple-color: rgba(0, 0, 0, 0.08);
 
+    color: rgba(var(--color-text-secondary-rgb), 0.75);
+    background-color: var(--color-background);
+
     @include active-styles() {
-      background-color: var(--color-primary);
       color: white;
+      background-color: var(--color-primary);
     }
 
     @include no-ripple-styles() {
@@ -101,9 +116,10 @@
   }
 
   &.gray {
-    background-color: var(--color-background);
-    color: var(--color-text-secondary);
     --ripple-color: rgba(0, 0, 0, 0.08);
+
+    color: var(--color-text-secondary);
+    background-color: var(--color-background);
 
     @include active-styles() {
       color: var(--color-primary);
@@ -115,13 +131,14 @@
   }
 
   &.danger {
-    background-color: var(--color-background);
-    color: var(--color-error);
     --ripple-color: rgba(var(--color-error-rgb), 0.16);
 
+    color: var(--color-error);
+    background-color: var(--color-background);
+
     @include active-styles() {
-      background-color: var(--color-error);
       color: var(--color-white);
+      background-color: var(--color-error);
     }
 
     @include no-ripple-styles() {
@@ -146,14 +163,14 @@
     }
 
     &.secondary {
-      background-color: transparent;
       color: var(--color-text-secondary);
+      background-color: transparent;
     }
 
     &.danger {
       @include active-styles() {
-        background-color: rgba(var(--color-error-rgb), 0.08);
         color: var(--color-error);
+        background-color: rgba(var(--color-error-rgb), 0.08);
       }
 
       @include no-ripple-styles() {
@@ -176,8 +193,9 @@
 
   &.translucent {
     --ripple-color: var(--color-interactive-element-hover);
-    background-color: transparent;
+
     color: var(--color-text-secondary);
+    background-color: transparent;
 
     @include active-styles() {
       background-color: var(--color-interactive-element-hover);
@@ -194,12 +212,13 @@
 
   &.translucent-white {
     --ripple-color: rgba(255, 255, 255, 0.08);
-    background-color: transparent;
+
     color: rgba(255, 255, 255, 0.5);
+    background-color: transparent;
 
     @include active-styles() {
-      background-color: rgba(255, 255, 255, 0.08);
       color: white;
+      background-color: rgba(255, 255, 255, 0.08);
     }
 
     @include no-ripple-styles() {
@@ -209,8 +228,9 @@
 
   &.translucent-black {
     --ripple-color: rgba(0, 0, 0, 0.08);
-    background-color: transparent;
+
     color: rgba(0, 0, 0, 0.8);
+    background-color: transparent;
 
     @include active-styles() {
       background-color: rgba(0, 0, 0, 0.08);
@@ -223,13 +243,14 @@
 
   &.translucent-bordered {
     --ripple-color: rgba(0, 0, 0, 0.08);
-    background-color: transparent;
-    color: var(--accent-color);
+
     border: 1px solid var(--accent-color);
+    color: var(--accent-color);
+    background-color: transparent;
 
     @include active-styles() {
-      background-color: var(--accent-color);
       color: var(--color-white);
+      background-color: var(--accent-color);
     }
 
     @include no-ripple-styles() {
@@ -237,14 +258,30 @@
     }
   }
 
-  &.dark {
-    background-color: rgba(0, 0, 0, 0.75);
-    color: white;
-    --ripple-color: rgba(255, 255, 255, 0.08);
+  &.adaptive {
+    --ripple-color: var(--accent-background-active-color);
+
+    color: var(--accent-color);
+    background-color: var(--accent-background-color);
 
     @include active-styles() {
-      background-color: rgba(0, 0, 0, 0.85);
+      background-color: var(--accent-background-active-color);
+    }
+
+    @include no-ripple-styles() {
+      background-color: var(--accent-background-active-color);
+    }
+  }
+
+  &.dark {
+    --ripple-color: rgba(255, 255, 255, 0.08);
+
+    color: white;
+    background-color: rgba(0, 0, 0, 0.75);
+
+    @include active-styles() {
       color: white;
+      background-color: rgba(0, 0, 0, 0.85);
     }
 
     @include no-ripple-styles() {
@@ -253,9 +290,10 @@
   }
 
   &.green {
-    background-color: var(--color-green);
-    color: var(--color-white);
     --ripple-color: rgba(0, 0, 0, 0.08);
+
+    color: var(--color-white);
+    background-color: var(--color-green);
 
     @include active-styles() {
       background-color: var(--color-green-darker);
@@ -266,45 +304,61 @@
     }
   }
 
+  &.stars {
+    --ripple-color: rgba(0, 0, 0, 0.08);
+
+    color: var(--color-white);
+    background-color: #FFB727;
+
+    .theme-dark & {
+      background-color: #CF8920;
+    }
+
+    @include active-styles() {
+      background-color: #FFB727CC;
+    }
+
+    @include no-ripple-styles() {
+      background-color: #FFB727;
+    }
+  }
+
+  &.bluredStarsBadge {
+    color: var(--color-white);
+    background: rgba(0, 0, 0, 0.2) !important;
+    backdrop-filter: blur(50px);
+  }
+
+  &.transparentBlured {
+    color: white;
+    background-color: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(0.5rem);
+
+    &:hover {
+      background-color: rgba(255, 255, 255, 0.2);
+    }
+  }
+
   &.smaller {
-    height: 2.75rem;
+    height: 2.5rem;
     padding: 0.3125rem;
 
     &.round {
-      width: 2.75rem;
+      width: 2.5rem;
     }
 
     &.pill {
-      height: 2.5rem;
-      border-radius: 1.25rem;
       padding: 0.3125rem 1rem;
+      border-radius: 1.25rem;
     }
 
     &.with-icon {
-      padding-left: 0.75rem;
-      padding-right: 1.25rem;
+      padding-inline-start: 0.75rem;
+      padding-inline-end: 1.25rem;
 
       .icon {
+        margin-inline-end: 0.5rem;
         font-size: 1.5rem;
-        margin-right: 0.5rem;
-      }
-
-      &[dir="rtl"] {
-        padding-left: 1.25rem;
-        padding-right: 0.75rem;
-
-        .icon {
-          margin-left: 0.5rem;
-          margin-right: 0;
-        }
-      }
-    }
-
-    @media (max-width: 600px) {
-      height: 2.5rem;
-
-      &.round {
-        width: 2.5rem;
       }
     }
   }
@@ -312,13 +366,12 @@
   &.tiny {
     height: 2.25rem;
     padding: 0.4375rem;
-    border-radius: var(--border-radius-default-small);
+    border-radius: var(--border-radius-button-tiny);
     font-size: 0.875rem;
-    font-weight: 500;
 
     &.round {
-      width: 2.25rem;
-      height: 2.25rem;
+      width: 1.875rem;
+      height: 1.875rem;
       border-radius: 50%;
     }
 
@@ -327,42 +380,65 @@
     }
 
     &.pill {
-      height: 2rem;
-      border-radius: 1rem;
+      height: 1.875rem;
       padding: 0.3125rem 1rem;
+      border-radius: 1rem;
       font-size: 1rem;
     }
   }
 
-  &.fluid {
-    padding-left: 1.75rem;
-    padding-right: 1.75rem;
-    width: auto;
+  &.round {
+    width: 3rem;
+    border-radius: 50%;
 
-    &.tiny {
-      padding-left: 1.375rem;
-      padding-right: 1.375rem;
+    .icon {
+      font-size: 1.5rem;
     }
   }
 
-  &.pill {
-    border-radius: 1.75rem;
-    padding-left: 1.75rem;
+  &.content-with-icon-bottom,
+  &.content-with-icon-top {
+    height: auto;
+  }
+
+  &.fluid {
+    width: auto;
     padding-right: 1.75rem;
+    padding-left: 1.75rem;
+
+    &.tiny {
+      padding-right: 1.375rem;
+      padding-left: 1.375rem;
+    }
+
+    &.pill {
+      padding: 0.5rem 0.75rem;
+    }
+
+    &.badge {
+      padding: 0.5rem 1.75rem;
+    }
+  }
+
+  &.pill, &.badge {
+    padding-right: 1.75rem;
+    padding-left: 1.75rem;
+    border-radius: 1.75rem;
     text-transform: none;
   }
 
   &.loading {
-    position: relative;
     pointer-events: none;
+    position: relative;
 
     .Spinner {
-      position: absolute;
-      right: 0.875rem;
-      top: 50%;
-      transform: translateY(-50%);
 
       --spinner-size: 1.8125rem;
+
+      position: absolute;
+      top: 50%;
+      right: 0.875rem;
+      transform: translateY(-50%);
     }
   }
 
@@ -372,13 +448,17 @@
 
   &.shiny::before {
     content: "";
+
     position: absolute;
     top: 0;
 
     display: block;
+
     width: 100%;
     height: 100%;
+
     background: linear-gradient(to right, transparent 0%, var(--color-skeleton-foreground) 50%, transparent 100%);
+
     animation: wave 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 
     @keyframes wave {
@@ -396,5 +476,45 @@
 
   &.premium {
     background: var(--premium-gradient);
+  }
+
+  &.rectangular {
+    border-radius: 0;
+  }
+
+  .with-icon-top {
+    display: flex;
+    flex-direction: column;
+
+    .icon {
+      margin-bottom: 0.25rem;
+    }
+  }
+
+  .with-icon-bottom {
+    display: flex;
+    flex-direction: column-reverse;
+
+    .icon {
+      margin-top: 0.25rem;
+    }
+  }
+
+  .with-icon-start {
+    display: flex;
+    align-items: center;
+    .icon {
+      margin-inline-end: 0.25rem;
+    }
+  }
+
+  .with-icon-end {
+    display: flex;
+    flex-direction: row-reverse;
+    align-items: center;
+
+    .icon {
+      margin-inline-start: 0.25rem;
+    }
   }
 }

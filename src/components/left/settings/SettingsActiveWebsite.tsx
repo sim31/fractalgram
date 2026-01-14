@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, { memo, useCallback } from '../../../lib/teact/teact';
+import { memo, useCallback } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiUser, ApiWebSession } from '../../../api/types';
@@ -7,7 +7,7 @@ import type { ApiUser, ApiWebSession } from '../../../api/types';
 import buildClassName from '../../../util/buildClassName';
 
 import useCurrentOrPrev from '../../../hooks/useCurrentOrPrev';
-import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 
 import Avatar from '../../common/Avatar';
 import FullNameTitle from '../../common/FullNameTitle';
@@ -34,7 +34,7 @@ const SettingsActiveWebsite: FC<OwnProps & StateProps> = ({
   onClose,
 }) => {
   const { terminateWebAuthorization } = getActions();
-  const lang = useLang();
+  const lang = useOldLang();
 
   const renderingSession = useCurrentOrPrev(session, true);
   const renderingBot = useCurrentOrPrev(bot, true);
@@ -51,9 +51,14 @@ const SettingsActiveWebsite: FC<OwnProps & StateProps> = ({
   function renderHeader() {
     return (
       <div className="modal-header-condensed" dir={lang.isRtl ? 'rtl' : undefined}>
-        <Button round color="translucent" size="smaller" ariaLabel={lang('Close')} onClick={onClose}>
-          <i className="icon icon-close" />
-        </Button>
+        <Button
+          round
+          color="translucent"
+          size="tiny"
+          ariaLabel={lang('Close')}
+          onClick={onClose}
+          iconName="close"
+        />
         <div className="modal-title">{lang('WebSessionsTitle')}</div>
         <Button
           color="danger"
@@ -100,7 +105,7 @@ const SettingsActiveWebsite: FC<OwnProps & StateProps> = ({
   );
 };
 
-export default memo(withGlobal<OwnProps>((global, { hash }): StateProps => {
+export default memo(withGlobal<OwnProps>((global, { hash }): Complete<StateProps> => {
   const session = hash ? global.activeWebSessions.byHash[hash] : undefined;
   const bot = session ? global.users.byId[session.botId] : undefined;
 

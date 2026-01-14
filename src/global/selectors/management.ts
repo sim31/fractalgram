@@ -1,14 +1,16 @@
 import type { GlobalState, TabArgs } from '../types';
 
+import { isUserId } from '../../util/entities/ids';
 import { getCurrentTabId } from '../../util/establishMultitabRole';
 import {
   getCanAddContact,
-  isChatAdmin, isChatGroup, isUserBot, isUserId,
+  isAnonymousForwardsChat,
+  isChatAdmin, isChatGroup, isUserBot,
 } from '../helpers';
-import { selectChat, selectIsChatWithSelf } from './chats';
+import { selectChat, selectIsChatRestricted, selectIsChatWithSelf } from './chats';
 import { selectCurrentMessageList } from './messages';
 import { selectTabState } from './tabs';
-import { selectUser } from './users';
+import { selectBot, selectUser } from './users';
 
 export function selectManagement<T extends GlobalState>(
   global: T, chatId: string,
@@ -39,8 +41,14 @@ export function selectCurrentManagementType<T extends GlobalState>(
   ...[tabId = getCurrentTabId()]: TabArgs<T>
 ) {
   const { chatId, threadId } = selectCurrentMessageList(global, tabId) || {};
+
   if (!chatId || !threadId) {
     return undefined;
+  }
+
+  const chatBot = selectBot(global, chatId);
+  if (chatBot) {
+    return 'bot';
   }
 
   if (isUserId(chatId)) {
@@ -64,7 +72,8 @@ export function selectCanManage<T extends GlobalState>(
   chatId: string,
 ) {
   const chat = selectChat(global, chatId);
-  if (!chat || chat.isRestricted) return false;
+  const isRestricted = selectIsChatRestricted(global, chatId);
+  if (!chat || isRestricted || chat.isMonoforum) return false;
 
   const isPrivate = isUserId(chat.id);
   const user = isPrivate ? selectUser(global, chatId) : undefined;
@@ -75,6 +84,7 @@ export function selectCanManage<T extends GlobalState>(
     !canAddContact
     && chat
     && !selectIsChatWithSelf(global, chat.id)
+    && !isAnonymousForwardsChat(chat.id)
     // chat.isCreator is for Basic Groups
     && (isUserId(chat.id) || ((isChatAdmin(chat) || chat.isCreator) && !chat.isNotJoined))
     && !isBot,

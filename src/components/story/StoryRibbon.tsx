@@ -1,4 +1,4 @@
-import React, { memo, useRef } from '../../lib/teact/teact';
+import { memo, useRef } from '../../lib/teact/teact';
 import { withGlobal } from '../../global';
 
 import type { ApiChat, ApiUser } from '../../api/types';
@@ -21,6 +21,7 @@ interface OwnProps {
 
 interface StateProps {
   orderedPeerIds: string[];
+  stealthModeActiveUntil?: number;
   usersById: Record<string, ApiUser>;
   chatsById: Record<string, ApiChat>;
 }
@@ -29,6 +30,7 @@ function StoryRibbon({
   isArchived,
   className,
   orderedPeerIds,
+  stealthModeActiveUntil,
   usersById,
   chatsById,
   isClosing,
@@ -42,8 +44,7 @@ function StoryRibbon({
     'no-scrollbar',
   );
 
-  // eslint-disable-next-line no-null/no-null
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement>();
 
   useHorizontalScroll(ref, getIsMobile());
 
@@ -66,6 +67,7 @@ function StoryRibbon({
             key={peerId}
             peer={peer}
             isArchived={isArchived}
+            stealthModeActiveUntil={stealthModeActiveUntil}
           />
         );
       })}
@@ -74,13 +76,16 @@ function StoryRibbon({
 }
 
 export default memo(withGlobal<OwnProps>(
-  (global, { isArchived }): StateProps => {
+  (global, { isArchived }): Complete<StateProps> => {
     const { orderedPeerIds: { active, archived } } = global.stories;
     const usersById = global.users.byId;
     const chatsById = global.chats.byId;
 
+    const stealthMode = global.stories.stealthMode;
+
     return {
       orderedPeerIds: isArchived ? archived : active,
+      stealthModeActiveUntil: stealthMode.activeUntil,
       usersById,
       chatsById,
     };

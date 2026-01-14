@@ -1,5 +1,5 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
+import {
   memo, useCallback, useMemo, useRef,
 } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
@@ -9,18 +9,20 @@ import { LoadMoreDirection, MediaViewerOrigin } from '../../../types';
 
 import { SLIDE_TRANSITION_DURATION } from '../../../config';
 import buildClassName from '../../../util/buildClassName';
+import { parseSearchResultKey } from '../../../util/keys/searchResultKey';
 import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
 import { throttle } from '../../../util/schedulers';
 import { createMapStateToProps } from './helpers/createMapStateToProps';
 
 import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
-import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 import useAsyncRendering from '../../right/hooks/useAsyncRendering';
 
 import Media from '../../common/Media';
 import NothingFound from '../../common/NothingFound';
 import InfiniteScroll from '../../ui/InfiniteScroll';
 import Loading from '../../ui/Loading';
+import Transition from '../../ui/Transition.tsx';
 import ChatMessage from './ChatMessage';
 
 export type OwnProps = {
@@ -44,10 +46,9 @@ const MediaResults: FC<OwnProps & StateProps> = ({
     openMediaViewer,
   } = getActions();
 
-  // eslint-disable-next-line no-null/no-null
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>();
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   const { observe: observeIntersectionForMedia } = useIntersectionObserver({
     rootRef: containerRef,
@@ -71,16 +72,16 @@ const MediaResults: FC<OwnProps & StateProps> = ({
     }
 
     return foundIds.map((id) => {
-      const [chatId, messageId] = id.split('_');
+      const [chatId, messageId] = parseSearchResultKey(id);
 
-      return globalMessagesByChatId[chatId]?.byId[Number(messageId)];
+      return globalMessagesByChatId[chatId]?.byId[messageId];
     }).filter(Boolean);
   }, [globalMessagesByChatId, foundIds]);
 
   const handleSelectMedia = useCallback((id: number, chatId: string) => {
     openMediaViewer({
       chatId,
-      mediaId: id,
+      messageId: id,
       origin: MediaViewerOrigin.SearchResult,
     });
   }, [openMediaViewer]);
@@ -122,10 +123,16 @@ const MediaResults: FC<OwnProps & StateProps> = ({
   );
 
   return (
-    <div ref={containerRef} className="LeftSearch">
+    <Transition
+      ref={containerRef}
+      slideClassName="LeftSearch--content LeftSearch--media"
+      name="fade"
+      activeKey={canRenderContents ? 1 : 0}
+      shouldCleanup
+    >
       <InfiniteScroll
         className={classNames}
-        items={foundMessages}
+        items={canRenderContents ? foundMessages : undefined}
         itemSelector={!searchQuery ? '.Media' : '.ListItem'}
         onLoadMore={handleLoadMore}
         noFastList
@@ -133,6 +140,7 @@ const MediaResults: FC<OwnProps & StateProps> = ({
         {!canRenderContents && <Loading />}
         {canRenderContents && (!foundIds || foundIds.length === 0) && (
           <NothingFound
+            withSticker
             text={lang('ChatList.Search.NoResults')}
             description={lang('ChatList.Search.NoResultsDescription')}
           />
@@ -140,7 +148,7 @@ const MediaResults: FC<OwnProps & StateProps> = ({
         {isMediaGrid && renderGallery()}
         {isMessageList && renderSearchResult()}
       </InfiniteScroll>
-    </div>
+    </Transition>
   );
 };
 

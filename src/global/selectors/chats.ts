@@ -1,32 +1,30 @@
-import type {
-  ApiChat, ApiChatFullInfo, ApiChatType, ApiPeer,
-} from '../../api/types';
+import type { ChatListType } from '../../types';
 import type { GlobalState, TabArgs } from '../types';
-import { MAIN_THREAD_ID } from '../../api/types';
+import {
+  type ApiChat, type ApiChatFullInfo, type ApiChatType,
+} from '../../api/types';
 
 import {
-  ALL_FOLDER_ID, ARCHIVED_FOLDER_ID, MEMBERS_LOAD_SLICE, SERVICE_NOTIFICATIONS_USER_ID,
+  ALL_FOLDER_ID, ARCHIVED_FOLDER_ID, MEMBERS_LOAD_SLICE, SAVED_FOLDER_ID, SERVICE_NOTIFICATIONS_USER_ID,
 } from '../../config';
+import { IS_TRANSLATION_SUPPORTED } from '../../util/browser/windowEnvironment';
+import { isUserId } from '../../util/entities/ids';
 import { getCurrentTabId } from '../../util/establishMultitabRole';
-import { IS_TRANSLATION_SUPPORTED } from '../../util/windowEnvironment';
 import {
   getHasAdminRight,
   getPrivateChatUserId,
   isChatChannel,
+  isChatPublic,
   isChatSuperGroup,
   isHistoryClearMessage,
   isUserBot,
-  isUserId,
   isUserOnline,
 } from '../helpers';
+import { selectActiveRestrictionReasons } from './messages';
 import { selectTabState } from './tabs';
 import {
   selectBot, selectIsCurrentUserPremium, selectUser, selectUserFullInfo,
 } from './users';
-
-export function selectPeer<T extends GlobalState>(global: T, peerId: string): ApiPeer | undefined {
-  return selectUser(global, peerId) || selectChat(global, peerId);
-}
 
 export function selectChat<T extends GlobalState>(global: T, chatId: string): ApiChat | undefined {
   return global.chats.byId[chatId];
@@ -39,6 +37,12 @@ export function selectChatFullInfo<T extends GlobalState>(global: T, chatId: str
 export function selectPeerFullInfo<T extends GlobalState>(global: T, peerId: string) {
   if (isUserId(peerId)) return selectUserFullInfo(global, peerId);
   return selectChatFullInfo(global, peerId);
+}
+
+export function selectChatListLoadingParameters<T extends GlobalState>(
+  global: T, listType: ChatListType,
+) {
+  return global.chats.loadingParameters[listType];
 }
 
 export function selectChatUser<T extends GlobalState>(global: T, chat: ApiChat) {
@@ -96,23 +100,22 @@ export function selectChatOnlineCount<T extends GlobalState>(global: T, chat: Ap
 }
 
 export function selectIsTrustedBot<T extends GlobalState>(global: T, botId: string) {
-  const bot = selectUser(global, botId);
-  return bot && (bot.isVerified || global.trustedBotIds.includes(botId));
+  return global.trustedBotIds.includes(botId) || global.appConfig.whitelistedBotIds?.includes(botId);
 }
 
-export function selectChatType<T extends GlobalState>(global: T, chatId: string) : ApiChatType | undefined {
-  const chat = selectChat(global, chatId);
-  if (!chat) return undefined;
-
+export function selectChatType<T extends GlobalState>(global: T, chatId: string): ApiChatType | undefined {
   const bot = selectBot(global, chatId);
   if (bot) {
     return 'bots';
   }
 
-  const user = selectChatUser(global, chat);
+  const user = selectUser(global, chatId);
   if (user) {
     return 'users';
   }
+
+  const chat = selectChat(global, chatId);
+  if (!chat) return undefined;
 
   if (isChatChannel(chat)) {
     return 'channels';
@@ -122,23 +125,17 @@ export function selectChatType<T extends GlobalState>(global: T, chatId: string)
 }
 
 export function selectIsChatBotNotStarted<T extends GlobalState>(global: T, chatId: string) {
-  const chat = selectChat(global, chatId);
   const bot = selectBot(global, chatId);
-  if (!chat || !bot) {
+  if (!bot) {
     return false;
   }
 
-  if (chat.lastMessage && isHistoryClearMessage(chat.lastMessage)) {
+  const lastMessage = selectChatLastMessage(global, chatId);
+  if (lastMessage && isHistoryClearMessage(lastMessage)) {
     return true;
   }
 
-  const messageInfo = global.messages.byChatId[chatId];
-  if (!messageInfo) {
-    return false;
-  }
-
-  const { listedIds } = messageInfo.threadsById[MAIN_THREAD_ID] || {};
-  return listedIds && !listedIds.length;
+  return Boolean(!lastMessage);
 }
 
 export function selectAreActiveChatsLoaded<T extends GlobalState>(global: T): boolean {
@@ -146,7 +143,7 @@ export function selectAreActiveChatsLoaded<T extends GlobalState>(global: T): bo
 }
 
 export function selectIsChatListed<T extends GlobalState>(
-  global: T, chatId: string, type?: 'active' | 'archived',
+  global: T, chatId: string, type?: ChatListType,
 ): boolean {
   const { listIds } = global.chats;
   if (type) {
@@ -187,7 +184,7 @@ export function selectTotalChatCount<T extends GlobalState>(global: T, listType:
 export function selectIsChatPinned<T extends GlobalState>(
   global: T, chatId: string, folderId = ALL_FOLDER_ID,
 ): boolean {
-  const { active, archived } = global.chats.orderedPinnedIds;
+  const { active, archived, saved } = global.chats.orderedPinnedIds;
 
   if (folderId === ALL_FOLDER_ID) {
     return Boolean(active?.includes(chatId));
@@ -195,6 +192,10 @@ export function selectIsChatPinned<T extends GlobalState>(
 
   if (folderId === ARCHIVED_FOLDER_ID) {
     return Boolean(archived?.includes(chatId));
+  }
+
+  if (folderId === SAVED_FOLDER_ID) {
+    return Boolean(saved?.includes(chatId));
   }
 
   const { byId: chatFoldersById } = global.chatFolders;
@@ -225,7 +226,7 @@ export function selectSendAs<T extends GlobalState>(global: T, chatId: string) {
   return selectUser(global, id) || selectChat(global, id);
 }
 
-export function selectRequestedDraftText<T extends GlobalState>(
+export function selectRequestedDraft<T extends GlobalState>(
   global: T, chatId: string,
   ...[tabId = getCurrentTabId()]: TabArgs<T>
 ) {
@@ -266,7 +267,7 @@ export function selectCanInviteToChat<T extends GlobalState>(global: T, chatId: 
   // https://github.com/TelegramMessenger/Telegram-iOS/blob/5126be83b3b9578fb014eb52ca553da9e7a8b83a/submodules/TelegramCore/Sources/TelegramEngine/Peers/Communities.swift#L6
   return !chat.migratedTo && Boolean(!isUserId(chatId) && ((isChatChannel(chat) || isChatSuperGroup(chat)) ? (
     chat.isCreator || getHasAdminRight(chat, 'inviteUsers')
-    || (chat.usernames?.length && !chat.isJoinRequest)
+    || (isChatPublic(chat) && !chat.isJoinRequest)
   ) : (chat.isCreator || getHasAdminRight(chat, 'inviteUsers'))));
 }
 
@@ -292,6 +293,9 @@ export function selectShouldDetectChatLanguage<T extends GlobalState>(
 ) {
   const chat = selectChat(global, chatId);
   if (!chat) return false;
+
+  if (chat.hasAutoTranslation) return true;
+
   const { canTranslateChats } = global.settings.byKey;
 
   const isPremium = selectIsCurrentUserPremium(global);
@@ -324,4 +328,72 @@ export function selectRequestedChatTranslationLanguage<T extends GlobalState>(
   const { requestedTranslations } = selectTabState(global, tabId);
 
   return requestedTranslations.byChatId[chatId]?.toLanguage;
+}
+
+export function selectSimilarChannelIds<T extends GlobalState>(
+  global: T,
+  chatId: string,
+) {
+  return global.chats.similarChannelsById[chatId];
+}
+
+export function selectSimilarBotsIds<T extends GlobalState>(
+  global: T,
+  chatId: string,
+) {
+  return global.chats.similarBotsById[chatId];
+}
+
+export function selectChatLastMessageId<T extends GlobalState>(
+  global: T, chatId: string, listType: 'all' | 'saved' = 'all',
+) {
+  return global.chats.lastMessageIds[listType]?.[chatId];
+}
+
+export function selectChatLastMessage<T extends GlobalState>(
+  global: T, chatId: string, listType: 'all' | 'saved' = 'all',
+) {
+  const id = selectChatLastMessageId(global, chatId, listType);
+  if (!id) return undefined;
+
+  const realChatId = listType === 'saved' ? global.currentUserId! : chatId;
+  return global.messages.byChatId[realChatId]?.byId[id];
+}
+
+export function selectIsMonoforumAdmin<T extends GlobalState>(
+  global: T, chatId: string,
+) {
+  const chat = selectChat(global, chatId);
+  if (!chat?.isMonoforum) return;
+
+  const channel = selectMonoforumChannel(global, chatId);
+  if (!channel) return;
+
+  return Boolean(chat.isCreator || getHasAdminRight(channel, 'manageDirectMessages'));
+}
+
+/**
+ * Only selects monoforum channel for monoforum chats.
+ * Returns `undefined` for other chats, including channels that have linked monoforum.
+ */
+export function selectMonoforumChannel<T extends GlobalState>(
+  global: T, chatId: string,
+) {
+  const chat = selectChat(global, chatId);
+  if (!chat) return;
+
+  return chat.isMonoforum ? selectChat(global, chat.linkedMonoforumId!) : undefined;
+}
+
+export function selectIsChatRestricted<T extends GlobalState>(global: T, chatId: string): boolean {
+  const chat = selectChat(global, chatId);
+  if (!chat) return false;
+
+  const activeRestrictions = selectActiveRestrictionReasons(global, chat.restrictionReasons);
+  return activeRestrictions.length > 0;
+}
+
+export function selectAreFoldersPresent<T extends GlobalState>(global: T) {
+  const ids = global.chatFolders.orderedIds;
+  return Boolean(ids && ids.length > 1);
 }
