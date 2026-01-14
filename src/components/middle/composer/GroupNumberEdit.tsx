@@ -4,7 +4,7 @@ import React, {
   memo, useCallback, useEffect, useState,
 } from '../../../lib/teact/teact';
 
-import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 
 import Button from '../../ui/Button';
 import InputText from '../../ui/InputText';
@@ -20,7 +20,7 @@ export type OwnProps = {
 const GroupNumberEdit: FC<OwnProps> = ({
   isOpen, defaultGroupNum, onClear, onSubmit,
 }) => {
-  const lang = useLang();
+  const lang = useOldLang();
 
   const [hasErrors, setHassErrors] = useState<boolean>(false);
   const [groupNumber, setGroupNumber] = useState<string>(defaultGroupNum?.toString() ?? '');

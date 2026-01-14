@@ -110,7 +110,7 @@ export function updateCurrentMessageList<T extends GlobalState>(
   }, tabId);
 }
 
-function replaceChatMessages<T extends GlobalState>(
+export function replaceChatMessages<T extends GlobalState>(
   global: T, chatId: string,
   newById: Record<number, ApiMessage>,
   newConsensusMsgs: ChatConsensusMessages,
@@ -296,7 +296,7 @@ function addConsensusMessage(
   return consensusMsgs;
 }
 
-function getConsensusMsgsOrNew(global: GlobalState, chatId: string) {
+export function getConsensusMsgsOrNew(global: GlobalState, chatId: string) {
   const consensusMsgs = selectChatConsensusMsgs(global, chatId);
   return consensusMsgs ?? { ...INIT_CONSENSUS_MSGS };
 }

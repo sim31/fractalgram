@@ -6,7 +6,7 @@ import React, {
 
 import buildClassName from '../../../util/buildClassName';
 
-import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 
 import Button from '../../ui/Button';
 // import TextArea from '../../ui/TextArea';
@@ -30,7 +30,7 @@ const SendMessageModal: FC<OwnProps> = ({
   const [hasErrors, setHasErrors] = useState<boolean>(false);
   const [toPin, setToPin] = useState<boolean>(pinMessageDefault ?? false);
 
-  const lang = useLang();
+  const lang = useOldLang();
 
   useEffect(() => {
     if (isOpen) {

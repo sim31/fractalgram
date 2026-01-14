@@ -5,12 +5,13 @@ import React, {
   useState,
 } from '../../../lib/teact/teact';
 
-import type { AccountPromptDefaults, AccountPromptInfo } from '../../../global/types';
+import type { AccountPromptDefaults, AccountPromptInfo } from '../../../types';
 
 import { composePrompt } from '../../../global/helpers/consensusMessages';
 import captureEscKeyListener from '../../../util/captureEscKeyListener';
 
 import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 
 import Button from '../../ui/Button';
 import InputText from '../../ui/InputText';
@@ -40,7 +41,7 @@ const AccountPromptModal: FC<OwnProps> = ({
 
   const promptMsg = useMemo(() => composePrompt(platform), [platform]);
 
-  const lang = useLang();
+  const oldLang = useOldLang();
 
   useEffect(() => (isOpen ? captureEscKeyListener(onClear) : undefined), [isOpen, onClear]);
   useEffect(() => {
@@ -78,11 +79,11 @@ const AccountPromptModal: FC<OwnProps> = ({
 
   const getPlatformError = useCallback(() => {
     if (hasErrors && !platform.trim().length) {
-      return lang('Please enter platform name');
+      return oldLang('Please enter platform name');
     }
 
     return undefined;
-  }, [hasErrors, lang, platform]);
+  }, [hasErrors, oldLang, platform]);
 
   const radioOptions = useMemo(() => {
     const roptions = new Array<IRadioOption>();
@@ -105,14 +106,14 @@ const AccountPromptModal: FC<OwnProps> = ({
         <Button round color="translucent" size="smaller" ariaLabel="Cancel message creation" onClick={onClear}>
           <i className="icon icon-close" />
         </Button>
-        <div className="modal-title">{lang('Send account prompt')}</div>
+        <div className="modal-title">{oldLang('Send account prompt')}</div>
         <Button
           color="primary"
           size="smaller"
           className="modal-action-button"
           onClick={handleSend}
         >
-          {lang('Send')}
+          {oldLang('Send')}
         </Button>
       </div>
     );
@@ -127,7 +128,7 @@ const AccountPromptModal: FC<OwnProps> = ({
       />
 
       <InputText
-        label={lang('Platform')}
+        label={oldLang('Platform')}
         value={platform}
         onChange={handlePlatformChange}
         disabled={presetSelection !== 'custom'}
@@ -135,7 +136,7 @@ const AccountPromptModal: FC<OwnProps> = ({
       />
 
       <TextArea
-        label={lang('Message Preview')}
+        label={oldLang('Message Preview')}
         disabled
         value={promptMsg}
       />

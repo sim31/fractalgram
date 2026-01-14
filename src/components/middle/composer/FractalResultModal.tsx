@@ -4,7 +4,8 @@ import React, {
 } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
-import type { ExtPlatformInfo, TabState } from '../../../global/types';
+import type { TabState } from '../../../global/types';
+import type { ExtPlatformInfo } from '../../../types';
 
 import { FRACTAL_INFO } from '../../../config';
 import { createConsensusResultMsg } from '../../../global/helpers/consensusMessages';

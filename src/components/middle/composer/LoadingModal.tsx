@@ -3,7 +3,7 @@ import React, {
   memo,
 } from '../../../lib/teact/teact';
 
-import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 
 import Button from '../../ui/Button';
 import Modal from '../../ui/Modal';
@@ -20,7 +20,7 @@ export type OwnProps = {
 const LoadingModal: FC<OwnProps> = ({
   isOpen, title, onClear,
 }) => {
-  const lang = useLang();
+  const lang = useOldLang();
 
   // TODO: How to allow canceling
   function renderHeader() {

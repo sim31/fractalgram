@@ -4,13 +4,13 @@ import React, {
   memo, useCallback, useEffect, useMemo, useState,
 } from '../../../lib/teact/teact';
 
-import type { ExtPlatformInfo } from '../../../global/types';
+import type { ExtPlatformInfo } from '../../../types';
 import type { IRadioOption } from '../../ui/RadioGroup';
 
 import { PLATFORM_RE } from '../../../config';
 import assert from '../../../util/assert';
 
-import useLang from '../../../hooks/useLang';
+import useOldLang from '../../../hooks/useOldLang';
 
 import Button from '../../ui/Button';
 import InputText from '../../ui/InputText';
@@ -28,7 +28,7 @@ export type OwnProps = {
 const ExtPlatformSettings: FC<OwnProps> = ({
   isOpen, defaultExtPlatform, presetOptions, onSubmit, onClear,
 }) => {
-  const lang = useLang();
+  const oldLang = useOldLang();
 
   const [extPlatform, setExtPlatform] = useState<ExtPlatformInfo | undefined>(defaultExtPlatform);
   const [hasErrors, setHasErrors] = useState<boolean>(false);
@@ -111,12 +111,12 @@ const ExtPlatformSettings: FC<OwnProps> = ({
     if (hasErrors && extPlatform) {
       const match = (extPlatform as ExtPlatformInfo).platform.match(PLATFORM_RE);
       if (!match) {
-        return lang('Platform name has to be one word');
+        return oldLang('Platform name has to be one word');
       }
     }
 
     return undefined;
-  }, [extPlatform, lang, hasErrors]);
+  }, [extPlatform, oldLang, hasErrors]);
 
   // TODO: Check if valid URL as well
   const handleSubmit = useCallback(() => {
@@ -139,14 +139,14 @@ const ExtPlatformSettings: FC<OwnProps> = ({
         <Button round color="translucent" size="smaller" ariaLabel="Cancel message creation" onClick={onClear}>
           <i className="icon icon-close" />
         </Button>
-        <div className="modal-title">{lang('Link to platform')}</div>
+        <div className="modal-title">{oldLang('Link to platform')}</div>
         <Button
           color="primary"
           size="smaller"
           className="modal-action-button"
           onClick={handleSubmit}
         >
-          {lang('Next')}
+          {oldLang('Next')}
         </Button>
       </div>
     );
@@ -165,7 +165,7 @@ const ExtPlatformSettings: FC<OwnProps> = ({
 
       <InputText
         id="platform"
-        label={lang('Platform')}
+        label={oldLang('Platform')}
         value={platform}
         onChange={handleCustomChange}
         disabled={radioSelection !== 'custom'}
@@ -174,7 +174,7 @@ const ExtPlatformSettings: FC<OwnProps> = ({
 
       <InputText
         id="submitUrl"
-        label={lang('Submit URL')}
+        label={oldLang('Submit URL')}
         value={submitUrl}
         onChange={handleCustomChange}
         disabled={radioSelection !== 'custom'}

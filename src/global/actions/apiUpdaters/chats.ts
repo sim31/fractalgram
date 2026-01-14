@@ -15,6 +15,7 @@ import {
   addUnreadMentions,
   deleteChatMessages,
   deletePeerPhoto,
+  getConsensusMsgsOrNew,
   leaveChat,
   removeUnreadMentions,
   replaceChatMessages,
@@ -76,7 +77,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       if (localAdminRights && localAdminRights.manageDirectMessages && !update.chat.isMin
         && newAdminRights?.manageDirectMessages !== localAdminRights.manageDirectMessages
         && localChat.linkedMonoforumId) {
-        global = replaceChatMessages(global, localChat.linkedMonoforumId, {});
+        global = replaceChatMessages(global, localChat.linkedMonoforumId, {}, getConsensusMsgsOrNew(global, localChat.linkedMonoforumId));
       }
 
       setGlobal(global);
