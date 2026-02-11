@@ -1,8 +1,8 @@
 import type { ChangeEvent } from 'react';
 import type { ElementRef } from '../../../lib/teact/teact';
 import {
-  memo, useEffect, useRef, useState, useCallback,
-} from '../../../lib/teact/teact';
+  memo, useCallback,
+  useEffect, useRef, useState } from '../../../lib/teact/teact';
 
 import type { ApiNewPoll } from '../../../api/types';
 import type { ConsensusResults, PollModalDefaults } from '../../../types';
@@ -48,7 +48,7 @@ const PollModal = ({
   defaultValues,
   onSend,
   onClear,
-  consensusResults
+  consensusResults,
 }: OwnProps) => {
   const questionInputRef = useRef<HTMLInputElement>();
   const optionsListRef = useRef<HTMLDivElement>();
@@ -395,19 +395,19 @@ const PollModal = ({
       <div className="options-divider" />
 
       <div className="quiz-mode">
-        <Checkbox
-          label={lang('Pin message')}
-          checked={toPin}
-          onChange={handleToPinChange}
-        />
-        {consensusResults && (
-          <Checkbox
-            label={lang('Inlude already ranked')}
-            checked={includeRanked}
-            onChange={handleIncludeRankedChange}
-          />
-        )}
         <div className="dialog-checkbox-group">
+          <Checkbox
+            label={lang('Pin message')}
+            checked={toPin}
+            onChange={handleToPinChange}
+          />
+          {consensusResults && (
+            <Checkbox
+              label={lang('Inlude already ranked')}
+              checked={includeRanked}
+              onChange={handleIncludeRankedChange}
+            />
+          )}
           {!shouldBeAnonymous && (
             <Checkbox
               label={lang('PollAnonymous')}

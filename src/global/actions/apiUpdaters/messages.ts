@@ -112,6 +112,14 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       const {
         chatId, id, message, shouldForceReply, wasDrafted, poll, webPage,
       } = update;
+      if (poll) {
+        global = updatePoll(global, poll.id, poll);
+      }
+
+      if (webPage) {
+        global = replaceWebPage(global, webPage.id, webPage);
+      }
+
       global = updateWithLocalMedia(global, chatId, id, true, message);
       global = updateListedAndViewportIds(global, actions, message as ApiMessage);
 
@@ -173,14 +181,6 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
           global = updateChatLastMessage(global, chatId, newMessage);
         }
       });
-
-      if (poll) {
-        global = updatePoll(global, poll.id, poll);
-      }
-
-      if (webPage) {
-        global = replaceWebPage(global, webPage.id, webPage);
-      }
 
       if (message.reportDeliveryUntilDate && message.reportDeliveryUntilDate > getServerTime()) {
         actions.reportMessageDelivery({ chatId, messageId: id });
@@ -252,6 +252,14 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
         chatId, id, message, poll, webPage,
       } = update;
 
+      if (poll) {
+        global = updatePoll(global, poll.id, poll);
+      }
+
+      if (webPage) {
+        global = replaceWebPage(global, webPage.id, webPage);
+      }
+
       global = updateWithLocalMedia(global, chatId, id, true, message, true);
 
       const scheduledIds = selectScheduledIds(global, chatId, MAIN_THREAD_ID) || [];
@@ -261,14 +269,6 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       if (threadId !== MAIN_THREAD_ID) {
         const threadScheduledIds = selectScheduledIds(global, chatId, threadId) || [];
         global = replaceThreadParam(global, chatId, threadId, 'scheduledIds', unique([...threadScheduledIds, id]));
-      }
-
-      if (poll) {
-        global = updatePoll(global, poll.id, poll);
-      }
-
-      if (webPage) {
-        global = replaceWebPage(global, webPage.id, webPage);
       }
 
       global = updatePeerFullInfo(global, chatId, {
@@ -300,6 +300,14 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
         return;
       }
 
+      if (poll) {
+        global = updatePoll(global, poll.id, poll);
+      }
+
+      if (webPage) {
+        global = replaceWebPage(global, webPage.id, webPage);
+      }
+
       global = updateWithLocalMedia(global, chatId, id, false, message, true);
       const ids = Object.keys(selectChatScheduledMessages(global, chatId) || {}).map(Number).sort((a, b) => b - a);
       global = replaceThreadParam(global, chatId, MAIN_THREAD_ID, 'scheduledIds', ids);
@@ -308,13 +316,6 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       if (threadId !== MAIN_THREAD_ID) {
         const threadScheduledIds = selectScheduledIds(global, chatId, threadId) || [];
         global = replaceThreadParam(global, chatId, threadId, 'scheduledIds', threadScheduledIds.sort((a, b) => b - a));
-      }
-      if (poll) {
-        global = updatePoll(global, poll.id, poll);
-      }
-
-      if (webPage) {
-        global = replaceWebPage(global, webPage.id, webPage);
       }
 
       setGlobal(global);
@@ -346,6 +347,14 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
 
       const chat = selectChat(global, chatId);
 
+      if (poll) {
+        global = updatePoll(global, poll.id, poll);
+      }
+
+      if (webPage) {
+        global = replaceWebPage(global, webPage.id, webPage);
+      }
+
       global = updateWithLocalMedia(global, chatId, id, false, message);
 
       const newMessage = selectChatMessage(global, chatId, id)!;
@@ -358,14 +367,6 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
 
       if (message.content?.text?.text !== currentMessage?.content?.text?.text) {
         global = clearMessageTranslation(global, chatId, id);
-      }
-
-      if (poll) {
-        global = updatePoll(global, poll.id, poll);
-      }
-
-      if (webPage) {
-        global = replaceWebPage(global, webPage.id, webPage);
       }
 
       setGlobal(global);
