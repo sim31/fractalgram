@@ -1,6 +1,7 @@
-**Fractalgram updated to version 1.4!**
+**Fractalgram updated to version 1.5!**
 
-* Added support for [Optimism Fractal](https://optimismfractal.com/)
-* Other minor fixes and improvements
+This merges a huge amount of changes from the [Telegram A client](https://github.com/Ajaxy/telegram-tt/) ([version air_v2.9.3](https://github.com/Ajaxy/telegram-tt/releases/tag/air_v2.9.3)+).
+
+As far as fractalgram functionality goes, no new changes apart from making it work again.
 
 If you're new to Fractalgram see [intro post](https://peakd.com/dao/@sim31/introducing-fractalgram) for what it is and how to use it.
